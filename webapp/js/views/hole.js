@@ -40,6 +40,8 @@ export async function holeView(root, { roundId, hole }) {
       <div class="yardage" id="yardage" aria-live="polite"></div>
       <button class="map-btn" data-a="locate" aria-label="Show my position">◎</button>
       <div class="map-hint" id="mapHint" hidden></div>
+      <div class="measure-card" id="measure" hidden></div>
+      <div class="measure-tip" id="measureTip">Tap the map to measure</div>
     </div>
     <div class="actions">
       <button class="btn mark" data-a="mark"><span class="mark-label">Mark ball</span><small id="markSub">Stand at your ball before you hit</small></button>
@@ -60,10 +62,13 @@ export async function holeView(root, { roundId, hole }) {
   let meAcc = null;
   let targetFor = null; // shot id waiting for a target tap
   let fittedToFix = false;
+  let measure = null; // a tapped point: distance to it and on to the green
+  let measureLayer = null;
 
   if (hasMap()) {
     map = createMap($('#map', root), course.centre ?? DEFAULT_CENTRE, 17);
     layer = window.L.layerGroup().addTo(map);
+    measureLayer = window.L.layerGroup().addTo(map);
     map.on('click', onMapTap);
   } else {
     $('#map', root).innerHTML = `<p class="map-off">Map unavailable offline until the app has loaded once with signal. Marking still works.</p>`;
@@ -123,7 +128,12 @@ export async function holeView(root, { roundId, hole }) {
   }
 
   function onMapTap(e) {
-    if (!targetFor) return;
+    if (!targetFor) {
+      measure = { lat: e.latlng.lat, lon: e.latlng.lng };
+      vibrate(10);
+      drawMeasure();
+      return;
+    }
     const s = shots.find((x) => x.id === targetFor);
     targetFor = null;
     $('#mapHint', root).hidden = true;
@@ -151,6 +161,55 @@ export async function holeView(root, { roundId, hole }) {
     toast('Green centre moved for this course');
   }
 
+  // ---------- measure: me -> point -> green ----------
+  // From the live GPS position, or from your last marked shot when there's no fix.
+  function measureOrigin() {
+    const fix = gps.latest();
+    if (fix) return { p: fix, label: 'you' };
+    const last = derived().shots.at(-1);
+    return last ? { p: last.start, label: 'last shot' } : null;
+  }
+
+  function drawMeasure() {
+    const card = $('#measure', root);
+    const tip = $('#measureTip', root);
+    if (tip) tip.hidden = !!measure || !map;
+    if (!map) return;
+    measureLayer.clearLayers();
+    if (!measure) { card.hidden = true; return; }
+    const o = measureOrigin();
+    const g = ch().green;
+    const toPt = o ? distance(o.p, measure) : null;
+    const toGreen = g ? distance(measure, g) : null;
+    const mid = (a, b) => ({ lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 });
+    if (o) {
+      line([o.p, measure], 'measure-line').addTo(measureLayer);
+      pin(mid(o.p, measure), 'seg-label measure-label', `<span>${m(toPt)}</span>`, { interactive: false }).addTo(measureLayer);
+    }
+    if (g) {
+      line([measure, g], 'measure-line second').addTo(measureLayer);
+      pin(mid(measure, g), 'seg-label measure-label', `<span>${m(toGreen)}</span>`, { interactive: false }).addTo(measureLayer);
+    }
+    pin(measure, 'measure', '<span></span>', { draggable: true, title: 'Measure point (drag to move)' })
+      .on('drag', (e) => { const p = e.target.getLatLng(); measure = { lat: p.lat, lon: p.lng }; drawMeasureCard(); })
+      .on('dragend', () => drawMeasure())
+      .addTo(measureLayer);
+    drawMeasureCard();
+  }
+
+  function drawMeasureCard() {
+    const card = $('#measure', root);
+    const o = measureOrigin();
+    const g = ch().green;
+    const toPt = o ? distance(o.p, measure) : null;
+    const toGreen = g ? distance(measure, g) : null;
+    card.hidden = false;
+    card.innerHTML = `
+      <div class="mc-cell"><b>${o ? m(toPt) : '–'}</b><i>${o ? `From ${o.label}` : 'No GPS fix'}</i></div>
+      ${g ? `<div class="mc-cell"><b>${m(toGreen)}</b><i>Then to green</i></div>` : ''}
+      <button class="mc-close" data-a="clearmeasure" aria-label="Clear measure point">×</button>`;
+  }
+
   // ---------- live position + yardage ----------
   const unsub = gps.subscribe((fix, err) => {
     if (err) {
@@ -169,6 +228,7 @@ export async function holeView(root, { roundId, hole }) {
       }
     }
     drawYardage();
+    if (measure) drawMeasure();
   });
 
   function drawYardage() {
@@ -251,7 +311,7 @@ export async function holeView(root, { roundId, hole }) {
     $('#roundScore', root).textContent = r.holesPlayed ? `${signed(r.toPar)} thru ${r.holesPlayed}` : '';
   }
 
-  function render() { drawMap(); drawShots(); drawStats(); drawYardage(); drawRoundScore(); }
+  function render() { drawMap(); drawShots(); drawStats(); drawYardage(); drawMeasure(); drawRoundScore(); }
 
   async function save() { await db.put('rounds', round); render(); }
 
@@ -420,6 +480,7 @@ export async function holeView(root, { roundId, hole }) {
     else if (a === 'next') go(1);
     else if (a === 'shot') openShot(b.dataset.id);
     else if (a === 'score') editScore();
+    else if (a === 'clearmeasure') { measure = null; drawMeasure(); }
     else if (a === 'locate') { const f = gps.latest(); if (f && map) map.setView(ll(f), Math.max(map.getZoom(), 18)); else toast('No GPS fix yet'); }
     else if (a === 'putts') {
       const v = Number(b.dataset.v);

@@ -135,7 +135,7 @@ body[data-view="full"] .tabbar { display: none; }
   border: 0; background: #fff; font-size: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.25); cursor: pointer;
 }
 .map-hint {
-  position: absolute; z-index: 400; left: 10px; right: 10px; bottom: 10px; padding: 12px; border-radius: 12px;
+  position: absolute; z-index: 460; left: 10px; right: 10px; bottom: 10px; padding: 12px; border-radius: 12px;
   background: var(--flag); color: var(--flag-ink); font-weight: 700; text-align: center;
 }
 .crosshair { position: absolute; z-index: 400; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px; pointer-events: none; }
@@ -201,6 +201,28 @@ body[data-view="full"] .tabbar { display: none; }
 .score-name { color: var(--muted); font-size: 15px; }
 .hole-foot { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; padding: 8px 12px 18px; }
 .hole-foot .btn.primary { font: 700 24px/1 var(--num); }
+
+/* ---------- measure tool ---------- */
+.measure-card {
+  position: absolute; z-index: 450; left: 10px; right: 10px; bottom: 10px;
+  display: flex; align-items: stretch; gap: 8px; padding: 6px; border-radius: 14px;
+  background: rgba(14,33,22,.9); color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.35);
+}
+.measure-card[hidden], .measure-tip[hidden] { display: none; }
+.mc-cell { flex: 1; text-align: center; padding: 2px 4px; }
+.mc-cell b { display: block; font: 700 38px/1 var(--num); color: var(--flag); }
+.mc-cell + .mc-cell { border-left: 1px solid rgba(255,255,255,.2); }
+.mc-cell i { display: block; font-style: normal; font-size: 13px; font-weight: 600; color: #cfe3d4; }
+.mc-close { width: 48px; border: 0; border-radius: 10px; background: rgba(255,255,255,.12); color: #fff; font: 600 30px/1 var(--num); cursor: pointer; }
+.measure-tip {
+  position: absolute; z-index: 400; left: 10px; bottom: 26px; padding: 5px 10px; border-radius: 8px;
+  background: rgba(14,33,22,.7); color: #fff; font-size: 13px; font-weight: 600; pointer-events: none;
+}
+.pin.measure { width: 44px; height: 44px; margin: -22px 0 0 -22px; display: grid; place-items: center; }
+.pin.measure span { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--flag); background: rgba(255,194,26,.25); box-shadow: 0 0 0 1.5px rgba(0,0,0,.6); }
+.pin.measure-label span { background: var(--flag); color: var(--flag-ink); font-weight: 700; }
+.leaflet-interactive.measure-line { stroke: var(--flag); stroke-width: 3; stroke-opacity: .95; }
+.leaflet-interactive.measure-line.second { stroke-dasharray: 2 7; stroke-linecap: round; stroke-width: 4; }
 
 /* ---------- map pins ---------- */
 .pin { background: none; border: 0; }

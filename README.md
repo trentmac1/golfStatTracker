@@ -1,2 +1,73 @@
-# golfStatTracker
-Golf shot and stat tracker
+# Golf Tracker
+
+An Arccos-style golf stat system: a pocket shot tracker (Seeed XIAO nRF52840 Sense + L76K GNSS) and an iPhone web app that records the round and works out the stats.
+
+| Folder | What's in it | Status |
+|---|---|---|
+| `webapp/` | Offline-first PWA (plain HTML/CSS/JS, IndexedDB) | **Phase 1 done: manual mode** |
+| `firmware/` | PlatformIO project for the tracker | Phase 2 |
+| `analysis/` | Python notebooks for tuning swing detection | Phase 4 |
+| `docs/` | BLE protocol and shot record format | Draft |
+
+Setup: right-handed, tracker in the front trouser pocket, home course Ashgrove Golf Club, hosted on GitHub Pages.
+
+## Put the app on your iPhone (GitHub Pages)
+
+1. Create a new repository on github.com (this one is `golfStatTracker`). It can be private only on a paid plan; on a free account make it public. No personal data goes in the repo: rounds stay on the phone.
+2. Upload this folder's contents (drag the files into **Add file › Upload files**, or `git push`). Keep the `.github` folder; it holds the deploy workflow.
+3. In the repo, open **Settings › Pages** and set **Source** to **GitHub Actions**.
+4. Open the **Actions** tab. The *Deploy web app* workflow runs on every push to `main`; when it's green, the site is at https://trentmac1.github.io/golfStatTracker/.
+5. On the iPhone, open that address in **Safari**, tap **Share › Add to Home Screen**. Open it from the Home Screen icon, allow location when asked.
+6. Open it once with signal so the map library and the satellite imagery around the course get cached. Panning over Ashgrove at home on Wi-Fi pre-loads the imagery for the course.
+
+When you change the app later, bump `VERSION` in `webapp/sw.js` so phones fetch the new files (they update on the next launch).
+
+## Run it locally
+
+```
+cd webapp
+python3 -m http.server 8000      # then open http://localhost:8000
+node --test tests/*.test.mjs     # stats and miss-direction tests
+```
+
+Geolocation needs HTTPS on a phone, so test on the phone through GitHub Pages.
+
+## How the app works
+
+- **Mark ball**: stand at your ball before each shot and tap it. The phone takes a few seconds of GPS fixes and uses the median of the best ones. A shot's distance runs to the next mark.
+- **On green**: tap it standing at your ball on the green. It measures your last shot to the ball, and on a hole with no green yet it saves an approximate green for the course.
+- **Putts, tee shot result, chips, bunker shots, penalties** are taps on the hole screen. Score = marked shots + putts + penalties, and can be overridden.
+- Tap a shot to set its club, lie, a penalty or mishit, or a target point on the map (for tee shots). Drag any dot on the map to correct a bad GPS position; drag the yellow flag to move the green centre.
+- **Courses › Place greens on the map**: set every green centre (and tees, front and back) from home on the satellite map, so distances to the green work from the first round.
+- **Backup**: JSON export/import (import merges, never deletes) and CSV export of holes and shots.
+
+### Stat definitions
+
+- Miss direction uses the plan's formula: `long = d·û − |T−S|`, `right = d_x·û_y − d_y·û_x`. A shot is treated as aimed at the green if it's the last shot before putting, it finished within 50 m of the green, or it's a par-3 tee shot. Layups get no miss unless you tap a target.
+- On the green: inside a radius of half the front-to-back distance, or 12 m when front/back aren't set.
+- GIR: strokes before putting ≤ par − 2. Scrambling: missed GIR, made par or better.
+- Sand save (for now): a hole with a bunker shot that finished with one putt or fewer.
+- Club distances: median and middle 50%, excluding mishits, penalty shots, and last shots measured only to the green centre.
+- Fairway: your Hit/Left/Right/Short tap. If you tap a tee target instead, it's inferred (within 15 m of the line = hit).
+
+## Phase 1 on-course checklist
+
+Before the round
+- [ ] Pars match the card in the pro shop (Courses › Ashgrove). Online scorecards disagree on a few holes.
+- [ ] At least a few greens placed on the map, so live distances show.
+- [ ] App opened from the Home Screen icon, location allowed.
+
+During the round (18 holes)
+- [ ] Mark ball before every full shot and chip, including tee shots; On green on every green.
+- [ ] Note any hole where the distance to centre looked wrong compared with a sprinkler head or marker.
+- [ ] Check 3–4 shot distances against a known reference (a 150 m marker, a laser if a partner has one).
+- [ ] Set clubs on at least the tee shots.
+- [ ] Turn on Airplane Mode for a hole and confirm everything still works.
+
+After the round
+- [ ] Scorecard total matches your real score.
+- [ ] Miss directions on approaches look right (short/long/left/right).
+- [ ] Export a backup and confirm the file opens in the Files app.
+- [ ] Note anything that took too many taps or was hard to read in the sun.
+
+Send back: the score check, any distance that looked wrong (hole and shot), the GPS accuracy figures you saw, and what was awkward.

@@ -47,6 +47,7 @@ Geolocation needs HTTPS on a phone, so test on the phone through GitHub Pages.
 - **Mark ball**: stand at your ball before each shot and tap it. The phone takes a few seconds of GPS fixes and uses the median of the best ones. A shot's distance runs to the next mark.
 - **On green**: tap it standing at your ball on the green. It measures your last shot to the ball, and on a hole with no green yet it saves an approximate green for the course.
 - **Measure**: tap anywhere on the hole map (a bunker, water, a layup spot) to see the distance from you to that point and from there to the green. Drag the yellow ring to adjust; tap × to clear.
+- **Full-screen map**: the button under ◎ fills the screen with the map, keeping Mark ball and On green at the bottom. It stays on for the next hole until you turn it off.
 - **Putts, tee shot result, chips, bunker shots, penalties** are taps on the hole screen. Score = marked shots + putts + penalties, and can be overridden.
 - Tap a shot to set its club, lie, a penalty or mishit, or a target point on the map (for tee shots). Drag any dot on the map to correct a bad GPS position; drag the yellow flag to move the green centre.
 - **Courses › Place greens on the map**: set every green centre (and tees, front and back) from home on the satellite map, so distances to the green work from the first round.

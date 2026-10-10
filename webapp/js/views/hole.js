@@ -39,6 +39,7 @@ export async function holeView(root, { roundId, hole }) {
       <div id="map" class="map"></div>
       <div class="yardage" id="yardage" aria-live="polite"></div>
       <button class="map-btn" data-a="locate" aria-label="Show my position">◎</button>
+      <button class="map-btn second" data-a="fullscreen" aria-label="Full-screen map" aria-pressed="false"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="map-hint" id="mapHint" hidden></div>
       <div class="measure-card" id="measure" hidden></div>
       <div class="measure-tip" id="measureTip">Tap the map to measure</div>
@@ -480,6 +481,11 @@ export async function holeView(root, { roundId, hole }) {
     else if (a === 'next') go(1);
     else if (a === 'shot') openShot(b.dataset.id);
     else if (a === 'score') editScore();
+    else if (a === 'fullscreen') {
+      const on = !document.body.classList.contains('map-full');
+      setFull(on);
+      db.setSetting('mapFull', on); // stays full-screen on the next hole
+    }
     else if (a === 'clearmeasure') { measure = null; drawMeasure(); }
     else if (a === 'locate') { const f = gps.latest(); if (f && map) map.setView(ll(f), Math.max(map.getZoom(), 18)); else toast('No GPS fix yet'); }
     else if (a === 'putts') {
@@ -495,12 +501,26 @@ export async function holeView(root, { roundId, hole }) {
     }
   });
 
+  // Full-screen map: the map fills the screen above Mark ball / On green.
+  // CSS only, because iPhone Safari has no Fullscreen API for page elements.
+  function setFull(on) {
+    root.querySelector('.hole').classList.toggle('map-full', on);
+    document.body.classList.toggle('map-full', on);
+    const b = $('[data-a="fullscreen"]', root);
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Exit full-screen map' : 'Full-screen map');
+    b.innerHTML = on ? `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>` : `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    if (map) setTimeout(() => map.invalidateSize(), 0);
+  }
+  db.getSetting('mapFull', false).then((on) => on && setFull(true));
+
   render();
   initialFit();
 
   return {
     destroy() {
       unsub();
+      document.body.classList.remove('map-full');
       map?.remove();
     },
   };

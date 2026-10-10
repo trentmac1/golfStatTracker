@@ -130,6 +130,7 @@ body[data-view="full"] .tabbar { display: none; }
 .yd.small span { font-size: 28px; }
 .yd-acc { align-self: flex-start; background: rgba(14,33,22,.75); color: #fff; font-size: 13px; padding: 3px 8px; border-radius: 8px; }
 .yd-note { background: rgba(255,255,255,.95); border-radius: 12px; padding: 8px 12px; font-size: 15px; pointer-events: auto; }
+.map-btn.second { top: 64px; display: grid; place-items: center; color: var(--ink); }
 .map-btn {
   position: absolute; z-index: 400; right: 10px; top: 10px; width: 46px; height: 46px; border-radius: 12px;
   border: 0; background: #fff; font-size: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.25); cursor: pointer;
@@ -202,9 +203,23 @@ body[data-view="full"] .tabbar { display: none; }
 .hole-foot { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; padding: 8px 12px 18px; }
 .hole-foot .btn.primary { font: 700 24px/1 var(--num); }
 
+/* ---------- full-screen map ---------- */
+body.map-full { overflow: hidden; }
+.hole.map-full .hole-head { position: fixed; inset: 0 0 auto 0; z-index: 910; }
+.hole.map-full .map-wrap {
+  position: fixed; z-index: 900; left: 0; right: 0; top: 0; height: auto; min-height: 0;
+  bottom: calc(104px + var(--safe-b));
+}
+.hole.map-full .map-wrap .yardage, .hole.map-full .map-wrap .map-btn { margin-top: calc(68px + var(--safe-t)); }
+.hole.map-full .actions {
+  position: fixed; z-index: 910; left: 0; right: 0; bottom: 0; background: var(--paper);
+  padding: 10px 12px calc(10px + var(--safe-b));
+}
+.hole.map-full .hole-head { background: rgba(18,61,37,.88); }
+
 /* ---------- measure tool ---------- */
 .measure-card {
-  position: absolute; z-index: 450; left: 10px; right: 10px; bottom: 10px;
+  position: absolute; z-index: 450; left: 10px; right: 10px; bottom: 16px;
   display: flex; align-items: stretch; gap: 8px; padding: 6px; border-radius: 14px;
   background: rgba(14,33,22,.9); color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.35);
 }
@@ -247,6 +262,12 @@ body[data-view="full"] .tabbar { display: none; }
 .leaflet-interactive.me { stroke: #fff; stroke-width: 3; fill: #2f80ed; fill-opacity: 1; }
 .leaflet-interactive.me-acc { stroke: none; fill: #2f80ed; fill-opacity: .15; }
 .leaflet-container { font-family: var(--body); background: #2b3a2f; }
+/* Imagery credit: required by Esri's terms, kept as small and faint as possible. */
+.leaflet-container .leaflet-control-attribution {
+  background: transparent; color: rgba(255,255,255,.55); font-size: 9px; line-height: 1.2;
+  padding: 0 4px 1px; margin: 0; text-shadow: 0 0 2px rgba(0,0,0,.8);
+}
+.leaflet-container .leaflet-control-attribution a { color: inherit; }
 
 /* ---------- sheets ---------- */
 dialog.sheet {

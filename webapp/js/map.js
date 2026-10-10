@@ -14,7 +14,7 @@ export function createMap(el, centre, zoom = 17) {
   }).setView([centre.lat, centre.lon], zoom);
   L().tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxNativeZoom: 19, maxZoom: 21, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' },
+    { maxNativeZoom: 19, maxZoom: 21, attribution: '© Esri, Maxar' },
   ).addTo(map);
   map.attributionControl.setPrefix(false);
   return map;

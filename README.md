@@ -7,9 +7,19 @@ An Arccos-style golf stat system: a pocket shot tracker (Seeed XIAO nRF52840 Sen
 | `webapp/` | Offline-first PWA (plain HTML/CSS/JS, IndexedDB) | **Phase 1 done: manual mode** |
 | `firmware/` | PlatformIO project for the tracker | Phase 2 |
 | `analysis/` | Python notebooks for tuning swing detection | Phase 4 |
-| `docs/` | BLE protocol and shot record format | Draft |
+| `docs/` | BLE protocol, shot record format, green preview spec | Draft |
 
 Setup: right-handed, tracker in the front trouser pocket, home course Ashgrove Golf Club, hosted on GitHub Pages.
+
+## Roadmap
+
+1. Web app, manual mode: **built**, on-course test pending
+1b. Green preview: green outlines from OpenStreetMap and slope arrows from Queensland LiDAR ([spec](docs/green-preview.md))
+2. Tracker bring-up: IMU, mic, GPS, BLE status in Bluefy
+3. Training data capture
+4. Offline analysis
+5. On-device detection and sync
+6. Polish: club suggestions, strokes gained, power tuning, enclosure
 
 ## Put the app on your iPhone (GitHub Pages)
 

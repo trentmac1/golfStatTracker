@@ -1,5 +1,5 @@
 // Defaults and the seeded home course.
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.1.1';
 
 export const DEFAULT_BAG = ['Dr', '3W', '5W', '4H', '5i', '6i', '7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 
@@ -16,6 +16,22 @@ export const ASHGROVE = {
   centre: { lat: -27.4433, lon: 152.9615 },
   pars: [4, 4, 3, 5, 4, 3, 4, 4, 3, 3, 4, 4, 3, 5, 4, 4, 3, 4],
 };
+
+// Pine Rivers Golf Club, 245 Narangba Rd, Kurwongbah. Par 70, pars agreed by
+// two published scorecards (golfingrecord.com, 18birdies).
+export const PINE_RIVERS = {
+  name: 'Pine Rivers Golf Club',
+  centre: { lat: -27.2308, lon: 152.9749 },
+  pars: [4, 4, 5, 4, 3, 5, 4, 3, 4, 3, 4, 4, 4, 3, 4, 4, 4, 4],
+};
+
+// Courses built into the app. Each is added once to a phone that doesn't have
+// it yet (matched by key, or by name for courses added before keys existed),
+// so new ones arrive with an app update without touching existing data.
+export const BUILT_IN_COURSES = [
+  { key: 'ashgrove', ...ASHGROVE },
+  { key: 'pine-rivers', ...PINE_RIVERS },
+];
 
 // Fallback map centre when nothing else is known (Brisbane).
 export const DEFAULT_CENTRE = { lat: -27.4433, lon: 152.9615 };

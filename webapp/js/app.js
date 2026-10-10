@@ -2,7 +2,7 @@
 import * as db from './db.js';
 import { deriveRound } from './stats.js';
 import { allCsv } from './export.js';
-import { APP_VERSION, ASHGROVE, DEFAULT_BAG, newCourse } from './config.js';
+import { APP_VERSION, BUILT_IN_COURSES, DEFAULT_BAG, newCourse } from './config.js';
 import { holeView } from './views/hole.js';
 import { cardView } from './views/card.js';
 import { statsView } from './views/stats.js';
@@ -13,9 +13,18 @@ const ALL_CLUBS = ['Dr', '2W', '3W', '4W', '5W', '7W', '2H', '3H', '4H', '5H', '
 
 async function seed() {
   const courses = await db.all('courses');
-  if (!courses.length) {
-    await db.put('courses', newCourse(db.uid(), ASHGROVE.name, ASHGROVE.pars, ASHGROVE.centre));
+  const seeded = new Set(await db.getSetting('seededCourses', []));
+  for (const c of BUILT_IN_COURSES) {
+    if (seeded.has(c.key)) continue; // added before; respect edits or a delete
+    const existing = courses.find((x) => x.seedKey === c.key || x.name === c.name);
+    if (existing) {
+      if (!existing.seedKey) { existing.seedKey = c.key; await db.put('courses', existing); }
+    } else {
+      await db.put('courses', { ...newCourse(db.uid(), c.name, c.pars, c.centre), seedKey: c.key });
+    }
+    seeded.add(c.key);
   }
+  await db.setSetting('seededCourses', [...seeded]);
 }
 
 async function startRound(courseId) {
@@ -174,6 +183,13 @@ window.addEventListener('hashchange', route);
   db.requestPersistence();
   route();
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    // Reload once when an update takes over, so new courses and fixes show
+    // without having to close the app twice.
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !reloaded) { reloaded = true; location.reload(); }
+    });
     navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW', e));
   }
 })();

@@ -1,6 +1,6 @@
 // Service worker: the app works with no signal once it has loaded once.
 // Bump VERSION when you deploy so phones pick up the new files.
-const VERSION = 'v0.1.0';
+const VERSION = 'v0.1.1';
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = 'runtime-v1';   // Leaflet, fonts
 const TILES = 'tiles-v1';       // satellite imagery you've looked at
@@ -21,7 +21,7 @@ const REMOTE = [
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const shell = await caches.open(SHELL);
-    await shell.addAll(LOCAL);
+    await shell.addAll(LOCAL.map((u) => new Request(u, { cache: 'reload' })));
     const rt = await caches.open(RUNTIME);
     await Promise.all(REMOTE.map((u) => rt.add(new Request(u, { mode: 'cors' })).catch(() => {})));
     await self.skipWaiting();

@@ -22,9 +22,14 @@
   --r: 14px;
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+/* iOS Home Screen apps pin position:fixed bars to the bottom of the page
+   rather than the screen when the page is shorter than the screen, so every
+   page is made at least screen height. */
+html { -webkit-text-size-adjust: 100%; height: 100%; background: var(--paper); }
 body {
   margin: 0; background: var(--paper); color: var(--ink);
+  min-height: 100vh; min-height: 100dvh;
+  box-sizing: border-box;
   font: 17px/1.45 var(--body);
   -webkit-tap-highlight-color: transparent;
   padding-bottom: calc(64px + var(--safe-b));
@@ -88,7 +93,7 @@ small { font-size: 14px; }
 
 /* ---------- tab bar ---------- */
 .tabbar {
-  position: fixed; inset: auto 0 0 0; display: flex; z-index: 500;
+  position: fixed; left: 0; right: 0; bottom: 0; top: auto; display: flex; z-index: 500;
   background: var(--turf-deep); padding-bottom: var(--safe-b);
 }
 .tabbar a {

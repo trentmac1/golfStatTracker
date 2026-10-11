@@ -351,6 +351,7 @@ export async function buildCourseGreens(course, { osmData, fetchFn = fetch, onPr
 }
 
 // ---------- finding a course ----------
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 
 const placeFromNominatim = (r) => ({
@@ -376,27 +377,37 @@ const overpassCourse = (pt) => (e) => ({
   km: distance(pt, { lat: e.center.lat, lon: e.center.lon }) / 1000,
 });
 
-// Every mapped golf course within `km` of `pt`, nearest first. Overpass
-// returns them all; Nominatim (the fallback) stops at 40.
+// Every mapped golf course within `km` of `pt`, nearest first.
+// Nominatim (reliable, fast) pages past its 40-result limit with
+// exclude_place_ids; the Overpass mirrors are the fallback.
 const areaCache = new Map();
-export async function coursesAround(pt, { km = 30, fetchFn = fetch } = {}) {
+export async function coursesAround(pt, { km = 30, fetchFn = fetch, maxPages = 4 } = {}) {
   const key = `${pt.lat.toFixed(2)},${pt.lon.toFixed(2)},${km}`;
   if (areaCache.has(key)) return areaCache.get(key);
-  let out;
+  let out = [];
   try {
+    const deg = km / 111, dlon = deg / Math.cos((pt.lat * Math.PI) / 180);
+    const ids = [];
+    for (let page = 0; page < maxPages; page++) {
+      if (page) await pause(1100); // Nominatim allows one request a second
+      const list = await nominatim({
+        q: 'golf course', limit: '40', bounded: '1',
+        viewbox: `${pt.lon - dlon},${pt.lat + deg},${pt.lon + dlon},${pt.lat - deg}`,
+        ...(ids.length ? { exclude_place_ids: ids.join(',') } : {}),
+      }, fetchFn);
+      ids.push(...list.map((r) => r.place_id));
+      out.push(...list.filter(isCourse).map(placeFromNominatim));
+      if (list.length < 40) break;
+    }
+    if (!out.length) throw new Error('empty');
+  } catch {
     const r = km * 1000;
     const d = await overpass(`[out:json][timeout:25];(way["leisure"="golf_course"](around:${r},${pt.lat},${pt.lon});relation["leisure"="golf_course"](around:${r},${pt.lat},${pt.lon}););out tags center bb;`, { fetchFn, timeoutMs: 15000 });
     out = d.elements.filter((e) => e.tags?.name && e.center && e.bounds).map(overpassCourse(pt));
-    if (!out.length) throw new Error('empty answer'); // busy servers sometimes answer with nothing
-  } catch {
-    const deg = km / 111;
-    const list = await nominatim({
-      q: 'golf course', limit: '40', bounded: '1',
-      viewbox: `${pt.lon - deg},${pt.lat + deg},${pt.lon + deg},${pt.lat - deg}`,
-    }, fetchFn);
-    out = list.filter(isCourse).map(placeFromNominatim).map((c) => ({ ...c, km: distance(pt, c.centre) / 1000 }));
   }
-  out.sort((a, b) => a.km - b.km);
+  out = out.map((c) => ({ ...c, km: distance(pt, c.centre) / 1000 }))
+    .filter((c) => c.km <= km * 1.45) // the box's corners reach a little further than km
+    .sort((a, b) => a.km - b.km);
   areaCache.set(key, out);
   return out;
 }
@@ -432,8 +443,6 @@ export function nameScore(query, name) {
   return score;
 }
 
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
-
 // Search by name: OpenStreetMap's place search with the name as typed (and
 // again without words like "golf club"), then forgiving matching against
 // every course around `near` (you, or your other courses).
@@ -444,13 +453,18 @@ export async function searchCourses(q, { near, fetchFn = fetch } = {}) {
   const core = words(q).join(' ');
   const queries = [...new Set([q.trim(), core, `${core || q.trim()} golf`].filter(Boolean))];
   let failed = null;
+  // Prefer results around `near`, but still find courses further away.
+  const bias = near ? { viewbox: `${near.lon - 1},${near.lat + 1},${near.lon + 1},${near.lat - 1}` } : {};
   for (const [i, text] of queries.entries()) {
     if (i) await pause(1100); // Nominatim allows one request a second
-    try { (await nominatim({ q: text, limit: '10' }, fetchFn)).filter(isCourse).map(placeFromNominatim).forEach(add); }
-    catch (err) { failed = err; }
+    try {
+      (await nominatim({ q: text, limit: '10', ...bias }, fetchFn)).filter(isCourse).map(placeFromNominatim)
+        .filter((c) => nameScore(q, c.name) > 0) // drop loose matches like "Rowville Lakes" for "north lakes"
+        .forEach(add);
+    } catch (err) { failed = err; }
     if (found.length) break;
   }
-  if (near) {
+  if (near && !found.length) {
     const around = await coursesAround(near, { km: 60, fetchFn }).catch(() => []);
     around.map((c) => ({ ...c, score: nameScore(q, c.name) }))
       .filter((c) => c.score > 0)

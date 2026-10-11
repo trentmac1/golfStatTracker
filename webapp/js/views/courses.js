@@ -90,7 +90,10 @@ export async function addCourseFromMap(place, say = () => {}) {
     const osm = await loadCourseOsm(place);
     const holes = holesFromOsm(osm);
     const course = newCourse(db.uid(), place.name, holes ? holes.map((h) => h.par) : Array(18).fill(4), place.centre, holes ? holes.map((h) => h.si) : []);
-    if (holes) holes.forEach((h, i) => { course.holes[i].tee = h.tee; });
+    if (holes) holes.forEach((h, i) => {
+      course.holes[i].tee = h.tee;
+      if (h.green) course.holes[i].green = { ...h.green, estimated: true, fromHoleLine: true };
+    });
     course.source = 'osm';
     await db.put('courses', course);
     if (!holes) {
@@ -98,8 +101,16 @@ export async function addCourseFromMap(place, say = () => {}) {
       return course;
     }
     await downloadGreens(course, say, { osm });
+    // Tell the player what the map didn't have.
+    const notes = [];
     const missing = holes.filter((h) => !h.mapped).length;
-    if (missing) toast(`${missing} hole${missing === 1 ? ' is' : 's are'} missing from the map: check pars and place ${missing === 1 ? 'that green' : 'those greens'}.`, 'warn');
+    if (missing) notes.push(`${missing} hole${missing === 1 ? ' is' : 's are'} missing from the map`);
+    if (holes.some((h) => h.mapped && !h.parMapped)) notes.push(holes.every((h) => !h.parMapped) ? 'pars aren\'t on the map, so set them from the card' : 'some pars aren\'t on the map');
+    const approx = course.holes.filter((h) => h.green?.estimated).length;
+    if (approx) notes.push(`${approx} green${approx === 1 ? ' is' : 's are'} approximate (from the hole lines): tap On green to fix`);
+    course.importNotes = notes;
+    await db.put('courses', course);
+    if (notes.length) toast(`${course.name} added. ${notes[0][0].toUpperCase()}${notes[0].slice(1)}.`, 'warn');
     return course;
   } catch (err) {
     say(err.message); toast(err.message, 'warn');
@@ -119,6 +130,7 @@ export async function courseEditView(root, { courseId }) {
         <header class="page-head"><a class="back" href="#/courses">‹ Courses</a>
           <input class="title-input" id="cname" value="${esc(course.name)}" aria-label="Course name" autocomplete="off"></header>
         <p class="sub">Par ${total}. Tap a par to change it. Greens and tees can be placed on the map from anywhere.</p>
+        ${course.importNotes?.length ? `<div class="note warn-note">From OpenStreetMap, with gaps: ${course.importNotes.map(esc).join('; ')}.</div>` : ''}
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
         <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape) ? 'Refresh' : 'Get'} green shapes and slopes</button>
         <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data.` : 'Outlines from OpenStreetMap and LiDAR heights for Queensland courses. Needs signal once.'}</p>

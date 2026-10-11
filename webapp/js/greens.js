@@ -18,7 +18,8 @@ const OVERPASS = [
 
 async function overpass(q, { fetchFn = fetch, signal, timeoutMs = 25000 } = {}) {
   let last;
-  for (const url of OVERPASS) {
+  for (const url of [...OVERPASS, ...OVERPASS]) { // a second pass: these servers are busy, not down
+    if (last) await new Promise((r) => setTimeout(r, 1500));
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     const onAbort = () => ctl.abort();
@@ -318,7 +319,7 @@ export async function buildCourseGreens(course, { osmData, fetchFn = fetch, onPr
     const m = matched[h.n];
     let polygon = m?.polygon ?? null;
     let source = 'osm';
-    if (!polygon && h.green) { polygon = ellipseFromPoints(h); source = 'estimate'; }
+    if (!polygon && h.green && !h.green.estimated) { polygon = ellipseFromPoints(h); source = 'estimate'; }
     if (!polygon) { problems.push(h.n); onProgress?.(++done, course.holes.length, `Hole ${h.n}`); continue; }
     const playFrom = m?.playFrom ?? h.tee ?? null;
     // Outline and positions first: these work anywhere OpenStreetMap does.
@@ -386,6 +387,7 @@ export async function coursesAround(pt, { km = 30, fetchFn = fetch } = {}) {
     const r = km * 1000;
     const d = await overpass(`[out:json][timeout:25];(way["leisure"="golf_course"](around:${r},${pt.lat},${pt.lon});relation["leisure"="golf_course"](around:${r},${pt.lat},${pt.lon}););out tags center bb;`, { fetchFn, timeoutMs: 15000 });
     out = d.elements.filter((e) => e.tags?.name && e.center && e.bounds).map(overpassCourse(pt));
+    if (!out.length) throw new Error('empty answer'); // busy servers sometimes answer with nothing
   } catch {
     const deg = km / 111;
     const list = await nominatim({
@@ -440,7 +442,7 @@ export async function searchCourses(q, { near, fetchFn = fetch } = {}) {
   const seen = (c) => found.some((f) => distance(f.centre, c.centre) < 400);
   const add = (c) => { if (!seen(c)) found.push({ ...c, km: c.km ?? (near ? distance(near, c.centre) / 1000 : null) }); };
   const core = words(q).join(' ');
-  const queries = [q, ...(core && core !== q.toLowerCase().trim() ? [core] : [])];
+  const queries = [...new Set([q.trim(), core, `${core || q.trim()} golf`].filter(Boolean))];
   let failed = null;
   for (const [i, text] of queries.entries()) {
     if (i) await pause(1100); // Nominatim allows one request a second
@@ -477,7 +479,12 @@ export function holesFromOsm(osm) {
     const pts = w ? wayPts(w) : [];
     const par = Number(w?.tags.par);
     const si = Number(w?.tags.handicap);
-    return { n: i + 1, par: par >= 3 && par <= 6 ? par : 4, si: si >= 1 && si <= 18 ? si : null, tee: pts[0] ?? null, mapped: !!w };
+    return {
+      n: i + 1, par: par >= 3 && par <= 6 ? par : 4, parMapped: par >= 3 && par <= 6,
+      si: si >= 1 && si <= 18 ? si : null, tee: pts[0] ?? null, mapped: !!w,
+      // OSM hole lines run from the tee to the middle of the green
+      green: pts.length >= 2 ? pts.at(-1) : null,
+    };
   });
 }
 

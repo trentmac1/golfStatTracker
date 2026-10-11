@@ -12,6 +12,6 @@ Tap the green button on the hole map (the flag in an oval) to see the green from
 
 - It shows the main tilt, tiers and false fronts. Breaks within a few metres of the hole are near the data's error and won't show.
 - Surveys can be years old, so a rebuilt green shows its old shape. The preview names the survey year.
-- Only Queensland has this height data. Elsewhere the outline still draws, with no slope.
+- Only Queensland has this height data, so courses elsewhere get no preview (the download reports which holes it skipped).
 
 Credits: green outlines © OpenStreetMap contributors (ODbL 1.0). Heights © State of Queensland (QldDem).

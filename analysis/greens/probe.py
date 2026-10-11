@@ -1,106 +1,89 @@
-"""Collect test fixtures for the green preview: OpenStreetMap golf geometry and
-Queensland LiDAR height grids around each green. Output goes to a branch so the
-app's processing can be tested offline against real data."""
-import json, math, time, urllib.request, urllib.parse
+"""Probe faster ways to get a height grid from the Queensland DEM:
+exportImage as an uncompressed float32 TIFF (one request per green), and
+getSamples size limits. Also collects TIFF fixtures for offline tests."""
+import json, math, struct, time, urllib.request, urllib.parse, base64
 
 UA = {"User-Agent": "golfStatTracker/0.1 (github.com/trentmac1/golfStatTracker)"}
+SVC = "https://spatial-img.information.qld.gov.au/arcgis/rest/services/Elevation/QldDem/ImageServer"
+R = 6371008.8
 OUT = {}
 
-def post(url, data, timeout=90):
-    req = urllib.request.Request(url, data=urllib.parse.urlencode(data).encode(), headers=UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+def req(url, data=None, timeout=60):
+    body = urllib.parse.urlencode(data).encode() if data else None
+    r = urllib.request.urlopen(urllib.request.Request(url, data=body, headers=UA), timeout=timeout)
+    return r.status, dict(r.headers), r.read()
 
-SERVERS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
-
-def overpass(q):
-    for attempt in range(3):
-        for srv in SERVERS:
-            try:
-                return post(srv, {"data": q}, timeout=120)
-            except Exception as ex:
-                print("overpass", srv, "ERR", ex, flush=True)
-        time.sleep(20)
-    return None
-
-for key, bbox in [] and [("pine-rivers", "-27.2370,152.9650,-27.2250,152.9790"), ("ashgrove", "-27.4480,152.9540,-27.4390,152.9680")]:
-    q = f"""[out:json][timeout:90];
-(way["golf"~"^(green|hole|tee|fairway|bunker)$"]({bbox});way["leisure"="golf_course"]({bbox}););
-out tags geom;"""
-    d = overpass(q)
-    print(key, "osm elements", None if d is None else len(d["elements"]), flush=True)
-    OUT[f"osm-{key}"] = d
-
-BASE = "https://spatial-img.information.qld.gov.au/arcgis/rest/services/Elevation/QldDem/ImageServer/getSamples"
-R = 6371008.8
-
-def grid(center, half=25, step=1.0):
+def bbox(center, half):
     lat0, lon0 = center
-    n = int(2 * half / step) + 1
-    pts = []
-    for j in range(n):          # south -> north
-        for i in range(n):      # west -> east
-            x = -half + i * step
-            y = -half + j * step
-            lat = lat0 + (y / R) * 180 / math.pi
-            lon = lon0 + (x / (R * math.cos(math.radians(lat0)))) * 180 / math.pi
-            pts.append([round(lon, 8), round(lat, 8)])
-    return n, pts
+    dlat = half / R * 180 / math.pi
+    dlon = half / (R * math.cos(math.radians(lat0))) * 180 / math.pi
+    return lon0 - dlon, lat0 - dlat, lon0 + dlon, lat0 + dlat
 
-def try_size(pts, size, fields):
-    geom = json.dumps({"points": pts[:size], "spatialReference": {"wkid": 4326}})
+def read_tiff(b):
+    le = b[:2] == b"II"
+    E = "<" if le else ">"
+    (ifd,) = struct.unpack(E + "I", b[4:8])
+    (n,) = struct.unpack(E + "H", b[ifd:ifd + 2])
+    tags = {}
+    for k in range(n):
+        o = ifd + 2 + 12 * k
+        tag, typ, cnt = struct.unpack(E + "HHI", b[o:o + 8])
+        size = {1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 11: 4, 12: 8, 16: 8}.get(typ, 1) * cnt
+        raw = b[o + 8:o + 12] if size <= 4 else b[struct.unpack(E + "I", b[o + 8:o + 12])[0]:][:size]
+        fmt = {3: "H", 4: "I", 11: "f", 12: "d", 16: "Q"}.get(typ)
+        if fmt:
+            vals = struct.unpack(E + fmt * cnt, raw[:struct.calcsize(fmt) * cnt])
+            tags[tag] = vals
+        else:
+            tags[tag] = raw
+    return tags, E
+
+for size in [10, 100, 200, 400]:
+    pts = [[152.9728 + i * 1e-5, -27.2287] for i in range(size)]
+    geom = json.dumps({"points": pts, "spatialReference": {"wkid": 4326}})
     try:
-        d = post(BASE, {"geometry": geom, "geometryType": "esriGeometryMultipoint", "returnFirstValueOnly": "true",
-                        "interpolation": "RSP_BilinearInterpolation", "outFields": fields, "f": "json"})
-        return "samples" in d, (d.get("error") or {}).get("message")
+        st, h, body = req(f"{SVC}/getSamples", {"geometry": geom, "geometryType": "esriGeometryMultipoint", "returnFirstValueOnly": "true", "interpolation": "RSP_BilinearInterpolation", "f": "json"})
+        d = json.loads(body); print("getSamples", size, "ok" if "samples" in d else d, flush=True)
     except Exception as ex:
-        return False, str(ex)
+        print("getSamples", size, "ERR", ex, flush=True)
 
-CHUNK = 900
-def samples(pts):
-    vals, meta = [], None
-    for k in range(0, len(pts), CHUNK):
-        chunk = pts[k:k + CHUNK]
-        geom = json.dumps({"points": chunk, "spatialReference": {"wkid": 4326}})
-        d = post(BASE, {"geometry": geom, "geometryType": "esriGeometryMultipoint", "returnFirstValueOnly": "true",
-                        "interpolation": "RSP_BilinearInterpolation", "outFields": "*", "f": "json"})
-        if "samples" not in d:
-            print("DEM error", d, flush=True); return None, None
-        byId = {s["locationId"]: s for s in d["samples"]}
-        for i in range(len(chunk)):
-            s = byId.get(i)
-            v = s and s.get("value")
-            try: vals.append(round(float(v), 3))
-            except (TypeError, ValueError): vals.append(None)
-            if s and not meta: meta = (s.get("attributes") or {}).get("name")
-    return vals, meta
+for fmt, extra in [("tiff", {"compression": "None"}), ("tiff", {}), ("bsq", {}), ("lerc", {})]:
+    x0, y0, x1, y1 = bbox((-27.22870927292386, 152.97288546616107), 25)
+    p = {"bbox": f"{x0},{y0},{x1},{y1}", "bboxSR": 4326, "imageSR": 4326, "size": "51,51", "format": fmt,
+         "pixelType": "F32", "noData": "-9999", "interpolation": "RSP_BilinearInterpolation", "f": "image", **extra}
+    try:
+        st, h, body = req(f"{SVC}/exportImage?" + urllib.parse.urlencode(p))
+        print("exportImage", fmt, extra, st, h.get("Content-Type"), len(body), "CORS", h.get("Access-Control-Allow-Origin"), body[:8], flush=True)
+        if fmt == "tiff":
+            tags, E = read_tiff(body)
+            print("  tags", {k: (v if len(str(v)) < 120 else str(v)[:120]) for k, v in tags.items() if k in (256, 257, 258, 259, 273, 277, 278, 279, 284, 317, 339, 322, 323, 324, 325)}, flush=True)
+    except Exception as ex:
+        print("exportImage", fmt, extra, "ERR", ex, flush=True)
 
-_, test_pts = grid((-27.22870927292386, 152.97288546616107))
-for size in [10, 50, 100, 200, 400, 600, 1000]:
-    for fields in ["*", ""]:
-        ok, msg = try_size(test_pts, size, fields)
-        print("chunk", size, "fields", repr(fields), "ok" if ok else f"FAIL {msg}", flush=True)
-# also try returnFirstValueOnly + nearest interpolation and a GET with few points
-ok_sizes = []
-for size in [10, 50, 100, 200, 400, 600, 1000]:
-    if try_size(test_pts, size, "*")[0]: ok_sizes.append(size)
-CHUNK = max(ok_sizes) if ok_sizes else 5
-print("using chunk", CHUNK, flush=True)
-greens = {
-    "pine-rivers": [(-27.22870927292386, 152.97288546616107), (-27.227724382415474, 152.97024250953507), (-27.23117517164926, 152.97341716208962),
-                    (-27.230005352436113, 152.97011397778988), (-27.228579356450542, 152.96999820973843), (-27.23074245034067, 152.97337572727247)],
+# CORS on exportImage as a browser would ask
+try:
+    r = urllib.request.urlopen(urllib.request.Request(f"{SVC}/exportImage?bbox=152.97,-27.23,152.9701,-27.2299&size=2,2&format=tiff&f=image", headers={**UA, "Origin": "https://trentmac1.github.io"}), timeout=30)
+    print("CORS GET exportImage", {k: v for k, v in r.headers.items() if k.lower().startswith("access-control")}, flush=True)
+except Exception as ex:
+    print("CORS GET ERR", ex)
+
+# Fixtures: uncompressed TIFF grids for some greens, 1 m pixels, 60 m square
+centres = {
+    "pine-rivers-1": (-27.22870927292386, 152.97288546616107), "pine-rivers-2": (-27.227724382415474, 152.97024250953507),
+    "pine-rivers-3": (-27.23117517164926, 152.97341716208962), "pine-rivers-4": (-27.230005352436113, 152.97011397778988),
+    "pine-rivers-13": (-27.232981158827567, 152.97512049429076), "ashgrove-a": (-27.4456727, 152.9597306), "ashgrove-b": (-27.4443033, 152.9575579),
 }
-greens["ashgrove"] = [(-27.4456727, 152.9597306), (-27.4443033, 152.9575579), (-27.4412227, 152.957357), (-27.4403814, 152.956346)]
-
-DEM = {}
-for key, cs in greens.items():
-    for idx, c in enumerate(cs):
-        n, pts = grid(c)
-        vals, name = samples(pts)
-        DEM[f"{key}-{idx + 1}"] = {"center": c, "half": 25, "step": 1.0, "n": n, "z": vals, "dataset": name}
-        print(key, idx + 1, "dataset", name, "nulls", None if vals is None else sum(v is None for v in vals), flush=True)
-OUT["dem"] = DEM
-
+for k, c in centres.items():
+    x0, y0, x1, y1 = bbox(c, 30)
+    p = {"bbox": f"{x0},{y0},{x1},{y1}", "bboxSR": 4326, "imageSR": 4326, "size": "61,61", "format": "tiff", "compression": "None",
+         "pixelType": "F32", "noData": "-9999", "interpolation": "RSP_BilinearInterpolation", "f": "image"}
+    try:
+        st, h, body = req(f"{SVC}/exportImage?" + urllib.parse.urlencode(p))
+        OUT[k] = {"bbox": [x0, y0, x1, y1], "size": [61, 61], "tiff": base64.b64encode(body).decode()}
+        print("fixture", k, len(body), flush=True)
+    except Exception as ex:
+        print("fixture", k, "ERR", ex, flush=True)
+    time.sleep(0.5)
 with open("probe-fixtures.json", "w") as f:
     json.dump(OUT, f)
-print("done", flush=True)
+print("done")

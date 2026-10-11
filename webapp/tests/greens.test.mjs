@@ -94,3 +94,12 @@ test('builds holes from the map: pars, tees and count', async () => {
   assert.equal(h9[7].mapped, false);
   assert.equal(h9[7].par, 4);
 });
+
+test('forgiving course names', async () => {
+  const { nameScore } = await import('../js/greens.js');
+  assert.ok(nameScore('kaperra', 'Keperra Golf Course') > 0);       // misspelt
+  assert.ok(nameScore('wantima golf', 'Wantima Country Club') > 0); // "golf" not in the name
+  assert.ok(nameScore('pine rivers', 'Pine Rivers Golf Club') > nameScore('pine', 'Pine Rivers Golf Club'));
+  assert.equal(nameScore('north lakes', 'Rowville Lakes Public Golf Course'), 0);
+  assert.equal(nameScore('kaperra', 'Carbrook Golf Club'), 0);
+});

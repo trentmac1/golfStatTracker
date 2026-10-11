@@ -1,0 +1,31 @@
+name: Build green data
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "probe or build"
+        default: build
+permissions:
+  contents: write
+jobs:
+  greens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Probe sources
+        if: ${{ inputs.mode == 'probe' }}
+        run: python analysis/greens/probe.py
+      - name: Build green data
+        if: ${{ inputs.mode != 'probe' }}
+        run: python analysis/greens/build_greens.py
+      - name: Commit results
+        if: ${{ inputs.mode != 'probe' }}
+        run: |
+          git config user.name "green-data bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add webapp/data/greens
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "Update green data"
+          git push

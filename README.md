@@ -52,6 +52,7 @@ Geolocation needs HTTPS on a phone, so test on the phone through GitHub Pages.
 - **Full-screen map**: the button under ◎ fills the screen with the map, keeping Mark ball and On green at the bottom. It stays on for the next hole until you turn it off.
 - **Putts, tee shot result, chips, bunker shots, penalties** are taps on the hole screen. Score = marked shots + putts + penalties, and can be overridden.
 - Tap a shot to set its club, lie, a penalty or mishit, or a target point on the map (for tee shots). Drag any dot on the map to correct a bad GPS position; drag the yellow flag to move the green centre.
+- **Add a course** (Courses screen): search by name or list courses near you. Courses mapped in OpenStreetMap arrive with their holes, pars, tees, green centres, fronts, backs and outlines filled in, plus slopes in Queensland. Check the pars against the card and add the rating, slope and stroke indexes.
 - **Courses › Place greens on the map**: set every green centre (and tees, front and back) from home on the satellite map, so distances to the green work from the first round.
 - **Backup**: JSON export/import (import merges, never deletes) and CSV export of holes and shots.
 

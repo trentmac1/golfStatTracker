@@ -289,44 +289,115 @@ export async function buildCourseGreens(course, { osmData, fetchFn = fetch, onPr
   if (!osm) {
     const all = pts.length ? pts : [ctr];
     const lats = all.map((p) => p.lat), lons = all.map((p) => p.lon);
-    const pad = 0.004; // ~400 m
+    const pad = pts.length > 1 ? 0.004 : 0.012; // ~400 m around known points, ~1.2 km around a bare centre
     onProgress?.(0, course.holes.length, 'Getting green outlines');
     osm = await fetchOsm([Math.min(...lats) - pad, Math.min(...lons) - pad, Math.max(...lats) + pad, Math.max(...lons) + pad], { fetchFn, signal });
   }
   const matched = matchGreens(course, osm);
   const survey = await fetchSurvey(ctr, { fetchFn });
-  let done = 0, ok = 0;
+  let done = 0, ok = 0, slopes = 0, noHeights = 0;
   const problems = [];
+  const r7 = (p) => [Math.round(p.lat * 1e7) / 1e7, Math.round(p.lon * 1e7) / 1e7];
   for (const h of course.holes) {
     const m = matched[h.n];
     let polygon = m?.polygon ?? null;
     let source = 'osm';
     if (!polygon && h.green) { polygon = ellipseFromPoints(h); source = 'estimate'; }
     if (!polygon) { problems.push(h.n); onProgress?.(++done, course.holes.length, `Hole ${h.n}`); continue; }
-    try {
-      const grid = await fetchHeights(polygon, { fetchFn, signal });
-      const playFrom = m?.playFrom ?? h.tee ?? null;
-      h.shape = {
-        polygon: polygon.map((p) => [Math.round(p.lat * 1e7) / 1e7, Math.round(p.lon * 1e7) / 1e7]),
-        bunkers: (m?.bunkers ?? []).map((b) => b.map((p) => [Math.round(p.lat * 1e7) / 1e7, Math.round(p.lon * 1e7) / 1e7])),
-        source, playFrom, grid, survey, fetchedAt: new Date().toISOString(),
-      };
-      // Fill in green positions the player hasn't placed.
-      const cen = centroidOf(polygon);
-      if (!h.green || h.green.estimated) h.green = { ...cen, estimated: false, fromMap: true };
-      if (!h.front || !h.back) {
-        const fb = playFrom ? frontBack(polygon, playFrom, h.green) : null;
-        if (fb) { h.front ??= fb.front; h.back ??= fb.back; }
+    const playFrom = m?.playFrom ?? h.tee ?? null;
+    // Outline and positions first: these work anywhere OpenStreetMap does.
+    const cen = centroidOf(polygon);
+    if (!h.green || h.green.estimated) h.green = { ...cen, estimated: false, fromMap: true };
+    if (!h.front || !h.back) {
+      const fb = playFrom ? frontBack(polygon, playFrom, h.green) : null;
+      if (fb) { h.front ??= fb.front; h.back ??= fb.back; }
+    }
+    h.shape = {
+      polygon: polygon.map(r7), bunkers: (m?.bunkers ?? []).map((b) => b.map(r7)),
+      source, playFrom, grid: h.shape?.grid ?? null, survey, fetchedAt: new Date().toISOString(),
+    };
+    ok++;
+    // Heights: Queensland only. After two holes with no coverage, stop asking.
+    if (noHeights < 2) {
+      try {
+        h.shape.grid = await fetchHeights(polygon, { fetchFn, signal });
+        slopes++;
+      } catch (err) {
+        if (signal?.aborted) throw err;
+        noHeights++;
       }
-      ok++;
-    } catch (err) {
-      if (signal?.aborted) throw err;
-      problems.push(h.n);
     }
     onProgress?.(++done, course.holes.length, `Hole ${h.n}`);
   }
   if (!course.centre && ctr) course.centre = ctr;
-  return { course, ok, problems };
+  return { course, ok, slopes, problems };
+}
+
+// ---------- finding a course ----------
+const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+
+const placeFromNominatim = (r) => ({
+  name: r.name || r.display_name.split(',')[0],
+  where: r.display_name.split(',').slice(1, 4).join(',').trim(),
+  centre: { lat: Number(r.lat), lon: Number(r.lon) },
+  // Nominatim: [south, north, west, east]
+  bbox: [Number(r.boundingbox[0]), Number(r.boundingbox[2]), Number(r.boundingbox[1]), Number(r.boundingbox[3])],
+});
+
+// Search golf courses by name (OpenStreetMap's Nominatim).
+export async function searchCourses(q, { fetchFn = fetch } = {}) {
+  const query = /golf/i.test(q) ? q : `${q} golf`;
+  const p = new URLSearchParams({ q: query, format: 'jsonv2', limit: '10', addressdetails: '0' });
+  const res = await fetchFn(`${NOMINATIM}?${p}`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Course search failed (${res.status}). Try again in a moment.`);
+  const list = await res.json();
+  const golf = list.filter((r) => r.type === 'golf_course' || r.category === 'leisure' && /golf/i.test(r.display_name));
+  return golf.map(placeFromNominatim);
+}
+
+// Golf courses within `km` of a point (Overpass).
+export async function nearbyCourses(pt, { km = 25, fetchFn = fetch } = {}) {
+  const q = `[out:json][timeout:30];(way["leisure"="golf_course"](around:${km * 1000},${pt.lat},${pt.lon});relation["leisure"="golf_course"](around:${km * 1000},${pt.lat},${pt.lon}););out tags center bb;`;
+  let last;
+  for (const url of OVERPASS) {
+    try {
+      const res = await fetchFn(url, { method: 'POST', body: new URLSearchParams({ data: q }) });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const d = await res.json();
+      return d.elements.filter((e) => e.tags?.name).map((e) => ({
+        name: e.tags.name,
+        where: [e.tags['addr:suburb'], e.tags['addr:city']].filter(Boolean).join(', '),
+        centre: { lat: e.center.lat, lon: e.center.lon },
+        bbox: [e.bounds.minlat, e.bounds.minlon, e.bounds.maxlat, e.bounds.maxlon],
+        km: distance(pt, { lat: e.center.lat, lon: e.center.lon }) / 1000,
+      })).sort((a, b) => a.km - b.km);
+    } catch (err) { last = err; }
+  }
+  throw new Error(`Couldn't reach OpenStreetMap (${last?.message ?? 'no response'}). Try again in a minute.`);
+}
+
+// Holes from the map's numbered hole lines: pars, stroke index (if tagged),
+// tee (start of the line). Returns null when the holes aren't numbered.
+export function holesFromOsm(osm) {
+  const ways = (osm?.elements ?? []).filter((e) => e.tags?.golf === 'hole' && /^\d+$/.test(e.tags.ref ?? ''));
+  if (!ways.length) return null;
+  const byRef = new Map(ways.map((w) => [Number(w.tags.ref), w]));
+  const count = Math.max(...byRef.keys());
+  if (count > 27 || count < 1) return null;
+  return Array.from({ length: count }, (_, i) => {
+    const w = byRef.get(i + 1);
+    const pts = w ? wayPts(w) : [];
+    const par = Number(w?.tags.par);
+    const si = Number(w?.tags.handicap);
+    return { n: i + 1, par: par >= 3 && par <= 6 ? par : 4, si: si >= 1 && si <= 18 ? si : null, tee: pts[0] ?? null, mapped: !!w };
+  });
+}
+
+// Download a found course's map data (bounding box plus a margin).
+export async function loadCourseOsm(place, { fetchFn = fetch } = {}) {
+  const pad = 0.0015; // ~150 m
+  const [s, w, n, e] = place.bbox;
+  return fetchOsm([s - pad, w - pad, n + pad, e + pad], { fetchFn });
 }
 
 // When OSM has no outline: an oval from the front/back points (or a 14 m circle).

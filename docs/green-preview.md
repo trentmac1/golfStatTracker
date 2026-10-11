@@ -8,10 +8,14 @@ Tap the green button on the hole map (the flag in an oval) to see the green from
 - **Saved with the course** after one download (Courses → Get green shapes and slopes, or from the preview), so it works without signal. Built-in courses use bundled OSM extracts in `webapp/data/osm/`, refreshed by the "Refresh course map data" workflow; other courses query Overpass from the phone.
 - The outline also improves stats: an approach counts as on the green when it finishes inside the outline, instead of within a fixed radius.
 
+## Adding courses from the map
+
+Courses → Add a course searches OpenStreetMap by name (Nominatim) or lists courses within 25 km (Overpass). Picking one downloads the course's golf features and builds the course: the number of holes and pars from the numbered `golf=hole` lines (stroke index too, when tagged), tees from the start of each line, and greens as above. If the holes aren't numbered on the map, the course is created blank for you to fill in.
+
 ## Limits
 
 - It shows the main tilt, tiers and false fronts. Breaks within a few metres of the hole are near the data's error and won't show.
 - Surveys can be years old, so a rebuilt green shows its old shape. The preview names the survey year.
-- Only Queensland has this height data, so courses elsewhere get no preview (the download reports which holes it skipped).
+- Only Queensland has this height data. Elsewhere the preview shows the outline with no slope, and distances use the mapped greens.
 
 Credits: green outlines © OpenStreetMap contributors (ODbL 1.0). Heights © State of Queensland (QldDem).

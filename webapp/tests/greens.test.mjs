@@ -77,3 +77,20 @@ test('matches OSM greens to holes, preferring a placed green over the hole line'
 });
 
 function near(a, b, tol) { assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`); }
+
+test('builds holes from the map: pars, tees and count', async () => {
+  const fs = await import('node:fs');
+  const { holesFromOsm } = await import('../js/greens.js');
+  const osm = JSON.parse(fs.readFileSync(new URL('../data/osm/ashgrove.json', import.meta.url)));
+  const holes = holesFromOsm(osm);
+  assert.equal(holes.length, 18);
+  assert.equal(holes.map((h) => h.par).join(''), '443543443344354434'); // Ashgrove card, par 68
+  assert.ok(holes.every((h) => h.tee && h.mapped));
+  assert.equal(holesFromOsm({ elements: [] }), null);
+  // a nine-hole layout with one hole missing from the map
+  const nine = { elements: [1, 2, 3, 4, 5, 6, 7, 9].map((n) => ({ tags: { golf: 'hole', ref: String(n), par: '3' }, geometry: [{ lat: -27, lon: 153 }, { lat: -27.001, lon: 153 }] })) };
+  const h9 = holesFromOsm(nine);
+  assert.equal(h9.length, 9);
+  assert.equal(h9[7].mapped, false);
+  assert.equal(h9[7].par, 4);
+});

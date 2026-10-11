@@ -7,6 +7,7 @@ import { greenRadius } from '../stats.js';
 import * as gps from '../gps.js';
 import { $, esc, toast, confirmSheet } from '../ui.js';
 import { downloadGreens } from './green.js';
+import { searchCourses, nearbyCourses, loadCourseOsm, holesFromOsm } from '../greens.js';
 
 export async function coursesView(root) {
   const courses = (await db.all('courses')).sort((a, b) => a.name.localeCompare(b.name));
@@ -17,18 +18,88 @@ export async function coursesView(root) {
         const set = c.holes.filter((h) => h.green).length;
         return `<li><a href="#/course/${c.id}"><span>${esc(c.name)}<small>Par ${c.holes.reduce((a, h) => a + h.par, 0)} · ${set}/${c.holes.length} greens set</small></span><i>›</i></a></li>`;
       }).join('')}</ul>
-      <button class="btn primary wide" data-a="new">Add a course</button>
+      <h2>Add a course</h2>
+      <form class="find-form" id="findForm">
+        <input id="findQ" type="search" placeholder="Course name" autocomplete="off" enterkeyhint="search" aria-label="Course name">
+        <button class="btn primary" type="submit">Search</button>
+      </form>
+      <button class="btn ghost wide" data-a="near">Courses near me</button>
+      <ul class="course-list find-results" id="found"></ul>
+      <p class="note" id="findMsg">Courses come from OpenStreetMap with their holes, pars, tees and green outlines filled in where the map has them.</p>
+      <button class="btn ghost wide" data-a="new">Add a blank course instead</button>
     </section>`;
+
+  let results = [];
+  const showResults = (list, empty) => {
+    results = list;
+    $('#found', root).innerHTML = list.map((r, i) => `
+      <li><button data-pick="${i}"><span>${esc(r.name)}<small>${esc([r.where, r.km != null ? `${r.km.toFixed(1)} km away` : ''].filter(Boolean).join(' · '))}</small></span><i>Add</i></button></li>`).join('');
+    $('#findMsg', root).textContent = list.length ? 'Tap a course to add it.' : empty;
+  };
+  const busy = (msg) => { $('#findMsg', root).textContent = msg; };
+
+  $('#findForm', root).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = $('#findQ', root).value.trim();
+    if (q.length < 3) { busy('Type at least 3 letters of the course name.'); return; }
+    busy('Searching…');
+    try { showResults(await searchCourses(q), `No golf course called "${q}" on the map. Try another spelling, Courses near me, or a blank course.`); }
+    catch (err) { busy(err.message); }
+  });
+
   root.addEventListener('click', async (e) => {
-    if (e.target.closest('[data-a="new"]')) {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.a === 'new') {
       const c = newCourse(db.uid(), 'New course');
       const fix = gps.latest();
       if (fix) c.centre = { lat: fix.lat, lon: fix.lon };
       await db.put('courses', c);
       location.hash = `#/course/${c.id}`;
+    } else if (b.dataset.a === 'near') {
+      busy('Finding where you are…');
+      try {
+        const pos = await gps.sample({ maxMs: 6000, want: 1, goodAcc: 100 });
+        busy('Looking for courses nearby…');
+        showResults(await nearbyCourses(pos), 'No golf courses mapped within 25 km.');
+      } catch (err) { busy(err.message); }
+    } else if (b.dataset.pick) {
+      const place = results[Number(b.dataset.pick)];
+      const existing = courses.find((c) => c.name.toLowerCase() === place.name.toLowerCase());
+      if (existing && !(await confirmSheet(`You already have ${existing.name}. Add another copy?`, 'Add copy', false))) {
+        location.hash = `#/course/${existing.id}`; return;
+      }
+      root.querySelectorAll('[data-pick]').forEach((x) => { x.disabled = true; });
+      const course = await addCourseFromMap(place, busy);
+      if (course) location.hash = `#/course/${course.id}`;
+      else root.querySelectorAll('[data-pick]').forEach((x) => { x.disabled = false; });
     }
   });
   return {};
+}
+
+// Build a course from OpenStreetMap: holes, pars, tees, greens, slopes.
+export async function addCourseFromMap(place, say = () => {}) {
+  try {
+    say(`Getting ${place.name} from OpenStreetMap…`);
+    const osm = await loadCourseOsm(place);
+    const holes = holesFromOsm(osm);
+    const course = newCourse(db.uid(), place.name, holes ? holes.map((h) => h.par) : Array(18).fill(4), place.centre, holes ? holes.map((h) => h.si) : []);
+    if (holes) holes.forEach((h, i) => { course.holes[i].tee = h.tee; });
+    course.source = 'osm';
+    await db.put('courses', course);
+    if (!holes) {
+      toast(`${place.name} added. Its holes aren't numbered on the map, so set pars and greens yourself.`, 'warn');
+      return course;
+    }
+    await downloadGreens(course, say, { osm });
+    const missing = holes.filter((h) => !h.mapped).length;
+    if (missing) toast(`${missing} hole${missing === 1 ? ' is' : 's are'} missing from the map: check pars and place ${missing === 1 ? 'that green' : 'those greens'}.`, 'warn');
+    return course;
+  } catch (err) {
+    say(err.message); toast(err.message, 'warn');
+    return null;
+  }
 }
 
 export async function courseEditView(root, { courseId }) {

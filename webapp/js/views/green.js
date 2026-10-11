@@ -47,10 +47,10 @@ export function greenSvg(h, { from, ball } = {}) {
   const shape = h.shape;
   const grid = shape.grid;
   const polygon = shapePolygon(shape);
-  const a = analyse(grid, polygon);
-  const o = grid.origin;
+  const a = grid ? analyse(grid, polygon) : null;
   // Rotation so the direction of play points up the screen.
   const centre = { lat: polygon.reduce((s, p) => s + p.lat, 0) / polygon.length, lon: polygon.reduce((s, p) => s + p.lon, 0) / polygon.length };
+  const o = grid?.origin ?? centre;
   const v = from ? toLocal(from, centre) : { x: 0, y: 1 };
   const theta = Math.atan2(v.x, v.y); // bearing of play from north, radians
   const cos = Math.cos(theta), sin = Math.sin(theta);
@@ -72,11 +72,12 @@ export function greenSvg(h, { from, ball } = {}) {
   const f = (n) => n.toFixed(2);
   const path = (pts) => `M${pts.map((p) => `${f(p[0])},${f(p[1])}`).join('L')}Z`;
 
-  // Height shading: grid cells clipped to the green.
+  // Height shading, contours and arrows need the LiDAR grid.
+  let cells = '', contourPath = '', arrows = '';
+  if (a) {
   const top = grid.y0 + grid.H * grid.dy;
   const cellXY = (c, r) => S(grid.x0 + c * grid.dx, top - r * grid.dy);
   const zr = Math.max(0.05, a.zmax - a.zmin);
-  let cells = '';
   for (let r = 0; r < grid.H; r++) for (let c = 0; c < grid.W; c++) {
     const z = grid.z[r * grid.W + c];
     if (z == null || z < a.zmin - 0.5 || z > a.zmax + 0.5) continue;
@@ -92,10 +93,10 @@ export function greenSvg(h, { from, ball } = {}) {
   for (let L = Math.ceil(a.zmin / step) * step; L < a.zmax; L += step) levels.push(L);
   const cXY = (c, r) => S(grid.x0 + (c + 0.5) * grid.dx, top - (r + 0.5) * grid.dy);
   const segs = contours(grid, levels, cXY);
-  const contourPath = segs.map(([p, q]) => `M${f(p[0])},${f(p[1])}L${f(q[0])},${f(q[1])}`).join('');
+  contourPath = segs.map(([p, q]) => `M${f(p[0])},${f(p[1])}L${f(q[0])},${f(q[1])}`).join('');
 
   // Downhill arrows, sized and weighted by steepness.
-  const arrows = a.arrows.filter((ar) => ar.pct >= 1).map((ar) => {
+  arrows = a.arrows.filter((ar) => ar.pct >= 1).map((ar) => {
     const [x, y] = S(ar.x, ar.y);
     const d = Math.hypot(ar.dx, ar.dy) || 1;
     const [ex, ey] = (() => { const q = S(ar.x + ar.dx / d, ar.y + ar.dy / d); return [q[0] - x, q[1] - y]; })();
@@ -106,27 +107,29 @@ export function greenSvg(h, { from, ball } = {}) {
     const cls = ar.pct >= 3 ? 'steep' : ar.pct >= 1.5 ? 'mod' : 'gentle';
     return `<g class="ar ${cls}"><path d="M${f(bx)},${f(by)}L${f(tx)},${f(ty)}"/><path d="M${f(tx - ex * 0.7 + hx)},${f(ty - ey * 0.7 + hy)}L${f(tx)},${f(ty)}L${f(tx - ex * 0.7 - hx)},${f(ty - ey * 0.7 - hy)}"/></g>`;
   }).join('');
+  }
 
   let ballMark = '';
   if (ball) { const q = toLocal(o, ball); const [x, y] = S(q.x, q.y); ballMark = `<circle cx="${f(x)}" cy="${f(y)}" r="0.9" class="gp-ball"/>`; }
   const depth = Math.max(...ys) - Math.min(...ys), width = Math.max(...xs) - Math.min(...xs);
 
   const svg = `<svg class="gp-svg" viewBox="${f(minX)} ${f(minY)} ${f(vbW)} ${f(vbH)}" role="img"
-      aria-label="Green for hole ${h.n}: ${esc(describeFall(a.plane, v))}">
+      aria-label="Green for hole ${h.n}: ${esc(a ? describeFall(a.plane, v) : 'outline only')}">
     <defs><clipPath id="gclip${h.n}"><path d="${path(sp)}"/></clipPath></defs>
     ${bunkers.map((b) => `<path d="${path(b)}" class="gp-bunker"/>`).join('')}
+    <path d="${path(sp)}" class="gp-base"/>
     <g clip-path="url(#gclip${h.n})">${cells}<path d="${contourPath}" class="gp-contour"/></g>
     <path d="${path(sp)}" class="gp-edge"/>
     ${arrows}${ballMark}
     <path d="M${f((minX + maxX) / 2 - 1.4)},${f(maxY - 0.6)}L${f((minX + maxX) / 2)},${f(maxY - 2.6)}L${f((minX + maxX) / 2 + 1.4)},${f(maxY - 0.6)}Z" class="gp-you"/>
   </svg>`;
-  return { svg, a, fall: describeFall(a.plane, v), depth, width };
+  return { svg, a, fall: a ? describeFall(a.plane, v) : 'No slope data for this green', depth, width };
 }
 
 // Bottom sheet with the preview, or a prompt to fetch the data.
 export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated }) {
   const h = course.holes[hole - 1];
-  if (!h.shape?.grid) {
+  if (!h.shape) {
     sheet(`
       <h3 class="sheet-title">Green ${hole}</h3>
       <p class="sheet-sub">No green shape or slope saved for ${esc(course.name)} yet.</p>
@@ -153,14 +156,15 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
   const year = h.shape.survey?.year;
   sheet(`
     <h3 class="sheet-title">Green ${hole}</h3>
-    <p class="gp-fall"><b>${esc(g.fall)}</b>${a.plane.pct >= 0.6 ? ` · ${a.plane.pct.toFixed(1)}%` : ''}</p>
-    <p class="sheet-sub">${Math.round(g.depth)} m deep × ${Math.round(g.width)} m wide · ${a.relief.toFixed(1)} m between the high and low points${a.steepShare > 0.3 ? ' · tiers or steep sections' : ''}</p>
+    <p class="gp-fall"><b>${esc(g.fall)}</b>${a && a.plane.pct >= 0.6 ? ` · ${a.plane.pct.toFixed(1)}%` : ''}</p>
+    <p class="sheet-sub">${Math.round(g.depth)} m deep × ${Math.round(g.width)} m wide${a ? ` · ${a.relief.toFixed(1)} m between the high and low points${a.steepShare > 0.3 ? ' · tiers or steep sections' : ''}` : ''}</p>
     <div class="gp-wrap">${g.svg}</div>
-    <div class="gp-legend">
+    ${a ? `<div class="gp-legend">
       <span><i class="lg-ar gentle"></i>1–1.5%</span><span><i class="lg-ar mod"></i>1.5–3%</span><span><i class="lg-ar steep"></i>over 3%</span>
       <span><i class="lg-shade"></i>lighter is higher</span>
-    </div>
-    <p class="sheet-note">${esc(fromLabel ?? 'Looking from the front')}: arrows point downhill (none where it's under 1%); lines are 10 cm height steps${a.zmax - a.zmin > 1.2 ? ' (20 cm here)' : ''}.
+    </div>` : ''}
+    ${a ? '' : `<p class="sheet-note">Slopes come from Queensland Government LiDAR, which doesn't cover this course. The outline and distances still work.</p>`}
+    <p class="sheet-note"${a ? '' : ' hidden'}>${esc(fromLabel ?? 'Looking from the front')}: arrows point downhill (none where it's under 1%); lines are 10 cm height steps${a && a.zmax - a.zmin > 1.2 ? ' (20 cm here)' : ''}.
       A guide to the main tilt, not every break: LiDAR${year ? ` from ${year}` : ''} at about 1 m, ${h.shape.source === 'estimate' ? 'outline estimated from your front and back points' : 'outline from OpenStreetMap'}.</p>
     <p class="sheet-note">${CREDITS}</p>
     <div class="sheet-row"><button class="btn ghost" data-g="refresh">Refresh data</button><button class="btn primary" data-g="close">Done</button></div>
@@ -181,18 +185,20 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
 }
 
 // Fetch and save green data for a whole course. Returns true on success.
-export async function downloadGreens(course, say = () => {}) {
+export async function downloadGreens(course, say = () => {}, { osm } = {}) {
   try {
-    let osmData = null;
-    if (course.seedKey) {
+    let osmData = osm ?? null;
+    if (!osmData && course.seedKey) {
       try { const r = await fetch(`data/osm/${course.seedKey}.json`); if (r.ok) osmData = await r.json(); } catch { /* fall back to Overpass */ }
     }
     say(osmData ? 'Using saved outlines…' : 'Getting green outlines from OpenStreetMap…');
-    const { ok, problems } = await buildCourseGreens(course, {
+    const { ok, slopes, problems } = await buildCourseGreens(course, {
       osmData, onProgress: (d, t, label) => say(`${label}: ${d} of ${t}`),
     });
     await db.put('courses', course);
-    const msg = ok ? `Saved ${ok} green${ok === 1 ? '' : 's'}.${problems.length ? ` No data for hole${problems.length === 1 ? '' : 's'} ${problems.join(', ')}.` : ''}` : 'No greens found for this course.';
+    const msg = ok
+      ? `Saved ${ok} green${ok === 1 ? '' : 's'}${slopes === ok ? ' with slopes' : slopes ? `, ${slopes} with slopes` : ' (no slope data here)'}.${problems.length ? ` Not on the map: hole${problems.length === 1 ? '' : 's'} ${problems.join(', ')}.` : ''}`
+      : 'No greens found on the map for this course.';
     say(msg); toast(msg, problems.length ? 'warn' : '');
     return ok > 0;
   } catch (err) {

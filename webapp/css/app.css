@@ -405,6 +405,7 @@ td.bar-col { height: 34px; }
 .gp-svg { display: block; width: 100%; height: auto; max-height: 52dvh; }
 .gp-svg path, .gp-svg circle { vector-effect: non-scaling-stroke; }
 .gp-fringe { fill: #3f7a45; stroke: none; }
+.gp-base { fill: hsl(128 42% 46%); stroke: none; }
 .gp-edge { fill: none; stroke: #fff; stroke-width: 2; }
 .gp-contour { fill: none; stroke: rgba(10,30,15,.45); stroke-width: 1; }
 .gp-bunker { fill: var(--sand); stroke: #c9b57f; stroke-width: 1; }
@@ -421,6 +422,12 @@ td.bar-col { height: 34px; }
 .lg-ar.mod { border-color: #4f6155; }
 .lg-ar.steep { border-color: #d6a000; border-top-width: 4px; }
 .lg-shade { display: inline-block; width: 26px; height: 12px; border-radius: 3px; background: linear-gradient(90deg, hsl(128 42% 30%), hsl(128 42% 72%)); }
+
+/* ---------- add a course ---------- */
+.find-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.find-form input { font: 600 18px/1.2 var(--body); color: var(--ink); background: var(--card); border: 2px solid var(--line); border-radius: var(--r); padding: 0 14px; min-height: 52px; width: 100%; }
+.find-results { margin-top: 12px; }
+.find-results button:disabled { opacity: .5; }
 
 /* ---------- course editor ---------- */
 .title-input { width: 100%; font: 700 32px/1.1 var(--num); border: 0; border-bottom: 2px solid var(--line); background: transparent; color: var(--ink); padding: 4px 0; }

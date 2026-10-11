@@ -135,7 +135,9 @@ export function deriveRound(course, round, shots) {
     byPar[p] = hp.length ? sum(hp, (h) => h.score) / hp.length : null;
   }
   const missCounts = {};
+  let approachHits = 0;
   for (const h of played) for (const s of h.shots) {
+    if (s.approach && s.onGreen) approachHits += 1;
     if (!s.approach || s.onGreen || !s.miss) continue;
     const b = missBucket(s.miss);
     if (b) missCounts[b] = (missCounts[b] ?? 0) + 1;
@@ -179,6 +181,7 @@ export function deriveRound(course, round, shots) {
     drivingUsesDriverOnly: driverOnly.length > 0,
     proximity: prox.length ? prox.reduce((a, b) => a + b, 0) / prox.length : null,
     missCounts,
+    approachHits,
     commonMiss: Object.entries(missCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
   };
 }

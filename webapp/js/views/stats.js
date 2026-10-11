@@ -4,7 +4,13 @@ import { deriveRound, clubDistances } from '../stats.js';
 import { DEFAULT_BAG } from '../config.js';
 import { esc, m, one, signed, fmtDate } from '../ui.js';
 
-const DIRS = ['long', 'long-right', 'right', 'short-right', 'short', 'short-left', 'left', 'long-left'];
+// Approach result grid, laid out as if looking down the shot at the green.
+const GRID = [
+  ['long-left', 'long', 'long-right'],
+  ['left', 'green', 'right'],
+  ['short-left', 'short', 'short-right'],
+];
+const cap = (t) => t[0].toUpperCase() + t.slice(1);
 
 export async function statsView(root) {
   const [rounds, courses, bag] = await Promise.all([db.all('rounds'), db.all('courses'), db.getSetting('bag', DEFAULT_BAG)]);
@@ -37,6 +43,7 @@ export async function statsView(root) {
     };
     const missCounts = {};
     for (const x of items) for (const [k, v] of Object.entries(x.r.missCounts)) missCounts[k] = (missCounts[k] ?? 0) + v;
+    const hits = sum((r) => r.approachHits);
     const fw = { left: sum((r) => r.fairwayMisses.left), right: sum((r) => r.fairwayMisses.right), short: sum((r) => r.fairwayMisses.short) };
     const clubs = clubDistances(items.flatMap((x) => x.r.holes))
       .sort((a, b) => (bag.indexOf(a.club) + 1 || 99) - (bag.indexOf(b.club) + 1 || 99));
@@ -51,14 +58,21 @@ export async function statsView(root) {
       return `<rect x="${i * bw + bw * 0.18}" y="${y}" width="${bw * 0.64}" height="${Math.max(h, 1)}" class="${t.v > 0 ? 'over' : 'under'}"><title>${fmtDate(t.x.round.date)}: ${signed(Math.round(t.v))} per 18</title></rect>`;
     }).join('');
 
+    const misses = Object.values(missCounts).reduce((a, b) => a + b, 0);
+    const approaches = misses + hits;
     const maxMiss = Math.max(1, ...Object.values(missCounts));
-    const compass = DIRS.map((d, i) => {
-      const a = (i * 45 - 90) * (Math.PI / 180);
-      const c = missCounts[d] ?? 0;
-      const r = 14 + (c / maxMiss) * 46;
-      return `<g><line x1="80" y1="80" x2="${80 + Math.cos(a) * r}" y2="${80 + Math.sin(a) * r}" class="ray ${c ? '' : 'zero'}"/>
-        <text x="${80 + Math.cos(a) * 72}" y="${80 + Math.sin(a) * 72 + 4}" class="ray-n">${c || ''}</text></g>`;
-    }).join('');
+    const topMiss = Object.entries(missCounts).sort((a, b) => b[1] - a[1])[0];
+    const missGrid = GRID.map((row) => row.map((k) => {
+      const isGreen = k === 'green';
+      const c = isGreen ? hits : missCounts[k] ?? 0;
+      const p = approaches ? Math.round((100 * c) / approaches) : 0;
+      // Misses shade by count (one hue, light to dark); the green cell is always green.
+      const lvl = 0.12 + 0.6 * (c / maxMiss);
+      const level = isGreen || !c ? '' : ` style="--lvl:${lvl.toFixed(2)}"`;
+      const cls = isGreen ? 'mg-green' : !c ? 'mg-zero' : lvl > 0.45 ? 'mg-miss dark' : 'mg-miss';
+      return `<div class="mg-cell ${cls}"${level} title="${isGreen ? 'On the green' : cap(k)}: ${c} of ${approaches}">
+        <b>${c}</b><span>${isGreen ? 'Green' : cap(k)}</span>${approaches && c ? `<small>${p}%</small>` : ''}</div>`;
+    }).join('')).join('');
     const maxClub = Math.max(50, ...clubs.map((c) => c.max)) * 1.08;
 
     root.innerHTML = `
@@ -91,14 +105,11 @@ export async function statsView(root) {
       </div>
 
       <h2>Approach misses</h2>
-      <div class="miss-wrap">
-        <svg class="compass" viewBox="0 0 160 160" role="img" aria-label="Where approach shots missed the green">
-          <circle cx="80" cy="80" r="11" class="green-dot"/>${compass}
-          <text x="80" y="10" class="dir-t">Long</text><text x="80" y="158" class="dir-t">Short</text>
-          <text x="2" y="84" class="dir-t start">Left</text><text x="158" y="84" class="dir-t end">Right</text>
-        </svg>
-        <p class="miss-note">${Object.keys(missCounts).length ? `Most common miss: <b>${esc(Object.entries(missCounts).sort((a, b) => b[1] - a[1])[0][0])}</b>. Shots aimed at the green that finished off it, seen from the shot's start.` : 'No missed approaches recorded yet.'}</p>
-      </div>
+      ${approaches ? `
+      <div class="miss-grid" role="table" aria-label="Where approach shots finished: ${hits} on the green, ${misses} missed">${missGrid}</div>
+      <p class="miss-note">${topMiss ? `Most common miss: <b>${cap(topMiss[0])}</b>, ${topMiss[1]} of ${approaches} approaches.` : 'Every approach found the green.'}
+        Shots aimed at the green, seen from where each was hit, so long is past the flag and left is left of your line.</p>`
+        : '<p class="empty">No approaches recorded yet. Tap <b>On green</b> on each green so the app knows where approaches finished.</p>'}
 
       <h2>Club distances</h2>
       ${clubs.length ? `<table class="clubs-table">

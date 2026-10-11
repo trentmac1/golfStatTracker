@@ -3,7 +3,7 @@ import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
 import { deriveHole, deriveRound, emptyHoleStat } from '../stats.js';
-import { createMap, pin, line, circle, fit, ll, hasMap } from '../map.js';
+import { createMap, pin, line, circle, fit, ll, hasMap, frame, northUp, canRotate } from '../map.js';
 import { DEFAULT_BAG, LIES, DEFAULT_CENTRE } from '../config.js';
 import { $, esc, m, signed, toast, vibrate, sheet, confirmSheet } from '../ui.js';
 
@@ -39,6 +39,7 @@ export async function holeView(root, { roundId, hole }) {
       <div id="map" class="map"></div>
       <div class="yardage" id="yardage" aria-live="polite"></div>
       <button class="map-btn" data-a="locate" aria-label="Show my position">◎</button>
+      <button class="map-btn third" data-a="rotate" aria-label="Map faces the hole" aria-pressed="true" hidden><span class="compass-n">N</span></button>
       <button class="map-btn second" data-a="fullscreen" aria-label="Full-screen map" aria-pressed="false"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="map-hint" id="mapHint" hidden></div>
       <div class="measure-card" id="measure" hidden></div>
@@ -66,8 +67,15 @@ export async function holeView(root, { roundId, hole }) {
   let measure = null; // a tapped point: distance to it and on to the green
   let measureLayer = null;
 
+  let autoRotate = await db.getSetting('mapRotate', true);
+  let lastFrom = null;      // where the view was last aimed from
+  let userMovedAt = 0;      // last time the player panned the map by hand
+
   if (hasMap()) {
-    map = createMap($('#map', root), course.centre ?? DEFAULT_CENTRE, 17);
+    map = createMap($('#map', root), course.centre ?? DEFAULT_CENTRE, 17, { rotate: true });
+    map.on('dragstart', () => { userMovedAt = Date.now(); });
+    map.on('rotate', drawCompass);
+    if (canRotate()) $('[data-a="rotate"]', root).hidden = false;
     layer = window.L.layerGroup().addTo(map);
     measureLayer = window.L.layerGroup().addTo(map);
     map.on('click', onMapTap);
@@ -117,8 +125,30 @@ export async function holeView(root, { roundId, hole }) {
     if (me) me.bringToFront?.();
   }
 
+  // Aim the view from the player (or their last shot, or the tee) at the
+  // green, so the hole plays up the screen like standing behind the ball.
+  function aimPoint() {
+    const fix = gps.latest();
+    const g = ch().green;
+    if (fix && g && distance(fix, g) < 700) return fix; // on this hole
+    const last = derived().shots.at(-1);
+    return last?.start ?? ch().tee ?? null;
+  }
+
+  function orient(from = aimPoint(), force = false) {
+    if (!map) return false;
+    const g = ch().green;
+    if (!from || !g) return false;
+    if (!force && Date.now() - userMovedAt < 30000) return false; // don't fight a manual pan
+    lastFrom = from;
+    if (autoRotate && canRotate()) frame(map, from, g);
+    else { northUp(map); fit(map, [from, g, ...derived().shots.map((s) => s.start)]); }
+    return true;
+  }
+
   function initialFit() {
     if (!map) return;
+    if (orient(undefined, true)) { fittedToFix = !!gps.latest(); return; }
     const h = ch();
     const d = derived();
     const pts = [...d.shots.map((s) => s.start), d.greenPos, h.green, h.tee];
@@ -126,6 +156,16 @@ export async function holeView(root, { roundId, hole }) {
       const prev = course.holes[n - 2]?.green;
       if (prev) map.setView(ll(prev), 17);
     } else fittedToFix = true;
+  }
+
+  function drawCompass() {
+    const b = $('[data-a="rotate"]', root);
+    if (!b || !map) return;
+    const deg = map.getBearing?.() ?? 0;
+    b.querySelector('.compass-n').style.transform = `rotate(${deg}deg)`;
+    b.classList.toggle('on', autoRotate);
+    b.setAttribute('aria-pressed', String(autoRotate));
+    b.setAttribute('aria-label', autoRotate ? 'Map faces the hole. Tap for north up' : 'North up. Tap to face the hole');
   }
 
   function onMapTap(e) {
@@ -224,8 +264,12 @@ export async function holeView(root, { roundId, hole }) {
       } else { me.setLatLng(ll(fix)); meAcc.setLatLng(ll(fix)).setRadius(fix.accuracy); }
       if (!fittedToFix) {
         fittedToFix = true;
-        const h = ch();
-        if (!fit(map, [fix, h.green, h.tee])) map.setView(ll(fix), 18);
+        if (!orient(undefined, true)) {
+          const h = ch();
+          if (!fit(map, [fix, h.green, h.tee])) map.setView(ll(fix), 18);
+        }
+      } else if (lastFrom && ch().green && distance(fix, ch().green) < 700 && distance(fix, lastFrom) > 30) {
+        orient(fix); // walked to the ball: re-aim, unless they've just panned
       }
     }
     drawYardage();
@@ -331,7 +375,9 @@ export async function holeView(root, { roundId, hole }) {
         toast('Already marked here');
         return;
       }
-      const seq = shots.reduce((a, s) => Math.max(a, s.seq ?? 0), 0) + 1;
+      // Read stored shots too, so a second open copy of the app can't reuse a number.
+      const stored = await db.shotsForRound(roundId);
+      const seq = [...shots, ...stored].reduce((a, s) => Math.max(a, s.seq ?? 0), 0) + 1;
       const shot = {
         id: db.uid(), roundId, hole: n, seq, lat: pos.lat, lon: pos.lon, accuracy: pos.accuracy,
         time: pos.time, club: null, source: 'manual', confidence: null, penalty: false,
@@ -341,7 +387,7 @@ export async function holeView(root, { roundId, hole }) {
       await db.put('shots', shot);
       vibrate();
       render();
-      if (map && !map.getBounds().contains(ll(pos))) fit(map, [...derived().shots.map((s) => s.start), ch().green]);
+      if (map && !orient(pos, true) && !map.getBounds().contains(ll(pos))) fit(map, [...derived().shots.map((s) => s.start), ch().green]);
       toast(pos.accuracy > 12 ? `Shot ${holeShots().length} marked, weak GPS ±${Math.round(pos.accuracy)} m. Drag it on the map if it's off.` : `Shot ${holeShots().length} marked`, pos.accuracy > 12 ? 'warn' : '');
     } catch (e) {
       toast(e.message, 'warn');
@@ -486,6 +532,14 @@ export async function holeView(root, { roundId, hole }) {
       setFull(on);
       db.setSetting('mapFull', on); // stays full-screen on the next hole
     }
+    else if (a === 'rotate') {
+      autoRotate = !autoRotate;
+      db.setSetting('mapRotate', autoRotate);
+      if (!orient(undefined, true)) northUp(map);
+      if (!autoRotate) northUp(map);
+      drawCompass();
+      toast(autoRotate ? 'Map faces the hole' : 'North up');
+    }
     else if (a === 'clearmeasure') { measure = null; drawMeasure(); }
     else if (a === 'locate') { const f = gps.latest(); if (f && map) map.setView(ll(f), Math.max(map.getZoom(), 18)); else toast('No GPS fix yet'); }
     else if (a === 'putts') {
@@ -510,12 +564,13 @@ export async function holeView(root, { roundId, hole }) {
     b.setAttribute('aria-pressed', String(on));
     b.setAttribute('aria-label', on ? 'Exit full-screen map' : 'Full-screen map');
     b.innerHTML = on ? `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>` : `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    if (map) setTimeout(() => map.invalidateSize(), 0);
+    if (map) setTimeout(() => { map.invalidateSize(); if (lastFrom) orient(lastFrom, true); }, 0);
   }
   db.getSetting('mapFull', false).then((on) => on && setFull(true));
 
   render();
   initialFit();
+  drawCompass();
 
   return {
     destroy() {

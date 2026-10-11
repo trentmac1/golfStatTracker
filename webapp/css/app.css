@@ -135,6 +135,12 @@ body[data-view="full"] .tabbar { display: none; }
 .yd.small span { font-size: 28px; }
 .yd-acc { align-self: flex-start; background: rgba(14,33,22,.75); color: #fff; font-size: 13px; padding: 3px 8px; border-radius: 8px; }
 .yd-note { background: rgba(255,255,255,.95); border-radius: 12px; padding: 8px 12px; font-size: 15px; pointer-events: auto; }
+.map-btn.third { top: 118px; display: grid; place-items: center; }
+.map-btn.third[hidden] { display: none; }
+.compass-n { display: grid; place-items: center; width: 30px; height: 30px; font: 700 15px/1 var(--num); color: var(--muted); transition: transform .3s; position: relative; }
+.compass-n::before { content: ''; position: absolute; top: -6px; left: 50%; margin-left: -5px; border: 5px solid transparent; border-bottom: 7px solid var(--muted); border-top: 0; }
+.map-btn.third.on .compass-n { color: var(--red); }
+.map-btn.third.on .compass-n::before { border-bottom-color: var(--red); }
 .map-btn.second { top: 64px; display: grid; place-items: center; color: var(--ink); }
 .map-btn {
   position: absolute; z-index: 400; right: 10px; top: 10px; width: 46px; height: 46px; border-radius: 12px;
@@ -241,8 +247,8 @@ body.map-full { overflow: hidden; }
 .pin.measure { width: 44px; height: 44px; margin: -22px 0 0 -22px; display: grid; place-items: center; }
 .pin.measure span { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--flag); background: rgba(255,194,26,.25); box-shadow: 0 0 0 1.5px rgba(0,0,0,.6); }
 .pin.measure-label span { background: var(--flag); color: var(--flag-ink); font-weight: 700; }
-.leaflet-interactive.measure-line { stroke: var(--flag); stroke-width: 3; stroke-opacity: .95; }
-.leaflet-interactive.measure-line.second { stroke-dasharray: 2 7; stroke-linecap: round; stroke-width: 4; }
+path.measure-line { stroke: var(--flag); stroke-width: 3; stroke-opacity: .95; }
+path.measure-line.second { stroke-dasharray: 2 7; stroke-linecap: round; stroke-width: 4; }
 
 /* ---------- map pins ---------- */
 .pin { background: none; border: 0; }
@@ -261,11 +267,11 @@ body.map-full { overflow: hidden; }
 .pin.target { width: 24px; height: 24px; margin: -12px 0 0 -12px; color: var(--flag); font: 700 30px/24px var(--num); text-align: center; text-shadow: 0 0 3px #000; }
 .pin.seg-label { width: 0; height: 0; }
 .pin.seg-label span { position: absolute; white-space: nowrap; transform: translate(-50%, -50%); padding: 1px 6px; border-radius: 6px; background: rgba(14,33,22,.8); color: #fff; font: 600 15px/1.2 var(--num); }
-.leaflet-interactive.shot-line { stroke: #fff; stroke-width: 3; stroke-opacity: .95; }
-.leaflet-interactive.target-line { stroke: var(--flag); stroke-width: 2; stroke-dasharray: 6 6; }
-.leaflet-interactive.green-ring { stroke: #fff; stroke-width: 2; fill: #7fd17f; fill-opacity: .18; stroke-dasharray: 4 4; }
-.leaflet-interactive.me { stroke: #fff; stroke-width: 3; fill: #2f80ed; fill-opacity: 1; }
-.leaflet-interactive.me-acc { stroke: none; fill: #2f80ed; fill-opacity: .15; }
+path.shot-line { stroke: #fff; stroke-width: 3; stroke-opacity: .95; }
+path.target-line { stroke: var(--flag); stroke-width: 2; stroke-dasharray: 6 6; }
+path.green-ring { stroke: #fff; stroke-width: 2; fill: #7fd17f; fill-opacity: .18; stroke-dasharray: 4 4; }
+path.me { stroke: #fff; stroke-width: 3; fill: #2f80ed; fill-opacity: 1; }
+path.me-acc { stroke: none; fill: #2f80ed; fill-opacity: .15; }
 .leaflet-container { font-family: var(--body); background: #2b3a2f; }
 /* Imagery credit: required by Esri's terms, kept as small and faint as possible. */
 .leaflet-container .leaflet-control-attribution {
@@ -335,16 +341,24 @@ dialog.sheet::backdrop { background: rgba(10,25,15,.55); }
 .trend rect.over { fill: var(--blue); }
 .trend rect.under { fill: var(--red); }
 .trend .axis-t { font: 600 11px var(--num); fill: var(--muted); }
-.miss-wrap { display: grid; grid-template-columns: 170px 1fr; gap: 14px; align-items: center; }
-.compass { width: 170px; height: 170px; background: var(--card); border: 1px solid var(--line); border-radius: 50%; }
-.compass .ray { stroke: var(--turf-deep); stroke-width: 9; stroke-linecap: round; }
-.compass .ray.zero { stroke: var(--line); stroke-width: 3; }
-.compass .ray-n { font: 700 13px var(--num); text-anchor: middle; fill: var(--ink); }
-.compass .dir-t { font: 600 10px var(--num); text-anchor: middle; fill: var(--muted); }
-.compass .dir-t.start { text-anchor: start; }
-.compass .dir-t.end { text-anchor: end; }
-.compass .green-dot { fill: #8fd18f; }
-.miss-note { margin: 0; color: var(--muted); font-size: 15px; }
+.miss-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 4px;
+}
+.mg-cell {
+  aspect-ratio: 1.15; border-radius: 10px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; gap: 1px;
+  background: rgba(18,61,37,var(--lvl,0)); color: var(--ink);
+}
+.mg-cell b { font: 700 34px/1 var(--num); }
+.mg-cell span { font-size: 13px; font-weight: 600; color: var(--muted); }
+.mg-cell small { font-size: 12px; color: var(--muted); }
+.mg-zero b { color: #b7c2b4; }
+.mg-green { background: #8fd18f; border-radius: 50%; margin: 6px; aspect-ratio: auto; }
+.mg-green span, .mg-green small { color: var(--turf-deep); }
+.mg-miss.dark { color: #fff; }
+.mg-miss.dark span, .mg-miss.dark small { color: #dfeee2; }
+.miss-note { margin: 10px 0 0; color: var(--muted); font-size: 15px; }
 .clubs-table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); font-family: var(--num); font-size: 19px; }
 .clubs-table th, .clubs-table td { padding: 8px; text-align: left; border-bottom: 1px solid #e6ebe2; }
 .clubs-table thead th { font-size: 15px; color: var(--muted); }

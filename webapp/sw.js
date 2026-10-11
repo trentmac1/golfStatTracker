@@ -1,6 +1,6 @@
 // Service worker: the app works with no signal once it has loaded once.
 // Bump VERSION when you deploy so phones pick up the new files.
-const VERSION = 'v0.1.4';
+const VERSION = 'v0.1.5';
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = 'runtime-v1';   // Leaflet, fonts
 const TILES = 'tiles-v1';       // satellite imagery you've looked at
@@ -16,6 +16,7 @@ const LOCAL = [
 const REMOTE = [
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js',
 ];
 
 self.addEventListener('install', (e) => {

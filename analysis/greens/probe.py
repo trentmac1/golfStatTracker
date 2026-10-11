@@ -23,7 +23,7 @@ def overpass(q):
         time.sleep(20)
     return None
 
-for key, bbox in [("pine-rivers", "-27.2370,152.9650,-27.2250,152.9790"), ("ashgrove", "-27.4480,152.9540,-27.4390,152.9680")]:
+for key, bbox in [] and [("pine-rivers", "-27.2370,152.9650,-27.2250,152.9790"), ("ashgrove", "-27.4480,152.9540,-27.4390,152.9680")]:
     q = f"""[out:json][timeout:90];
 (way["golf"~"^(green|hole|tee|fairway|bunker)$"]({bbox});way["leisure"="golf_course"]({bbox}););
 out tags geom;"""
@@ -47,13 +47,23 @@ def grid(center, half=25, step=1.0):
             pts.append([round(lon, 8), round(lat, 8)])
     return n, pts
 
+def try_size(pts, size, fields):
+    geom = json.dumps({"points": pts[:size], "spatialReference": {"wkid": 4326}})
+    try:
+        d = post(BASE, {"geometry": geom, "geometryType": "esriGeometryMultipoint", "returnFirstValueOnly": "true",
+                        "interpolation": "RSP_BilinearInterpolation", "outFields": fields, "f": "json"})
+        return "samples" in d, (d.get("error") or {}).get("message")
+    except Exception as ex:
+        return False, str(ex)
+
+CHUNK = 900
 def samples(pts):
     vals, meta = [], None
-    for k in range(0, len(pts), 900):
-        chunk = pts[k:k + 900]
+    for k in range(0, len(pts), CHUNK):
+        chunk = pts[k:k + CHUNK]
         geom = json.dumps({"points": chunk, "spatialReference": {"wkid": 4326}})
         d = post(BASE, {"geometry": geom, "geometryType": "esriGeometryMultipoint", "returnFirstValueOnly": "true",
-                        "interpolation": "RSP_BilinearInterpolation", "outFields": "name", "f": "json"})
+                        "interpolation": "RSP_BilinearInterpolation", "outFields": "*", "f": "json"})
         if "samples" not in d:
             print("DEM error", d, flush=True); return None, None
         byId = {s["locationId"]: s for s in d["samples"]}
@@ -65,13 +75,22 @@ def samples(pts):
             if s and not meta: meta = (s.get("attributes") or {}).get("name")
     return vals, meta
 
+_, test_pts = grid((-27.22870927292386, 152.97288546616107))
+for size in [10, 50, 100, 200, 400, 600, 1000]:
+    for fields in ["*", ""]:
+        ok, msg = try_size(test_pts, size, fields)
+        print("chunk", size, "fields", repr(fields), "ok" if ok else f"FAIL {msg}", flush=True)
+# also try returnFirstValueOnly + nearest interpolation and a GET with few points
+ok_sizes = []
+for size in [10, 50, 100, 200, 400, 600, 1000]:
+    if try_size(test_pts, size, "*")[0]: ok_sizes.append(size)
+CHUNK = max(ok_sizes) if ok_sizes else 5
+print("using chunk", CHUNK, flush=True)
 greens = {
     "pine-rivers": [(-27.22870927292386, 152.97288546616107), (-27.227724382415474, 152.97024250953507), (-27.23117517164926, 152.97341716208962),
                     (-27.230005352436113, 152.97011397778988), (-27.228579356450542, 152.96999820973843), (-27.23074245034067, 152.97337572727247)],
 }
-ash = OUT.get("osm-ashgrove") or {"elements": []}
-ag = [e for e in ash["elements"] if e.get("tags", {}).get("golf") == "green"][:4]
-greens["ashgrove"] = [(sum(p["lat"] for p in e["geometry"]) / len(e["geometry"]), sum(p["lon"] for p in e["geometry"]) / len(e["geometry"])) for e in ag]
+greens["ashgrove"] = [(-27.4456727, 152.9597306), (-27.4443033, 152.9575579), (-27.4412227, 152.957357), (-27.4403814, 152.956346)]
 
 DEM = {}
 for key, cs in greens.items():

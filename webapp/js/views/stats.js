@@ -2,6 +2,8 @@
 import * as db from '../db.js';
 import { deriveRound, clubDistances } from '../stats.js';
 import { DEFAULT_BAG } from '../config.js';
+import { sgSummary, clubReport, CATEGORIES } from '../sg.js';
+import { estimate } from '../handicap.js';
 import { esc, m, one, signed, fmtDate } from '../ui.js';
 
 // Approach result grid, laid out as if looking down the shot at the green.
@@ -73,6 +75,52 @@ export async function statsView(root) {
       return `<div class="mg-cell ${cls}"${level} title="${isGreen ? 'On the green' : cap(k)}: ${c} of ${approaches}">
         <b>${c}</b><span>${isGreen ? 'Green' : cap(k)}</span>${approaches && c ? `<small>${p}%</small>` : ''}</div>`;
     }).join('')).join('');
+    // ---------- handicap estimate ----------
+    const hcRounds = items.map((x) => ({
+      rating: x.course.rating, slope: x.course.slope,
+      holes: x.r.holes.map((h) => ({ par: h.par, si: x.course.holes[h.hole - 1]?.si ?? null, score: h.complete ? h.score : null })),
+    }));
+    const hc = estimate(hcRounds);
+    const noRating = [...new Set(items.filter((x) => !x.course.rating || !x.course.slope).map((x) => x.course))];
+    const hcNote = hc.index != null
+      ? `Average of your best ${hc.used} of ${hc.of} score differentials${hc.of < items.length ? ' (most recent 20)' : ''}, World Handicap System method. An estimate, not an official Golf Australia handicap.`
+      : hc.usable ? `A handicap estimate needs 3 rated rounds: ${3 - hc.usable} more to go. A differential is what that round would count as towards a handicap.`
+      : 'Needs rounds of 14 or more holes on a course with its rating and slope entered.';
+    const hcMissing = noRating.length
+      ? `<p class="note warn-note">Add the rating and slope for ${noRating.map((c) => `<a href="#/course/${c.id}">${esc(c.name)}</a>`).join(', ')} (on the scorecard) so ${noRating.length === 1 ? 'its rounds count' : 'their rounds count'}.</p>` : '';
+
+    // ---------- strokes gained ----------
+    const sg = sgSummary(items.flatMap((x) => x.r.holes.map((dh) => [dh, x.round.holes?.[dh.hole]])));
+    const sgPer18 = (v) => (sg.holes ? (v / sg.holes) * 18 : 0);
+    const sgRows = CATEGORIES.map(([k, label]) => ({ k, label, v: sgPer18(sg.by[k]) }));
+    const sgMax = Math.max(1, ...sgRows.map((r) => Math.abs(r.v)));
+    const worst = [...sgRows].sort((a, b) => a.v - b.v)[0];
+    const best = [...sgRows].sort((a, b) => b.v - a.v)[0];
+    // Zero sits in the middle only when there are both gains and losses.
+    const anyGain = sgRows.some((r) => r.v > 0.05);
+    const anyLoss = sgRows.some((r) => r.v < -0.05);
+    const zero = anyGain && anyLoss ? 50 : anyGain ? 0 : 100;
+    const sgBars = sgRows.map((r) => {
+      const room = r.v < 0 ? zero : 100 - zero;
+      const w = (Math.abs(r.v) / sgMax) * room;
+      return `<div class="sg-row" title="${r.label}: ${r.v.toFixed(1)} strokes per round">
+        <span class="sg-label">${r.label}</span>
+        <span class="sg-track" style="--zero:${zero}%"><i class="sg-bar ${r.v < 0 ? 'loss' : 'gain'}" style="${r.v < 0 ? `right:${100 - zero}%;width:${w}%` : `left:${zero}%;width:${w}%`}"></i></span>
+        <b class="sg-val">${r.v > 0 ? '+' : r.v < 0 ? '−' : ''}${Math.abs(r.v).toFixed(1)}</b></div>`;
+    }).join('');
+
+    // ---------- clubs to work on ----------
+    const clubsSg = clubReport(sg.shots).filter((c) => c.enough);
+    const avgPerShot = sg.shots.length ? sg.shots.reduce((a, x) => a + x.sg, 0) / sg.shots.length : 0;
+    const workOn = clubsSg.filter((c) => c.perShot < avgPerShot).slice(0, 3);
+    const strongest = [...clubsSg].reverse().find((c) => c.perShot >= avgPerShot);
+    const why = (c) => [
+      `${Math.abs(c.perShot).toFixed(2)} strokes lost per shot`,
+      c.mishitPct >= 25 ? `${c.mishitPct}% mishit` : '',
+      c.penalties ? `${c.penalties} penalt${c.penalties === 1 ? 'y' : 'ies'}` : '',
+      c.topMiss ? `misses ${c.topMiss}` : '',
+    ].filter(Boolean).join(' · ');
+
     const maxClub = Math.max(50, ...clubs.map((c) => c.max)) * 1.08;
 
     root.innerHTML = `
@@ -84,10 +132,17 @@ export async function statsView(root) {
         <p class="sub">${items.length} ${items.length === 1 ? 'round' : 'rounds'}, ${holes} holes</p>
       </header>
 
+      <div class="hc-card">
+        <div class="hc-num">${hc.index != null ? `<b>${hc.index.toFixed(1)}</b><span>Handicap estimate</span>`
+          : hc.usable ? `<b>${hc.diffs.at(-1).toFixed(1)}</b><span>Latest differential</span>` : '<b class="none">–</b><span>Handicap estimate</span>'}</div>
+        <p>${hcNote}</p>
+      </div>
+      ${hcMissing}
+
       <h2>Score to par, per 18</h2>
       <svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="Score to par by round">
         <line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" class="axis"/>${bars}
-        <text x="2" y="12" class="axis-t">+${Math.round(maxAbs)}</text><text x="2" y="${H - 3}" class="axis-t">−${Math.round(maxAbs)}</text>
+        <text x="${W - 3}" y="12" class="axis-t end">+${Math.round(maxAbs)}</text><text x="${W - 3}" y="${H - 3}" class="axis-t end">−${Math.round(maxAbs)}</text>
       </svg>
 
       <div class="tiles">
@@ -103,6 +158,22 @@ export async function statsView(root) {
         <div class="tile"><b>${avgOf((r) => r.drivingDistance) ? `${m(avgOf((r) => r.drivingDistance))} m` : '–'}</b><span>Driving distance</span></div>
         <div class="tile"><b>${avgOf((r) => r.proximity) != null ? `${m(avgOf((r) => r.proximity))} m` : '–'}</b><span>Approach to centre</span></div>
       </div>
+
+      <h2>Strokes gained</h2>
+      ${sg.holes ? `
+      <div class="sg-chart" role="table" aria-label="Strokes gained per round by area against a tour pro">${sgBars}
+        <div class="sg-axis"><span></span><span class="sg-axis-mid">${zero === 100 ? '<i>← Strokes lost</i><i>0</i>' : zero === 0 ? '<i>0</i><i>Strokes gained →</i>' : '<i>Lost</i><i>0</i><i>Gained</i>'}</span><span></span></div>
+      </div>
+      <p class="note">Per round, against a PGA Tour player from the same spots (Broadie baseline), so every area will show a loss. Compare the areas with each other: the biggest bar is where you give away the most. ${worst ? `Biggest gap: <b>${worst.label}</b> (${Math.abs(worst.v).toFixed(1)} per round). Closest to tour: <b>${best.label}</b>.` : ''}
+        Putting uses your first-putt length when you enter it, otherwise an estimate from where your ball sat on the green.</p>`
+        : '<p class="empty">Strokes gained needs finished holes with a green set and every shot marked.</p>'}
+
+      <h2>Clubs to work on</h2>
+      ${workOn.length ? `
+      <ol class="work-list">${workOn.map((c) => `<li><b>${esc(c.club)}</b><span>${why(c)}</span><small>${c.count} shots</small></li>`).join('')}</ol>
+      ${strongest ? `<p class="note">Strongest club: <b>${esc(strongest.club)}</b>, ${strongest.perShot >= 0 ? 'gaining' : 'losing only'} ${Math.abs(strongest.perShot).toFixed(2)} per shot.</p>` : ''}
+      <p class="note">Ranked by strokes lost per shot against the same tour baseline, for clubs with 3 or more shots. Your average across all clubs is ${Math.abs(avgPerShot).toFixed(2)} lost per shot.</p>`
+        : `<p class="empty">${sg.shots.some((x) => x.club) ? 'Not enough shots per club yet. Clubs need 3 or more tagged shots.' : 'Tag the club on your shots (tap a shot on the hole screen) to see which clubs cost you the most.'}</p>`}
 
       <h2>Approach misses</h2>
       ${approaches ? `

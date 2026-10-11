@@ -43,11 +43,19 @@ export async function courseEditView(root, { courseId }) {
           <input class="title-input" id="cname" value="${esc(course.name)}" aria-label="Course name" autocomplete="off"></header>
         <p class="sub">Par ${total}. Tap a par to change it. Greens and tees can be placed on the map from anywhere.</p>
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
+        <h2>Rating for handicap</h2>
+        <p class="note">From the scorecard, for the tees you play. Golf Australia cards list them as scratch (or course) rating and slope.</p>
+        <div class="rating-row">
+          <label>Tees<input id="ctee" value="${esc(course.tee ?? '')}" placeholder="e.g. White" autocomplete="off"></label>
+          <label>Rating<input id="crating" inputmode="decimal" value="${course.rating ?? ''}" placeholder="e.g. 68.8"></label>
+          <label>Slope<input id="cslope" inputmode="numeric" value="${course.slope ?? ''}" placeholder="e.g. 125"></label>
+        </div>
         <table class="par-table">
-          <thead><tr><th>Hole</th><th>Par</th><th>Green</th></tr></thead>
+          <thead><tr><th>Hole</th><th>Par</th><th>Index</th><th>Green</th></tr></thead>
           <tbody>${course.holes.map((h) => `
             <tr><th>${h.n}</th>
               <td><div class="seg tiny">${[3, 4, 5].map((p) => `<button data-hole="${h.n}" data-par="${p}" class="${h.par === p ? 'on' : ''}">${p}</button>`).join('')}</div></td>
+              <td><input class="si-input" data-si="${h.n}" inputmode="numeric" value="${h.si ?? ''}" aria-label="Stroke index, hole ${h.n}"></td>
               <td><a href="#/course/${courseId}/map/${h.n}" class="green-state ${h.green ? (h.green.estimated ? 'approx' : 'set') : ''}">${h.green ? (h.green.estimated ? 'Approx.' : 'Set') : 'Not set'}</a></td></tr>`).join('')}
           </tbody></table>
         <button class="btn ghost danger-text wide" data-a="delete">Delete course</button>
@@ -56,10 +64,29 @@ export async function courseEditView(root, { courseId }) {
   draw();
 
   root.addEventListener('change', async (e) => {
-    if (e.target.id === 'cname') {
-      course.name = e.target.value.trim() || 'Untitled course';
+    const t = e.target;
+    if (t.id === 'cname') {
+      course.name = t.value.trim() || 'Untitled course';
       await db.put('courses', course);
       toast('Name saved');
+    } else if (t.id === 'ctee') {
+      course.tee = t.value.trim();
+      await db.put('courses', course);
+      toast('Tees saved');
+    } else if (t.id === 'crating' || t.id === 'cslope') {
+      const v = parseFloat(t.value.replace(',', '.'));
+      const [key, lo, hi] = t.id === 'crating' ? ['rating', 50, 85] : ['slope', 55, 155];
+      if (t.value.trim() === '') course[key] = null;
+      else if (!Number.isFinite(v) || v < lo || v > hi) { toast(`${key === 'rating' ? 'Rating' : 'Slope'} should be between ${lo} and ${hi}`, 'warn'); t.value = course[key] ?? ''; return; }
+      else course[key] = key === 'slope' ? Math.round(v) : Math.round(v * 10) / 10;
+      await db.put('courses', course);
+      toast(`${key === 'rating' ? 'Rating' : 'Slope'} saved`);
+    } else if (t.dataset.si) {
+      const v = parseInt(t.value, 10);
+      const h = course.holes[Number(t.dataset.si) - 1];
+      h.si = Number.isFinite(v) && v >= 1 && v <= course.holes.length ? v : null;
+      t.value = h.si ?? '';
+      await db.put('courses', course);
     }
   });
   root.addEventListener('click', async (e) => {

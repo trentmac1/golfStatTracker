@@ -54,6 +54,16 @@ Geolocation needs HTTPS on a phone, so test on the phone through GitHub Pages.
 - **Courses › Place greens on the map**: set every green centre (and tees, front and back) from home on the satellite map, so distances to the green work from the first round.
 - **Backup**: JSON export/import (import merges, never deletes) and CSV export of holes and shots.
 
+### Strokes gained, clubs to work on, handicap
+
+- **Strokes gained** compares each shot with a PGA Tour player from the same spot, using Mark Broadie's published baseline: shot value = expected strokes before − expected strokes after − 1 − penalties. It's split into off the tee (par 4/5 tee shots), approach, around the green (inside 45 m) and putting, per round. Against a tour baseline every area shows a loss, so compare the areas with each other.
+  - Distances are to the green centre, because the pin isn't recorded.
+  - Untagged lies: the shot after a par 4/5 drive uses your fairway tap (Left/Right = rough); a hole's bunker count goes to its last shots inside 45 m; otherwise the average of fairway and rough.
+  - Putting uses the optional **First putt length** on the hole screen, otherwise an estimate from where your ball sat on the green.
+  - Holes are skipped if unfinished, if there's no green set, or if a hand-edited score doesn't match the marked shots.
+- **Clubs to work on** ranks clubs (3+ tagged shots) by strokes lost per shot, with mishit rate, penalties and their usual miss.
+- **Handicap estimate** follows the World Handicap System as used by Golf Australia: differential = (113 ÷ slope) × (adjusted score − course rating), holes capped at net double bogey, then the average of your lowest differentials (lowest 1 of 3 − 2.0, up to best 8 of the most recent 20). It needs each course's rating, slope and stroke indexes (Courses screen), and rounds of 14+ holes. It's an estimate, not an official handicap.
+
 ### Stat definitions
 
 - Miss direction uses the plan's formula: `long = d·û − |T−S|`, `right = d_x·û_y − d_y·û_x`. A shot is treated as aimed at the green if it's the last shot before putting, it finished within 50 m of the green, or it's a par-3 tee shot. Layups get no miss unless you tap a target.

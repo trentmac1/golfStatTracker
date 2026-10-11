@@ -7,6 +7,8 @@ import { createMap, pin, line, circle, fit, ll, hasMap, frame, northUp, canRotat
 import { DEFAULT_BAG, LIES, DEFAULT_CENTRE } from '../config.js';
 import { $, esc, m, signed, toast, vibrate, sheet, confirmSheet } from '../ui.js';
 
+// First putt length buckets (metres stored at the bucket's middle).
+const FIRST_PUTT = [[0.6, '<1'], [1.5, '1–2'], [3, '2–4'], [5, '4–6'], [8, '6–10'], [12, '10–15'], [18, '15+']];
 const FAIRWAY = [['hit', 'Hit'], ['left', 'Left'], ['right', 'Right'], ['short', 'Short']];
 const SCORE_NAMES = { '-3': 'Albatross', '-2': 'Eagle', '-1': 'Birdie', 0: 'Par', 1: 'Bogey', 2: 'Double', 3: 'Triple' };
 
@@ -332,6 +334,13 @@ export async function holeView(root, { roundId, hole }) {
           ${[0, 1, 2, 3, 4].map((p) => `<button data-a="putts" data-v="${p}" class="${h.putts === p ? 'on' : ''}">${p === 4 && (h.putts ?? 0) > 4 ? h.putts : p}${p === 4 ? '+' : ''}</button>`).join('')}
         </div>
       </div>
+      ${(h.putts ?? 0) > 0 ? `
+      <div class="stat-block">
+        <span class="sb-label">First putt length <small>(optional, for putting stats)</small></span>
+        <div class="seg fp" role="group" aria-label="First putt length in metres">
+          ${FIRST_PUTT.map(([v, t]) => `<button data-a="fp" data-v="${v}" class="${h.firstPutt === v ? 'on' : ''}">${t}</button>`).join('')}
+        </div>
+      </div>` : ''}
       ${par >= 4 ? `
       <div class="stat-block">
         <span class="sb-label">Tee shot${d.fairwayAuto ? ' <small>(from target)</small>' : ''}</span>
@@ -546,6 +555,10 @@ export async function holeView(root, { roundId, hole }) {
       const v = Number(b.dataset.v);
       if (v === 4 && (h.putts ?? 0) >= 4) h.putts += 1;
       else h.putts = h.putts === v ? null : v;
+      vibrate(); await save();
+    } else if (a === 'fp') {
+      const v = Number(b.dataset.v);
+      h.firstPutt = h.firstPutt === v ? null : v;
       vibrate(); await save();
     } else if (a === 'fw') { h.fairway = h.fairway === b.dataset.v ? null : b.dataset.v; vibrate(); await save(); }
     else if (a === 'inc' || a === 'dec') {

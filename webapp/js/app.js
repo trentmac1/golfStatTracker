@@ -12,17 +12,39 @@ import { $, esc, signed, fmtDate, toast, saveFile, pickFile, confirmSheet } from
 const ALL_CLUBS = ['Dr', '2W', '3W', '4W', '5W', '7W', '2H', '3H', '4H', '5H', '6H', '2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i', 'PW', 'AW', 'GW', 'SW', 'LW', '50°', '52°', '54°', '56°', '58°', '60°'];
 
 async function seed() {
-  const courses = await db.all('courses');
+  let courses = await db.all('courses');
   const seeded = new Set(await db.getSetting('seededCourses', []));
+  const rounds = await db.all('rounds');
+  const used = new Set(rounds.map((r) => r.courseId));
   for (const c of BUILT_IN_COURSES) {
-    if (seeded.has(c.key)) continue; // added before; respect edits or a delete
-    const existing = courses.find((x) => x.seedKey === c.key || x.name === c.name);
-    if (existing) {
-      if (!existing.seedKey) { existing.seedKey = c.key; await db.put('courses', existing); }
-    } else {
-      await db.put('courses', { ...newCourse(db.uid(), c.name, c.pars, c.centre), seedKey: c.key });
+    const matches = () => courses.filter((x) => x.seedKey === c.key || x.name === c.name);
+    if (!seeded.has(c.key)) {
+      const existing = matches()[0];
+      if (existing) {
+        if (!existing.seedKey) { existing.seedKey = c.key; await db.put('courses', existing); }
+      } else {
+        await db.put('courses', { ...newCourse(db.uid(), c.name, c.pars, c.centre, c.si), seedKey: c.key });
+      }
+      seeded.add(c.key);
+      courses = await db.all('courses');
     }
-    seeded.add(c.key);
+    // Restoring a backup onto a fresh install leaves an untouched copy of a
+    // built-in course next to the restored one: drop copies with no rounds
+    // and no greens placed.
+    const copies = matches();
+    if (copies.length > 1) {
+      let keep = copies.filter((x) => used.has(x.id) || x.holes.some((h) => h.green));
+      if (!keep.length) keep = [copies[0]]; // all empty: one is enough
+      for (const x of copies) if (!keep.includes(x)) await db.del('courses', x.id);
+      courses = await db.all('courses');
+    }
+    // Fill in stroke indexes added in later versions, never overwriting edits.
+    for (const x of matches()) {
+      if (!c.si || !x.holes.some((h) => h.si == null)) continue;
+      x.holes.forEach((h, i) => { if (h.si == null) h.si = c.si[i] ?? null; });
+      await db.put('courses', x);
+    }
+    courses = await db.all('courses');
   }
   await db.setSetting('seededCourses', [...seeded]);
 }

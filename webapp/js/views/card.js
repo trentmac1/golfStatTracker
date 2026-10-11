@@ -2,6 +2,7 @@
 import * as db from '../db.js';
 import { deriveRound } from '../stats.js';
 import { roundCsv } from '../export.js';
+import { sgSummary, CATEGORIES } from '../sg.js';
 import { esc, m, one, signed, pctText, fmtDate, toast, confirmSheet, saveFile } from '../ui.js';
 
 export function scoreClass(toPar) {
@@ -26,6 +27,14 @@ export function statTiles(r) {
     ${tile(r.chips, 'Chips & pitches')}
     ${tile(r.drivingDistance != null ? `${m(r.drivingDistance)} m` : '–', 'Driving', r.drivingDistance ? (r.drivingUsesDriverOnly ? 'driver only' : 'all tee shots, par 4–5') : '')}
     ${tile(r.proximity != null ? `${m(r.proximity)} m` : '–', 'Approach to centre', 'ball on green')}`;
+}
+
+function sgBlock(r, round) {
+  const sg = sgSummary(r.holes.map((dh) => [dh, round.holes?.[dh.hole]]));
+  if (!sg.holes) return '';
+  const rows = CATEGORIES.map(([k, label]) => `<div class="tile"><b>${sg.by[k] > 0 ? '+' : sg.by[k] < 0 ? '−' : ''}${Math.abs(sg.by[k]).toFixed(1)}</b><span>${label}</span></div>`).join('');
+  return `<h2>Strokes gained vs tour</h2><div class="tiles">${rows}</div>
+    <p class="note">${sg.holes} of ${r.holesPlayed} holes counted (finished, with a green set and shots marked). Total ${sg.total.toFixed(1)}.</p>`;
 }
 
 export async function cardView(root, { roundId }) {
@@ -69,6 +78,7 @@ export async function cardView(root, { roundId }) {
       <p class="legend"><span class="sc-mark birdie">3</span> birdie or better <span class="sc-mark bogey">5</span> bogey <span class="sc-mark double">6</span> double+ · tap a hole number to open it</p>
       <h2>This round</h2>
       <div class="tiles">${statTiles(r)}</div>
+      ${sgBlock(r, round)}
       <div class="btn-col">
         ${active ? `<button class="btn primary" data-a="finish">Finish round</button>` : `<button class="btn ghost" data-a="reopen">Reopen round</button>`}
         <button class="btn ghost" data-a="csv">Export round (CSV)</button>

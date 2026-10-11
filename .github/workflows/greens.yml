@@ -21,7 +21,7 @@ jobs:
           git config user.name "green-data bot"
           git config user.email "actions@users.noreply.github.com"
           git checkout -b probe-output
-          git add -f probe-output.txt
+          git add -f probe-output.txt probe-fixtures.json || git add -f probe-output.txt
           git commit -m "Probe output" -q
           git push -f origin probe-output
       - name: Build green data

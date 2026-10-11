@@ -43,7 +43,12 @@ export async function coursesView(root) {
     const q = $('#findQ', root).value.trim();
     if (q.length < 3) { busy('Type at least 3 letters of the course name.'); return; }
     busy('Searching…');
-    try { showResults(await searchCourses(q), `No golf course called "${q}" on the map. Try another spelling, Courses near me, or a blank course.`); }
+    // Search around where you are, or around your other courses.
+    const fix = gps.latest();
+    const centres = courses.map((c) => c.centre).filter(Boolean);
+    const near = fix ? { lat: fix.lat, lon: fix.lon }
+      : centres.length ? { lat: centres.reduce((a, c) => a + c.lat, 0) / centres.length, lon: centres.reduce((a, c) => a + c.lon, 0) / centres.length } : null;
+    try { showResults(await searchCourses(q, { near }), `No golf course matching "${q}" on the map. Try part of the club's name, Courses near me, or a blank course.`); }
     catch (err) { busy(err.message); }
   });
 

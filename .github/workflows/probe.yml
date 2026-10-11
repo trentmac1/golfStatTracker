@@ -9,8 +9,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
       - run: |
-          python analysis/probe/search_probe.py > probe-output.txt 2>&1 || true
+          node analysis/probe/search_live.mjs > probe-output.txt 2>&1 || true
           git config user.name "probe bot"; git config user.email "actions@users.noreply.github.com"
           git checkout -B probe-output
           git add -f probe-output.txt && git commit -qm "Probe output" && git push -f origin probe-output

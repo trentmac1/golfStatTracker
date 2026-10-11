@@ -8,11 +8,35 @@
 import { toLocal, fromLocal, distance } from './geo.js';
 
 export const DEM_URL = 'https://spatial-img.information.qld.gov.au/arcgis/rest/services/Elevation/QldDem/ImageServer';
+// Mirrors in order of how reliably they answered (Oct 2026); the main server
+// often times out. Queries go as GET, which needs no CORS preflight.
 const OVERPASS = [
-  'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
 ];
+
+async function overpass(q, { fetchFn = fetch, signal, timeoutMs = 25000 } = {}) {
+  let last;
+  for (const url of OVERPASS) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    const onAbort = () => ctl.abort();
+    signal?.addEventListener('abort', onAbort);
+    try {
+      const res = await fetchFn(`${url}?${new URLSearchParams({ data: q })}`, { signal: ctl.signal });
+      if (!res.ok) throw new Error(`server said ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      last = err;
+      if (signal?.aborted) throw err;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+  throw new Error(`Couldn't reach OpenStreetMap's map servers (${last?.name === 'AbortError' ? 'timed out' : last?.message ?? 'no response'}). Try again in a minute.`);
+}
 export const CREDITS = 'Green outlines © OpenStreetMap contributors (ODbL). Heights © State of Queensland (QldDem LiDAR).';
 
 // ---------- geometry helpers ----------
@@ -64,17 +88,9 @@ export function frontBack(poly, from, centre) {
 const wayPts = (e) => (e.geometry ?? []).map((g) => ({ lat: g.lat, lon: g.lon }));
 
 export async function fetchOsm(bbox, { fetchFn = fetch, signal } = {}) {
-  const [s, w, n, e] = bbox;
-  const q = `[out:json][timeout:60];(way["golf"~"^(green|hole|bunker)$"](${s},${w},${n},${e}););out tags geom;`;
-  let last;
-  for (const url of OVERPASS) {
-    try {
-      const res = await fetchFn(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal });
-      if (!res.ok) throw new Error(`OpenStreetMap server said ${res.status}`);
-      return await res.json();
-    } catch (err) { last = err; if (signal?.aborted) throw err; }
-  }
-  throw new Error(`Couldn't reach OpenStreetMap (${last?.message ?? 'no response'}). Try again in a minute.`);
+  const [south, west, north, east] = bbox;
+  const q = `[out:json][timeout:60];(way["golf"~"^(green|hole|bunker)$"](${south},${west},${north},${east}););out tags geom;`;
+  return overpass(q, { fetchFn, signal, timeoutMs: 45000 });
 }
 
 // Match OSM greens (and nearby bunkers) to the course's holes.
@@ -340,40 +356,112 @@ const placeFromNominatim = (r) => ({
   name: r.name || r.display_name.split(',')[0],
   where: r.display_name.split(',').slice(1, 4).join(',').trim(),
   centre: { lat: Number(r.lat), lon: Number(r.lon) },
-  // Nominatim: [south, north, west, east]
+  // Nominatim: [south, north, west, east] -> [south, west, north, east]
   bbox: [Number(r.boundingbox[0]), Number(r.boundingbox[2]), Number(r.boundingbox[1]), Number(r.boundingbox[3])],
 });
+const isCourse = (r) => r.category === 'leisure' && r.type === 'golf_course';
 
-// Search golf courses by name (OpenStreetMap's Nominatim).
-export async function searchCourses(q, { fetchFn = fetch } = {}) {
-  const query = /golf/i.test(q) ? q : `${q} golf`;
-  const p = new URLSearchParams({ q: query, format: 'jsonv2', limit: '10', addressdetails: '0' });
-  const res = await fetchFn(`${NOMINATIM}?${p}`, { headers: { Accept: 'application/json' } });
+async function nominatim(params, fetchFn) {
+  const res = await fetchFn(`${NOMINATIM}?${new URLSearchParams({ format: 'jsonv2', ...params })}`, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Course search failed (${res.status}). Try again in a moment.`);
-  const list = await res.json();
-  const golf = list.filter((r) => r.type === 'golf_course' || r.category === 'leisure' && /golf/i.test(r.display_name));
-  return golf.map(placeFromNominatim);
+  return res.json();
 }
 
-// Golf courses within `km` of a point (Overpass).
-export async function nearbyCourses(pt, { km = 25, fetchFn = fetch } = {}) {
-  const q = `[out:json][timeout:30];(way["leisure"="golf_course"](around:${km * 1000},${pt.lat},${pt.lon});relation["leisure"="golf_course"](around:${km * 1000},${pt.lat},${pt.lon}););out tags center bb;`;
-  let last;
-  for (const url of OVERPASS) {
-    try {
-      const res = await fetchFn(url, { method: 'POST', body: new URLSearchParams({ data: q }) });
-      if (!res.ok) throw new Error(`${res.status}`);
-      const d = await res.json();
-      return d.elements.filter((e) => e.tags?.name).map((e) => ({
-        name: e.tags.name,
-        where: [e.tags['addr:suburb'], e.tags['addr:city']].filter(Boolean).join(', '),
-        centre: { lat: e.center.lat, lon: e.center.lon },
-        bbox: [e.bounds.minlat, e.bounds.minlon, e.bounds.maxlat, e.bounds.maxlon],
-        km: distance(pt, { lat: e.center.lat, lon: e.center.lon }) / 1000,
-      })).sort((a, b) => a.km - b.km);
-    } catch (err) { last = err; }
+const overpassCourse = (pt) => (e) => ({
+  name: e.tags.name,
+  where: [e.tags['addr:suburb'], e.tags['addr:city']].filter(Boolean).join(', '),
+  centre: { lat: e.center.lat, lon: e.center.lon },
+  bbox: [e.bounds.minlat, e.bounds.minlon, e.bounds.maxlat, e.bounds.maxlon],
+  km: distance(pt, { lat: e.center.lat, lon: e.center.lon }) / 1000,
+});
+
+// Every mapped golf course within `km` of `pt`, nearest first. Overpass
+// returns them all; Nominatim (the fallback) stops at 40.
+const areaCache = new Map();
+export async function coursesAround(pt, { km = 30, fetchFn = fetch } = {}) {
+  const key = `${pt.lat.toFixed(2)},${pt.lon.toFixed(2)},${km}`;
+  if (areaCache.has(key)) return areaCache.get(key);
+  let out;
+  try {
+    const r = km * 1000;
+    const d = await overpass(`[out:json][timeout:25];(way["leisure"="golf_course"](around:${r},${pt.lat},${pt.lon});relation["leisure"="golf_course"](around:${r},${pt.lat},${pt.lon}););out tags center bb;`, { fetchFn, timeoutMs: 15000 });
+    out = d.elements.filter((e) => e.tags?.name && e.center && e.bounds).map(overpassCourse(pt));
+  } catch {
+    const deg = km / 111;
+    const list = await nominatim({
+      q: 'golf course', limit: '40', bounded: '1',
+      viewbox: `${pt.lon - deg},${pt.lat + deg},${pt.lon + deg},${pt.lat - deg}`,
+    }, fetchFn);
+    out = list.filter(isCourse).map(placeFromNominatim).map((c) => ({ ...c, km: distance(pt, c.centre) / 1000 }));
   }
-  throw new Error(`Couldn't reach OpenStreetMap (${last?.message ?? 'no response'}). Try again in a minute.`);
+  out.sort((a, b) => a.km - b.km);
+  areaCache.set(key, out);
+  return out;
+}
+
+// Edit distance, for forgiving spellings ("kaperra" -> Keperra).
+export function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
+const COMMON = new Set(['golf', 'club', 'course', 'country', 'links', 'the', 'and', 'resort']);
+const words = (t) => t.toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length >= 3 && !COMMON.has(w));
+
+// How well a course name matches what was typed: 0 = not at all.
+export function nameScore(query, name) {
+  const qs = words(query), ns = words(name);
+  if (!qs.length) return 0;
+  let score = 0;
+  for (const q of qs) {
+    let best = 0;
+    for (const n of ns) {
+      if (n === q) best = Math.max(best, 3);
+      else if (n.startsWith(q) || q.startsWith(n) && n.length >= 4) best = Math.max(best, 2);
+      else if (q.length >= 4 && editDistance(q, n.slice(0, q.length + 1)) <= (q.length >= 7 ? 2 : 1)) best = Math.max(best, 1.5);
+      else if (q.length >= 4 && editDistance(q, n) <= (q.length >= 7 ? 2 : 1)) best = Math.max(best, 1.5);
+    }
+    if (!best) return 0; // every typed word must match something
+    score += best;
+  }
+  return score;
+}
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Search by name: OpenStreetMap's place search with the name as typed (and
+// again without words like "golf club"), then forgiving matching against
+// every course around `near` (you, or your other courses).
+export async function searchCourses(q, { near, fetchFn = fetch } = {}) {
+  const found = [];
+  const seen = (c) => found.some((f) => distance(f.centre, c.centre) < 400);
+  const add = (c) => { if (!seen(c)) found.push({ ...c, km: c.km ?? (near ? distance(near, c.centre) / 1000 : null) }); };
+  const core = words(q).join(' ');
+  const queries = [q, ...(core && core !== q.toLowerCase().trim() ? [core] : [])];
+  let failed = null;
+  for (const [i, text] of queries.entries()) {
+    if (i) await pause(1100); // Nominatim allows one request a second
+    try { (await nominatim({ q: text, limit: '10' }, fetchFn)).filter(isCourse).map(placeFromNominatim).forEach(add); }
+    catch (err) { failed = err; }
+    if (found.length) break;
+  }
+  if (near) {
+    const around = await coursesAround(near, { km: 60, fetchFn }).catch(() => []);
+    around.map((c) => ({ ...c, score: nameScore(q, c.name) }))
+      .filter((c) => c.score > 0)
+      .sort((a, b) => b.score - a.score || a.km - b.km)
+      .forEach(add);
+  }
+  if (!found.length && failed) throw failed;
+  return found;
+}
+
+// Golf courses near a point.
+export async function nearbyCourses(pt, { fetchFn = fetch } = {}) {
+  return coursesAround(pt, { km: 25, fetchFn });
 }
 
 // Holes from the map's numbered hole lines: pars, stroke index (if tagged),

@@ -1,0 +1,345 @@
+// Green shapes and slopes.
+//
+// Outlines come from OpenStreetMap (golf=green, matched to golf=hole by its
+// ref number). Heights come from the Queensland Government's bare-ground
+// LiDAR terrain model (QldDem, 0.5–1 m), fetched as one small float32 TIFF per
+// green. Both are fetched once from the phone and saved with the course, so
+// the preview works offline.
+import { toLocal, fromLocal, distance } from './geo.js';
+
+export const DEM_URL = 'https://spatial-img.information.qld.gov.au/arcgis/rest/services/Elevation/QldDem/ImageServer';
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+export const CREDITS = 'Green outlines © OpenStreetMap contributors (ODbL). Heights © State of Queensland (QldDem LiDAR).';
+
+// ---------- geometry helpers ----------
+const centroidOf = (poly) => ({
+  lat: poly.reduce((a, p) => a + p.lat, 0) / poly.length,
+  lon: poly.reduce((a, p) => a + p.lon, 0) / poly.length,
+});
+
+export function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.lat > pt.lat) !== (b.lat > pt.lat) &&
+        pt.lon < ((b.lon - a.lon) * (pt.lat - a.lat)) / (b.lat - a.lat) + a.lon) inside = !inside;
+  }
+  return inside;
+}
+
+function polyDistance(pt, poly) {
+  if (pointInPolygon(pt, poly)) return 0;
+  return Math.min(...poly.map((p) => distance(pt, p)));
+}
+
+// Where the line from `from` through the green centre enters and leaves the
+// polygon: the green's front and back along the line of play.
+export function frontBack(poly, from, centre) {
+  const c = centre ?? centroidOf(poly);
+  const v = toLocal(c, from);
+  const len = Math.hypot(v.x, v.y) || 1;
+  const u = { x: -v.x / len, y: -v.y / len }; // direction of play
+  let tmin = Infinity, tmax = -Infinity;
+  const pts = poly.map((p) => toLocal(c, p));
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    // intersect ray c + t*u with segment a-b
+    const ex = b.x - a.x, ey = b.y - a.y;
+    const den = u.x * ey - u.y * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = (a.x * ey - a.y * ex) / den;
+    const s = (a.x * u.y - a.y * u.x) / den;
+    if (s < 0 || s > 1) continue;
+    tmin = Math.min(tmin, t); tmax = Math.max(tmax, t);
+  }
+  if (!Number.isFinite(tmin) || tmin > 0 || tmax < 0) return null;
+  return { front: fromLocal(c, { x: u.x * tmin, y: u.y * tmin }), back: fromLocal(c, { x: u.x * tmax, y: u.y * tmax }) };
+}
+
+// ---------- OpenStreetMap ----------
+const wayPts = (e) => (e.geometry ?? []).map((g) => ({ lat: g.lat, lon: g.lon }));
+
+export async function fetchOsm(bbox, { fetchFn = fetch, signal } = {}) {
+  const [s, w, n, e] = bbox;
+  const q = `[out:json][timeout:60];(way["golf"~"^(green|hole|bunker)$"](${s},${w},${n},${e}););out tags geom;`;
+  let last;
+  for (const url of OVERPASS) {
+    try {
+      const res = await fetchFn(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal });
+      if (!res.ok) throw new Error(`OpenStreetMap server said ${res.status}`);
+      return await res.json();
+    } catch (err) { last = err; if (signal?.aborted) throw err; }
+  }
+  throw new Error(`Couldn't reach OpenStreetMap (${last?.message ?? 'no response'}). Try again in a minute.`);
+}
+
+// Match OSM greens (and nearby bunkers) to the course's holes.
+// Returns { [holeNumber]: { polygon, bunkers, playFrom, fromOsmHole } }.
+export function matchGreens(course, osm) {
+  const els = osm?.elements ?? [];
+  const greens = els.filter((e) => e.tags?.golf === 'green').map(wayPts).filter((p) => p.length >= 3);
+  const bunkers = els.filter((e) => e.tags?.golf === 'bunker').map(wayPts).filter((p) => p.length >= 3);
+  const holeWays = new Map(els.filter((e) => e.tags?.golf === 'hole' && e.tags.ref).map((e) => [Number(e.tags.ref), wayPts(e)]));
+  const used = new Set();
+  const out = {};
+  for (const h of course.holes) {
+    const way = holeWays.get(h.n);
+    const end = way?.at(-1) ?? h.green;
+    if (!end) continue;
+    let best = null, bestD = Infinity;
+    greens.forEach((poly, i) => {
+      if (used.has(i)) return;
+      const d = polyDistance(end, poly);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best == null || bestD > 40) continue; // nothing close enough
+    used.add(best);
+    const polygon = greens[best];
+    const c = centroidOf(polygon);
+    out[h.n] = {
+      polygon,
+      bunkers: bunkers.filter((b) => polyDistance(c, b) < 45 && b.some((p) => polyDistance(p, polygon) < 12)),
+      playFrom: way && way.length >= 2 ? way.at(-2) : h.tee ?? null,
+      fromOsmHole: !!way,
+    };
+  }
+  return out;
+}
+
+// ---------- heights ----------
+// Minimal reader for the uncompressed float32 TIFF ArcGIS returns (strips or tiles).
+export function readTiff(buf) {
+  const dv = new DataView(buf);
+  const le = dv.getUint16(0) === 0x4949;
+  const u16 = (o) => dv.getUint16(o, le), u32 = (o) => dv.getUint32(o, le);
+  const ifd = u32(4);
+  const n = u16(ifd);
+  const tags = {};
+  const SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 11: 4, 12: 8, 16: 8 };
+  for (let k = 0; k < n; k++) {
+    const o = ifd + 2 + 12 * k;
+    const tag = u16(o), type = u16(o + 2), count = u32(o + 4);
+    const bytes = (SIZE[type] ?? 1) * count;
+    const at = bytes <= 4 ? o + 8 : u32(o + 8);
+    const vals = [];
+    for (let i = 0; i < Math.min(count, 4096); i++) {
+      if (type === 3) vals.push(u16(at + 2 * i));
+      else if (type === 4) vals.push(u32(at + 4 * i));
+      else if (type === 16) vals.push(Number(dv.getBigUint64(at + 8 * i, le)));
+    }
+    tags[tag] = vals;
+  }
+  const W = tags[256][0], H = tags[257][0];
+  if ((tags[259]?.[0] ?? 1) !== 1) throw new Error('Compressed height data is not supported');
+  if ((tags[258]?.[0] ?? 32) !== 32) throw new Error('Unexpected height data format');
+  const z = new Float32Array(W * H);
+  const f32 = (o) => dv.getFloat32(o, le);
+  if (tags[322]) { // tiled
+    const tw = tags[322][0], th = tags[323][0];
+    const across = Math.ceil(W / tw);
+    tags[324].forEach((off, t) => {
+      const tx = (t % across) * tw, ty = Math.floor(t / across) * th;
+      for (let r = 0; r < th && ty + r < H; r++)
+        for (let c = 0; c < tw && tx + c < W; c++) z[(ty + r) * W + tx + c] = f32(off + 4 * (r * tw + c));
+    });
+  } else { // strips
+    const rps = tags[278]?.[0] ?? H;
+    tags[273].forEach((off, s) => {
+      for (let r = 0; r < rps && s * rps + r < H; r++)
+        for (let c = 0; c < W; c++) z[(s * rps + r) * W + c] = f32(off + 4 * (r * W + c));
+    });
+  }
+  return { W, H, z };
+}
+
+// Height grid covering the polygon plus a margin, at about 1 m per cell.
+export async function fetchHeights(polygon, { fetchFn = fetch, margin = 5, signal } = {}) {
+  const c = centroidOf(polygon);
+  const loc = polygon.map((p) => toLocal(c, p));
+  const xs = loc.map((p) => p.x), ys = loc.map((p) => p.y);
+  const x0 = Math.min(...xs) - margin, x1 = Math.max(...xs) + margin;
+  const y0 = Math.min(...ys) - margin, y1 = Math.max(...ys) + margin;
+  const W = Math.min(150, Math.max(8, Math.round(x1 - x0)));
+  const H = Math.min(150, Math.max(8, Math.round(y1 - y0)));
+  const sw = fromLocal(c, { x: x0, y: y0 }), ne = fromLocal(c, { x: x1, y: y1 });
+  const p = new URLSearchParams({
+    bbox: `${sw.lon},${sw.lat},${ne.lon},${ne.lat}`, bboxSR: '4326', imageSR: '4326', size: `${W},${H}`,
+    format: 'tiff', compression: 'None', pixelType: 'F32', noData: '-9999',
+    interpolation: 'RSP_BilinearInterpolation', f: 'image',
+  });
+  const res = await fetchFn(`${DEM_URL}/exportImage?${p}`, { signal });
+  if (!res.ok) throw new Error(`Height service said ${res.status}`);
+  const t = readTiff(await res.arrayBuffer());
+  const z = Array.from(t.z, (v) => (v < -1000 || !Number.isFinite(v) ? null : Math.round(v * 100) / 100));
+  if (z.every((v) => v == null)) throw new Error('No LiDAR heights here (outside Queensland coverage?)');
+  // Row 0 is the north edge. Cell centres span the box.
+  return { origin: c, x0, y0, dx: (x1 - x0) / t.W, dy: (y1 - y0) / t.H, W: t.W, H: t.H, z };
+}
+
+// Which LiDAR survey covers a point (name like "Moreton_Bay_2018_LGA").
+export async function fetchSurvey(pt, { fetchFn = fetch } = {}) {
+  try {
+    const p = new URLSearchParams({
+      geometry: JSON.stringify({ points: [[pt.lon, pt.lat]], spatialReference: { wkid: 4326 } }),
+      geometryType: 'esriGeometryMultipoint', returnFirstValueOnly: 'true', outFields: 'name', f: 'json',
+    });
+    const res = await fetchFn(`${DEM_URL}/getSamples`, { method: 'POST', body: p });
+    const d = await res.json();
+    const name = d.samples?.[0]?.attributes?.name ?? null;
+    return { name, year: name?.match(/(19|20)\d\d/)?.[0] ?? null };
+  } catch { return { name: null, year: null }; }
+}
+
+// ---------- analysis ----------
+// Height at local metres (x east, y north) by bilinear interpolation.
+export function heightAt(grid, x, y) {
+  const fx = (x - grid.x0) / grid.dx - 0.5;
+  const fy = (grid.y0 + grid.H * grid.dy - y) / grid.dy - 0.5; // row 0 = north
+  const c0 = Math.floor(fx), r0 = Math.floor(fy);
+  const v = (r, c) => (r < 0 || c < 0 || r >= grid.H || c >= grid.W ? null : grid.z[r * grid.W + c]);
+  const a = v(r0, c0), b = v(r0, c0 + 1), cc = v(r0 + 1, c0), d = v(r0 + 1, c0 + 1);
+  if ([a, b, cc, d].some((q) => q == null)) return v(Math.round(fy), Math.round(fx));
+  const tx = fx - c0, ty = fy - r0;
+  return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + cc * (1 - tx) * ty + d * tx * ty;
+}
+
+// Slope analysis inside the green. Gradients are fitted over a 3 m window,
+// which smooths the LiDAR's ~10 cm noise but keeps tiers.
+export function analyse(grid, polygon, { step = 2.5, window = 1.5 } = {}) {
+  const c = grid.origin;
+  const loc = polygon.map((p) => toLocal(c, p));
+  const inside = (x, y) => {
+    let ins = false;
+    for (let i = 0, j = loc.length - 1; i < loc.length; j = i++) {
+      const a = loc[i], b = loc[j];
+      if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) ins = !ins;
+    }
+    return ins;
+  };
+  // Plane fit z = a x + b y + k over the green.
+  let n = 0, sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
+  let zmin = Infinity, zmax = -Infinity;
+  const xs = loc.map((p) => p.x), ys = loc.map((p) => p.y);
+  const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
+  for (let y = by0; y <= by1; y += 0.75) for (let x = bx0; x <= bx1; x += 0.75) {
+    if (!inside(x, y)) continue;
+    const z = heightAt(grid, x, y);
+    if (z == null) continue;
+    n++; sx += x; sy += y; sz += z; sxx += x * x; syy += y * y; sxy += x * y; sxz += x * z; syz += y * z;
+    zmin = Math.min(zmin, z); zmax = Math.max(zmax, z);
+  }
+  if (n < 10) return null;
+  const mx = sx / n, my = sy / n, mz = sz / n;
+  const cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my;
+  const cxz = sxz / n - mx * mz, cyz = syz / n - my * mz;
+  const det = cxx * cyy - cxy * cxy;
+  const ga = (cxz * cyy - cyz * cxy) / det; // dz/dx (east)
+  const gb = (cyz * cxx - cxz * cxy) / det; // dz/dy (north)
+  const plane = { pct: 100 * Math.hypot(ga, gb), downhill: { x: -ga, y: -gb } };
+
+  // Local gradients on a lattice for arrows.
+  const arrows = [];
+  for (let y = by0 + step / 2; y <= by1; y += step) for (let x = bx0 + step / 2; x <= bx1; x += step) {
+    if (!inside(x, y)) continue;
+    const zx1 = heightAt(grid, x + window, y), zx0 = heightAt(grid, x - window, y);
+    const zy1 = heightAt(grid, x, y + window), zy0 = heightAt(grid, x, y - window);
+    if ([zx1, zx0, zy1, zy0].some((q) => q == null)) continue;
+    const gx = (zx1 - zx0) / (2 * window), gy = (zy1 - zy0) / (2 * window);
+    arrows.push({ x, y, dx: -gx, dy: -gy, pct: 100 * Math.hypot(gx, gy) });
+  }
+  const steep = arrows.filter((a) => a.pct > 4).length / Math.max(1, arrows.length);
+  return { plane, relief: zmax - zmin, zmin, zmax, arrows, steepShare: steep };
+}
+
+// Describe the fall relative to the player: `play` is the direction of play
+// (local x/y), `downhill` the fall direction.
+export function describeFall(plane, play) {
+  if (!plane || plane.pct < 0.6) return 'Nearly flat';
+  const pl = Math.hypot(play.x, play.y) || 1, dl = Math.hypot(plane.downhill.x, plane.downhill.y) || 1;
+  const ux = play.x / pl, uy = play.y / pl;
+  const fx = plane.downhill.x / dl, fy = plane.downhill.y / dl;
+  const along = fx * ux + fy * uy;          // + = away from you
+  const across = fx * uy - fy * ux;         // + = to the right
+  const parts = [];
+  if (Math.abs(along) > 0.38) parts.push(along > 0 ? 'back' : 'towards you');
+  if (Math.abs(across) > 0.38) parts.push(across > 0 ? 'right' : 'left');
+  const dir = parts.length === 2 ? `${parts[0]} and ${parts[1]}` : parts[0];
+  const steep = plane.pct >= 3 ? 'Steep' : plane.pct >= 1.5 ? 'Moderate' : 'Gentle';
+  return `${steep} fall ${dir === 'back' ? 'away from you' : dir === 'towards you' ? 'towards you' : `to the ${dir}`}`.replace('to the towards you and', 'towards you and to the').replace('to the back and', 'away from you and to the');
+}
+
+// ---------- whole course ----------
+// Fetch outlines (OSM, or `osmData` if bundled) and heights for every hole.
+// Mutates and returns `course`. `onProgress(done, total, label)`.
+export async function buildCourseGreens(course, { osmData, fetchFn = fetch, onProgress, signal } = {}) {
+  const pts = course.holes.flatMap((h) => [h.green, h.tee]).filter(Boolean);
+  const ctr = course.centre ?? pts[0];
+  if (!ctr) throw new Error('Set the course location first (place one green on the map).');
+  let osm = osmData;
+  if (!osm) {
+    const all = pts.length ? pts : [ctr];
+    const lats = all.map((p) => p.lat), lons = all.map((p) => p.lon);
+    const pad = 0.004; // ~400 m
+    onProgress?.(0, course.holes.length, 'Getting green outlines');
+    osm = await fetchOsm([Math.min(...lats) - pad, Math.min(...lons) - pad, Math.max(...lats) + pad, Math.max(...lons) + pad], { fetchFn, signal });
+  }
+  const matched = matchGreens(course, osm);
+  const survey = await fetchSurvey(ctr, { fetchFn });
+  let done = 0, ok = 0;
+  const problems = [];
+  for (const h of course.holes) {
+    const m = matched[h.n];
+    let polygon = m?.polygon ?? null;
+    let source = 'osm';
+    if (!polygon && h.green) { polygon = ellipseFromPoints(h); source = 'estimate'; }
+    if (!polygon) { problems.push(h.n); onProgress?.(++done, course.holes.length, `Hole ${h.n}`); continue; }
+    try {
+      const grid = await fetchHeights(polygon, { fetchFn, signal });
+      const playFrom = m?.playFrom ?? h.tee ?? null;
+      h.shape = {
+        polygon: polygon.map((p) => [Math.round(p.lat * 1e7) / 1e7, Math.round(p.lon * 1e7) / 1e7]),
+        bunkers: (m?.bunkers ?? []).map((b) => b.map((p) => [Math.round(p.lat * 1e7) / 1e7, Math.round(p.lon * 1e7) / 1e7])),
+        source, playFrom, grid, survey, fetchedAt: new Date().toISOString(),
+      };
+      // Fill in green positions the player hasn't placed.
+      const cen = centroidOf(polygon);
+      if (!h.green || h.green.estimated) h.green = { ...cen, estimated: false, fromMap: true };
+      if (!h.front || !h.back) {
+        const fb = playFrom ? frontBack(polygon, playFrom, h.green) : null;
+        if (fb) { h.front ??= fb.front; h.back ??= fb.back; }
+      }
+      ok++;
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      problems.push(h.n);
+    }
+    onProgress?.(++done, course.holes.length, `Hole ${h.n}`);
+  }
+  if (!course.centre && ctr) course.centre = ctr;
+  return { course, ok, problems };
+}
+
+// When OSM has no outline: an oval from the front/back points (or a 14 m circle).
+export function ellipseFromPoints(h) {
+  const c = h.green;
+  let len = 28, ang = 0;
+  if (h.front && h.back) {
+    const f = toLocal(c, h.front), b = toLocal(c, h.back);
+    len = Math.max(12, Math.hypot(b.x - f.x, b.y - f.y));
+    ang = Math.atan2(b.y - f.y, b.x - f.x);
+  }
+  const a = len / 2, w = Math.max(8, a * 0.8);
+  const out = [];
+  for (let i = 0; i < 24; i++) {
+    const t = (i / 24) * 2 * Math.PI;
+    const x = a * Math.cos(t), y = w * Math.sin(t);
+    out.push(fromLocal(c, { x: x * Math.cos(ang) - y * Math.sin(ang), y: x * Math.sin(ang) + y * Math.cos(ang) }));
+  }
+  return out;
+}
+
+export const shapePolygon = (shape) => shape.polygon.map(([lat, lon]) => ({ lat, lon }));

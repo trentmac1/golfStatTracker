@@ -1,0 +1,16 @@
+name: Probe services
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: |
+          python analysis/probe/search_probe.py > probe-output.txt 2>&1 || true
+          git config user.name "probe bot"; git config user.email "actions@users.noreply.github.com"
+          git checkout -B probe-output
+          git add -f probe-output.txt && git commit -qm "Probe output" && git push -f origin probe-output

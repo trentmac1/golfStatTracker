@@ -1,33 +1,17 @@
-# Green preview (plan addition, 10 Oct 2026)
+# Green preview
 
-Show each green's shape and general slope on the hole screen: an outline, arrows pointing downhill, and an overall slope figure. It's a rough guide to how the green sits, not a putting read.
+Tap the green button on the hole map (the flag in an oval) to see the green from above, turned so you're looking at it from where you'll play: from you when you're on the hole, otherwise from your last shot, the hole line or the tee.
 
-Web app only, with no hardware dependency. It slots in as Phase 1b, alongside the OSM course import that was moved forward from Phase 6, and can be built while the tracker hardware is in progress.
+- **Outline** from OpenStreetMap (`golf=green`), matched to holes by the `golf=hole` line's number. A green you placed yourself wins over the map's hole line, which is sometimes numbered differently from the card (Pine Rivers hole 13). Without an OSM outline, an oval is drawn from your front and back points.
+- **Heights** from the Queensland Government's bare-ground LiDAR terrain model (QldDem ImageServer, 0.5–1 m), fetched as one uncompressed float32 TIFF per green (`exportImage`). The service allows requests from the app's address (CORS checked for `https://trentmac1.github.io`). Pine Rivers is covered by the Moreton Bay 2018 survey.
+- **Analysis:** a plane fitted over the green gives the overall fall (% and direction, described relative to your line). Arrows show local downhill direction from gradients over 5 m, hidden under 1%, so LiDAR noise of a few centimetres doesn't show as false breaks. Shading runs light (high) to dark (low), with contour lines every 10 cm (20 cm on greens with more than 1.2 m of relief).
+- **Saved with the course** after one download (Courses → Get green shapes and slopes, or from the preview), so it works without signal. Built-in courses use bundled OSM extracts in `webapp/data/osm/`, refreshed by the "Refresh course map data" workflow; other courses query Overpass from the phone.
+- The outline also improves stats: an approach counts as on the green when it finishes inside the outline, instead of within a fixed radius.
 
-## Data sources
+## Limits
 
-| What | Source | Notes |
-|---|---|---|
-| Green outline | OpenStreetMap `golf=green` polygons via the Overpass API | Free (ODbL, credit "© OpenStreetMap contributors"). Coverage per course unknown until queried. Fallback: trace the outline on the satellite map in the course editor. |
-| Heights | Queensland Government QldDem ImageServer (bare-ground LiDAR DTM, 0.5–1 m) | `https://spatial-img.information.qld.gov.au/arcgis/rest/services/Elevation/QldDem/ImageServer`. Credit "© State of Queensland". Confirm licence terms in the Queensland Spatial Catalogue before release. |
+- It shows the main tilt, tiers and false fronts. Breaks within a few metres of the hole are near the data's error and won't show.
+- Surveys can be years old, so a rebuilt green shows its old shape. The preview names the survey year.
+- Only Queensland has this height data. Elsewhere the outline still draws, with no slope.
 
-Commercial green-reading data (StrackaLine and similar) is licensed and has no public API, so it's out of scope.
-
-## Method
-
-1. Get the green polygon, from OSM or traced.
-2. Sample heights on a 1 m grid inside the polygon plus a 3 m border, using `getSamples` or `identify` on the ImageServer.
-3. Fit a plane to get the overall fall (direction and %). Then take 3 × 3 m local gradients for the arrows, and mark tiers where the local slope is over about 4%.
-4. Store the result on the course hole (`green.polygon`, `green.slope = {grid, plane, capturedAt}`), so it works offline and only needs fetching once.
-5. Hole screen: tapping the green opens a preview, showing the outline rotated so the shot direction plays up the screen, downhill arrows sized by slope, the fall in %, and where the ball sits once On green is tapped.
-
-If the phone can't call the service directly (CORS), use a small script in `/analysis` that precomputes each course's greens to JSON, committed to the repo and loaded by the app.
-
-## Limits to show in the app
-
-- LiDAR picks up the main tilt, tiers and false fronts (greens usually fall 1–3%, about 0.25–0.75 m over 25 m). Subtle breaks within a few metres of the hole are near the data's error and won't show.
-- Scans can be years old, so a rebuilt green shows its old shape. Show the capture year.
-
-## Done when
-
-Ashgrove and Pine Rivers greens show outlines and slope arrows. The main fall on at least 5 greens matches what the user sees on the course.
+Credits: green outlines © OpenStreetMap contributors (ODbL 1.0). Heights © State of Queensland (QldDem).

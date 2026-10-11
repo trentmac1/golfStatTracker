@@ -44,6 +44,10 @@ export function line(points, cls) {
   return L().polyline(points.map(ll), { className: cls, interactive: false });
 }
 
+export function polygon(points, cls) {
+  return L().polygon(points.map(ll), { className: cls, interactive: false });
+}
+
 export function circle(p, radius, cls) {
   return L().circle(ll(p), { radius, className: cls, interactive: false });
 }

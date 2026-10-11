@@ -86,9 +86,15 @@ export function matchGreens(course, osm) {
   const holeWays = new Map(els.filter((e) => e.tags?.golf === 'hole' && e.tags.ref).map((e) => [Number(e.tags.ref), wayPts(e)]));
   const used = new Set();
   const out = {};
-  for (const h of course.holes) {
+  // Holes with a green the player placed claim their green first.
+  const isPlaced = (h) => !!(h.green && !h.green.estimated && !h.green.fromMap);
+  const order = [...course.holes].sort((a, b) => isPlaced(b) - isPlaced(a));
+  for (const h of order) {
     const way = holeWays.get(h.n);
-    const end = way?.at(-1) ?? h.green;
+    // A green the player placed (or stood on) beats the map's hole line, which
+    // is sometimes numbered differently from the card.
+    const placed = h.green && !h.green.estimated && !h.green.fromMap ? h.green : null;
+    const end = placed ?? way?.at(-1) ?? h.green;
     if (!end) continue;
     let best = null, bestD = Infinity;
     greens.forEach((poly, i) => {
@@ -103,8 +109,9 @@ export function matchGreens(course, osm) {
     out[h.n] = {
       polygon,
       bunkers: bunkers.filter((b) => polyDistance(c, b) < 45 && b.some((p) => polyDistance(p, polygon) < 12)),
-      playFrom: way && way.length >= 2 ? way.at(-2) : h.tee ?? null,
-      fromOsmHole: !!way,
+      // Line of play: the map's hole line, if it actually ends at this green.
+      playFrom: way && way.length >= 2 && polyDistance(way.at(-1), polygon) < 25 ? way.at(-2) : h.tee ?? null,
+      fromOsmHole: !!way && polyDistance(way.at(-1), polygon) < 25,
     };
   }
   return out;
@@ -207,9 +214,9 @@ export function heightAt(grid, x, y) {
   return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + cc * (1 - tx) * ty + d * tx * ty;
 }
 
-// Slope analysis inside the green. Gradients are fitted over a 3 m window,
-// which smooths the LiDAR's ~10 cm noise but keeps tiers.
-export function analyse(grid, polygon, { step = 2.5, window = 1.5 } = {}) {
+// Slope analysis inside the green. Local gradients span 5 m, which keeps the
+// LiDAR's few-centimetre noise from showing as false breaks but keeps tiers.
+export function analyse(grid, polygon, { step = 3.2, window = 2.5 } = {}) {
   const c = grid.origin;
   const loc = polygon.map((p) => toLocal(c, p));
   const inside = (x, y) => {
@@ -262,14 +269,13 @@ export function describeFall(plane, play) {
   const pl = Math.hypot(play.x, play.y) || 1, dl = Math.hypot(plane.downhill.x, plane.downhill.y) || 1;
   const ux = play.x / pl, uy = play.y / pl;
   const fx = plane.downhill.x / dl, fy = plane.downhill.y / dl;
-  const along = fx * ux + fy * uy;          // + = away from you
-  const across = fx * uy - fy * ux;         // + = to the right
+  const along = fx * ux + fy * uy;   // + = away from you
+  const across = fx * uy - fy * ux;  // + = to your right
   const parts = [];
-  if (Math.abs(along) > 0.38) parts.push(along > 0 ? 'back' : 'towards you');
-  if (Math.abs(across) > 0.38) parts.push(across > 0 ? 'right' : 'left');
-  const dir = parts.length === 2 ? `${parts[0]} and ${parts[1]}` : parts[0];
-  const steep = plane.pct >= 3 ? 'Steep' : plane.pct >= 1.5 ? 'Moderate' : 'Gentle';
-  return `${steep} fall ${dir === 'back' ? 'away from you' : dir === 'towards you' ? 'towards you' : `to the ${dir}`}`.replace('to the towards you and', 'towards you and to the').replace('to the back and', 'away from you and to the');
+  if (Math.abs(along) > 0.38) parts.push(along > 0 ? 'away from you' : 'towards you');
+  if (Math.abs(across) > 0.38) parts.push(across > 0 ? 'to the right' : 'to the left');
+  const strength = plane.pct >= 3 ? 'Steep' : plane.pct >= 1.5 ? 'Moderate' : 'Gentle';
+  return `${strength} fall ${parts.join(' and ')}`;
 }
 
 // ---------- whole course ----------

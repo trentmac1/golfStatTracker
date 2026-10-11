@@ -3,7 +3,9 @@ import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
 import { deriveHole, deriveRound, emptyHoleStat } from '../stats.js';
-import { createMap, pin, line, circle, fit, ll, hasMap, frame, northUp, canRotate } from '../map.js';
+import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate } from '../map.js';
+import { openGreenSheet, viewPoint } from './green.js';
+import { shapePolygon } from '../greens.js';
 import { DEFAULT_BAG, LIES, DEFAULT_CENTRE } from '../config.js';
 import { $, esc, m, signed, toast, vibrate, sheet, confirmSheet } from '../ui.js';
 
@@ -41,6 +43,7 @@ export async function holeView(root, { roundId, hole }) {
       <div id="map" class="map"></div>
       <div class="yardage" id="yardage" aria-live="polite"></div>
       <button class="map-btn" data-a="locate" aria-label="Show my position">◎</button>
+      <button class="map-btn fourth" data-a="greenview" aria-label="Green preview"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><ellipse cx="12" cy="16" rx="9" ry="5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M12 16V3l6 3-6 3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg></button>
       <button class="map-btn third" data-a="rotate" aria-label="Map faces the hole" aria-pressed="true" hidden><span class="compass-n">N</span></button>
       <button class="map-btn second" data-a="fullscreen" aria-label="Full-screen map" aria-pressed="false"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="map-hint" id="mapHint" hidden></div>
@@ -91,7 +94,8 @@ export async function holeView(root, { roundId, hole }) {
     const d = derived();
     const h = ch();
     if (h.green) {
-      circle(h.green, d.radius, 'green-ring').addTo(layer);
+      if (h.shape?.polygon) polygon(shapePolygon(h.shape), 'green-outline').addTo(layer);
+      else circle(h.green, d.radius, 'green-ring').addTo(layer);
       pin(h.green, 'flag', '<span></span>', { draggable: true, title: 'Green centre (drag to move)' })
         .on('dragend', (e) => moveGreen(e.target.getLatLng()))
         .addTo(layer);
@@ -540,6 +544,11 @@ export async function holeView(root, { roundId, hole }) {
       const on = !document.body.classList.contains('map-full');
       setFull(on);
       db.setSetting('mapFull', on); // stays full-screen on the next hole
+    }
+    else if (a === 'greenview') {
+      const last = derived().shots.at(-1);
+      const vp = viewPoint({ fix: gps.latest(), lastShot: last?.start, shape: ch().shape, tee: ch().tee, green: ch().green });
+      openGreenSheet({ course, hole: n, from: vp?.p, fromLabel: vp?.label, ball: hs().greenPos, onUpdated: () => render() });
     }
     else if (a === 'rotate') {
       autoRotate = !autoRotate;

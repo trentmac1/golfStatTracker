@@ -1,6 +1,7 @@
 // Hole, round and multi-round statistics. Pure functions, no DOM or storage,
 // so they can be unit tested in Node.
 import { distance, miss, missLabel, missBucket, median, quantile } from './geo.js';
+import { pointInPolygon } from './greens.js';
 
 export const DEFAULT_GREEN_RADIUS = 12; // m, used until front/back are known
 export const FAIRWAY_HALF_WIDTH = 15;   // m, for auto fairway result from a tee target
@@ -44,7 +45,9 @@ export function deriveHole(courseHole, holeStat = {}, holeShots = []) {
     const onGreen =
       endKind === 'ball-on-green' ||
       (endKind === 'green-centre' && (hs.putts ?? 0) > 0) ||
-      (endKind === 'shot' && green && distance(end, green) <= radius);
+      (endKind === 'shot' && green && (courseHole?.shape?.polygon
+        ? pointInPolygon(end, courseHole.shape.polygon.map(([lat, lon]) => ({ lat, lon })))
+        : distance(end, green) <= radius));
 
     // Which point was this shot aimed at?
     let target = s.target ?? null;

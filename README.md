@@ -14,7 +14,7 @@ Setup: right-handed, tracker in the front trouser pocket, home course Ashgrove G
 ## Roadmap
 
 1. Web app, manual mode: **built**, on-course test pending
-1b. Green preview: green outlines from OpenStreetMap and slope arrows from Queensland LiDAR ([spec](docs/green-preview.md))
+1b. Green preview: **built**: outlines from OpenStreetMap, slopes from Queensland LiDAR ([details](docs/green-preview.md))
 2. Tracker bring-up: IMU, mic, GPS, BLE status in Bluefy
 3. Training data capture
 4. Offline analysis
@@ -48,6 +48,7 @@ Geolocation needs HTTPS on a phone, so test on the phone through GitHub Pages.
 - **On green**: tap it standing at your ball on the green. It measures your last shot to the ball, and on a hole with no green yet it saves an approximate green for the course.
 - **Measure**: tap anywhere on the hole map (a bunker, water, a layup spot) to see the distance from you to that point and from there to the green. Drag the yellow ring to adjust; tap × to clear.
 - **Map faces the hole**: the hole map turns so the line from you (or your last shot) to the green runs up the screen, and re-aims when you walk to your ball or mark a shot. The compass button switches to north-up and back.
+- **Green preview**: the flag button on the hole map shows the green from your side, with downhill arrows, shading and 10 cm contours. Get the data once per course under Courses (or from the preview); it's saved for offline use. See [docs/green-preview.md](docs/green-preview.md).
 - **Full-screen map**: the button under ◎ fills the screen with the map, keeping Mark ball and On green at the bottom. It stays on for the next hole until you turn it off.
 - **Putts, tee shot result, chips, bunker shots, penalties** are taps on the hole screen. Score = marked shots + putts + penalties, and can be overridden.
 - Tap a shot to set its club, lie, a penalty or mishit, or a target point on the map (for tee shots). Drag any dot on the map to correct a bad GPS position; drag the yellow flag to move the green centre.

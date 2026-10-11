@@ -6,6 +6,7 @@ import { createMap, pin, circle, fit, ll, hasMap } from '../map.js';
 import { greenRadius } from '../stats.js';
 import * as gps from '../gps.js';
 import { $, esc, toast, confirmSheet } from '../ui.js';
+import { downloadGreens } from './green.js';
 
 export async function coursesView(root) {
   const courses = (await db.all('courses')).sort((a, b) => a.name.localeCompare(b.name));
@@ -43,6 +44,8 @@ export async function courseEditView(root, { courseId }) {
           <input class="title-input" id="cname" value="${esc(course.name)}" aria-label="Course name" autocomplete="off"></header>
         <p class="sub">Par ${total}. Tap a par to change it. Greens and tees can be placed on the map from anywhere.</p>
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
+        <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape) ? 'Refresh' : 'Get'} green shapes and slopes</button>
+        <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data.` : 'Outlines from OpenStreetMap and LiDAR heights for Queensland courses. Needs signal once.'}</p>
         <h2>Rating for handicap</h2>
         <p class="note">From the scorecard, for the tees you play. Golf Australia cards list them as scratch (or course) rating and slope.</p>
         <div class="rating-row">
@@ -95,6 +98,11 @@ export async function courseEditView(root, { courseId }) {
     if (b.dataset.par) {
       course.holes[Number(b.dataset.hole) - 1].par = Number(b.dataset.par);
       await db.put('courses', course);
+      draw();
+    } else if (b.dataset.a === 'greens') {
+      b.disabled = true;
+      await downloadGreens(course, (msg) => { const el = $('#gprog', root); if (el) el.textContent = msg; });
+      b.disabled = false;
       draw();
     } else if (b.dataset.a === 'delete') {
       if (rounds.length) { toast(`This course has ${rounds.length} rounds. Delete them first.`, 'warn'); return; }

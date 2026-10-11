@@ -1,38 +1,22 @@
-name: Build green data
+name: Refresh course map data
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "probe or build"
-        default: build
 permissions:
   contents: write
 jobs:
-  greens:
+  osm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - name: Probe sources
-        if: ${{ inputs.mode == 'probe' }}
+      - name: Fetch green outlines from OpenStreetMap
+        run: python analysis/greens/update_osm.py
+      - name: Commit changes
         run: |
-          python analysis/greens/probe.py > probe-output.txt 2>&1 || true
-          git config user.name "green-data bot"
+          git config user.name "course-data bot"
           git config user.email "actions@users.noreply.github.com"
-          git checkout -b probe-output
-          git add -f probe-output.txt probe-fixtures.json || git add -f probe-output.txt
-          git commit -m "Probe output" -q
-          git push -f origin probe-output
-      - name: Build green data
-        if: ${{ inputs.mode != 'probe' }}
-        run: python analysis/greens/build_greens.py
-      - name: Commit results
-        if: ${{ inputs.mode != 'probe' }}
-        run: |
-          git config user.name "green-data bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add webapp/data/greens
+          git add webapp/data/osm
           git diff --cached --quiet && echo "No changes" && exit 0
-          git commit -m "Update green data"
+          git commit -m "Refresh OpenStreetMap course data"
           git push

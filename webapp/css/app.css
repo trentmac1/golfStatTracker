@@ -423,6 +423,15 @@ td.bar-col { height: 34px; }
 .lg-ar.steep { border-color: #d6a000; border-top-width: 4px; }
 .lg-shade { display: inline-block; width: 26px; height: 12px; border-radius: 3px; background: linear-gradient(90deg, hsl(128 42% 30%), hsl(128 42% 72%)); }
 
+/* ---------- course card entry ---------- */
+.quick-card { margin: 14px 0 6px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }
+.quick-card summary { font-weight: 700; cursor: pointer; padding: 4px 0; }
+.quick-card label { display: grid; gap: 4px; margin-top: 10px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.quick-card input { font: 700 20px/1 var(--num); letter-spacing: 1px; color: var(--ink); background: var(--paper); border: 2px solid var(--line); border-radius: 10px; padding: 10px; min-height: 48px; width: 100%; }
+.quick-card .btn { margin-top: 12px; width: 100%; }
+.seg.est button.on { background: var(--muted); }
+.est-tag { margin-left: 6px; color: #8a6a00; font-weight: 700; }
+
 /* ---------- start a round ---------- */
 .lay-len button { font-size: 22px; }
 .lay-nine button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 22px; }

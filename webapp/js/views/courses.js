@@ -92,6 +92,7 @@ export async function addCourseFromMap(place, say = () => {}) {
     const course = newCourse(db.uid(), place.name, holes ? holes.map((h) => h.par) : Array(18).fill(4), place.centre, holes ? holes.map((h) => h.si) : []);
     if (holes) holes.forEach((h, i) => {
       course.holes[i].tee = h.tee;
+      if (h.parEstimated) course.holes[i].parEstimated = true;
       if (h.green) course.holes[i].green = { ...h.green, estimated: true, fromHoleLine: true };
     });
     course.source = 'osm';
@@ -105,7 +106,9 @@ export async function addCourseFromMap(place, say = () => {}) {
     const notes = [];
     const missing = holes.filter((h) => !h.mapped).length;
     if (missing) notes.push(`${missing} hole${missing === 1 ? ' is' : 's are'} missing from the map`);
-    if (holes.some((h) => h.mapped && !h.parMapped)) notes.push(holes.every((h) => !h.parMapped) ? 'pars aren\'t on the map, so set them from the card' : 'some pars aren\'t on the map');
+    const est = holes.filter((h) => h.parEstimated).length;
+    if (est) notes.push(`${est === holes.length ? 'pars are' : `${est} pars are`} estimated from hole lengths (marked est.): check them against the card`);
+    else if (holes.some((h) => h.mapped && !h.parMapped)) notes.push('some pars aren\'t on the map, so set them from the card');
     const approx = course.holes.filter((h) => h.green?.estimated).length;
     if (approx) notes.push(`${approx} green${approx === 1 ? ' is' : 's are'} approximate (from the hole lines): tap On green to fix`);
     course.importNotes = notes;
@@ -146,11 +149,18 @@ export async function courseEditView(root, { courseId }) {
           <label>Rating<input id="crating" inputmode="decimal" value="${course.rating ?? ''}" placeholder="e.g. 68.8"></label>
           <label>Slope<input id="cslope" inputmode="numeric" value="${course.slope ?? ''}" placeholder="e.g. 125"></label>
         </div>
+        <details class="quick-card"${course.holes.some((h) => h.parEstimated) ? ' open' : ''}>
+          <summary>Type in the card</summary>
+          <label>Pars, in hole order<input id="qpars" inputmode="numeric" autocomplete="off" placeholder="${course.holes.map((h) => h.par).join('')}"></label>
+          <label>Stroke index, in hole order<input id="qsi" inputmode="numeric" autocomplete="off" placeholder="e.g. 7 15 3 11 …"></label>
+          <button class="btn primary" data-a="quick">Save card</button>
+          <p class="note">Pars as one string of digits (${course.holes.length} for this course). Stroke indexes separated by spaces or commas.</p>
+        </details>
         <table class="par-table">
           <thead><tr><th>Hole</th><th>Par</th><th>Index</th><th>Green</th></tr></thead>
           <tbody>${course.holes.map((h) => `
             <tr><th>${h.n}</th>
-              <td><div class="seg tiny">${[3, 4, 5].map((p) => `<button data-hole="${h.n}" data-par="${p}" class="${h.par === p ? 'on' : ''}">${p}</button>`).join('')}</div></td>
+              <td><div class="seg tiny ${h.parEstimated ? 'est' : ''}">${[3, 4, 5].map((p) => `<button data-hole="${h.n}" data-par="${p}" class="${h.par === p ? 'on' : ''}">${p}</button>`).join('')}</div>${h.parEstimated ? '<small class="est-tag">est.</small>' : ''}</td>
               <td><input class="si-input" data-si="${h.n}" inputmode="numeric" value="${h.si ?? ''}" aria-label="Stroke index, hole ${h.n}"></td>
               <td><a href="#/course/${courseId}/map/${h.n}" class="green-state ${h.green ? (h.green.estimated ? 'approx' : 'set') : ''}">${h.green ? (h.green.estimated ? 'Approx.' : 'Set') : 'Not set'}</a></td></tr>`).join('')}
           </tbody></table>
@@ -189,8 +199,25 @@ export async function courseEditView(root, { courseId }) {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.par) {
-      course.holes[Number(b.dataset.hole) - 1].par = Number(b.dataset.par);
+      const hh = course.holes[Number(b.dataset.hole) - 1];
+      hh.par = Number(b.dataset.par);
+      delete hh.parEstimated;
       await db.put('courses', course);
+      draw();
+    } else if (b.dataset.a === 'quick') {
+      const pars = ($('#qpars', root).value.match(/[3-6]/g) ?? []).map(Number);
+      const sis = ($('#qsi', root).value.match(/\d+/g) ?? []).map(Number);
+      const N = course.holes.length;
+      if (!pars.length && !sis.length) { toast('Type the pars or stroke indexes first', 'warn'); return; }
+      if (pars.length && pars.length !== N) { toast(`That's ${pars.length} pars; this course has ${N} holes.`, 'warn'); return; }
+      if (sis.length && (sis.length !== N || sis.some((v) => v < 1 || v > N))) { toast(`Stroke indexes need ${N} numbers from 1 to ${N}.`, 'warn'); return; }
+      course.holes.forEach((h, i) => {
+        if (pars.length) { h.par = pars[i]; delete h.parEstimated; }
+        if (sis.length) h.si = sis[i];
+      });
+      if (pars.length) course.importNotes = (course.importNotes ?? []).filter((t) => !/par/i.test(t));
+      await db.put('courses', course);
+      toast(`Saved ${[pars.length && 'pars', sis.length && 'stroke indexes'].filter(Boolean).join(' and ')}`);
       draw();
     } else if (b.dataset.count) {
       const want = Number(b.dataset.count);

@@ -12,6 +12,11 @@ Tap the green button on the hole map (the flag in an oval) to see the green from
 
 Courses → Add a course searches OpenStreetMap by name (Nominatim) or lists courses within 25 km (Overpass). Picking one downloads the course's golf features and builds the course: the number of holes and pars from the numbered `golf=hole` lines (stroke index too, when tagged), tees from the start of each line, and greens as above. If the holes aren't numbered on the map, the course is created blank for you to fill in.
 
+When the map has gaps:
+- **Pars** missing from hole lines are estimated from the line's length (tee to green centre): under 225 m par 3, under 400 m par 4, otherwise par 5. On Pine Rivers and Ashgrove this gets all 36 holes right. Estimated pars are marked "est." until you confirm or change them, and "Type in the card" on the course screen takes all the pars (and stroke indexes) in one go.
+- **Greens** without outlines are placed at the end of the hole line (approximate), and replaced when you tap On green or place them on the map.
+- **Other scorecard sources:** OpenGolfAPI (open, ODbL) only covers the US so far. GolfCourseAPI lists 30,000+ courses worldwide but needs a sign-up key and allows 35 requests a day free; its Australian coverage and terms weren't checked.
+
 ## Limits
 
 - It shows the main tilt, tiers and false fronts. Breaks within a few metres of the hole are near the data's error and won't show.

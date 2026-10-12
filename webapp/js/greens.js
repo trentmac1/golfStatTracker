@@ -480,6 +480,15 @@ export async function nearbyCourses(pt, { fetchFn = fetch } = {}) {
   return coursesAround(pt, { km: 25, fetchFn });
 }
 
+// A par from the hole's length along its map line (tee to green centre).
+// Cut-offs fitted to Pine Rivers and Ashgrove, where they get all 36 holes
+// right (longest par 3 164 m, par 4s 236-389 m, shortest par 5 415 m).
+export function parFromLength(m) {
+  if (m < 225) return 3;
+  if (m < 400) return 4;
+  return 5;
+}
+
 // Holes from the map's numbered hole lines: pars, stroke index (if tagged),
 // tee (start of the line). Returns null when the holes aren't numbered.
 export function holesFromOsm(osm) {
@@ -493,8 +502,11 @@ export function holesFromOsm(osm) {
     const pts = w ? wayPts(w) : [];
     const par = Number(w?.tags.par);
     const si = Number(w?.tags.handicap);
+    const mappedPar = par >= 3 && par <= 6;
+    const length = pts.slice(1).reduce((a, p, k) => a + distance(pts[k], p), 0);
     return {
-      n: i + 1, par: par >= 3 && par <= 6 ? par : 4, parMapped: par >= 3 && par <= 6,
+      n: i + 1, par: mappedPar ? par : length ? parFromLength(length) : 4, parMapped: mappedPar,
+      parEstimated: !mappedPar && length > 0, length: Math.round(length),
       si: si >= 1 && si <= 18 ? si : null, tee: pts[0] ?? null, mapped: !!w,
       // OSM hole lines run from the tee to the middle of the green
       green: pts.length >= 2 ? pts.at(-1) : null,

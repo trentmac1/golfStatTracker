@@ -103,3 +103,17 @@ test('forgiving course names', async () => {
   assert.equal(nameScore('north lakes', 'Rowville Lakes Public Golf Course'), 0);
   assert.equal(nameScore('kaperra', 'Carbrook Golf Club'), 0);
 });
+
+test('pars estimated from hole length when the map has none', async () => {
+  const { holesFromOsm, parFromLength } = await import('../js/greens.js');
+  assert.deepEqual([150, 224, 226, 350, 399, 415, 520].map(parFromLength), [3, 3, 4, 4, 4, 5, 5]);
+  const m = (lat) => ({ lat, lon: 153 });
+  const osm = { elements: [
+    { tags: { golf: 'hole', ref: '1' }, geometry: [m(-27), m(-27 - 160 / 111195)] },            // 160 m, no par
+    { tags: { golf: 'hole', ref: '2', par: '5' }, geometry: [m(-27), m(-27 - 300 / 111195)] },  // mapped par wins
+    { tags: { golf: 'hole', ref: '3' }, geometry: [m(-27), m(-27 - 250 / 111195), m(-27 - 480 / 111195)] }, // 480 m with a bend
+  ] };
+  const h = holesFromOsm(osm);
+  assert.deepEqual(h.map((x) => x.par), [3, 5, 5]);
+  assert.deepEqual(h.map((x) => x.parEstimated), [true, false, true]);
+});

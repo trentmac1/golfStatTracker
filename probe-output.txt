@@ -1,0 +1,3 @@
+Pine Rivers: hole fields [par,yardage,meters]; tees with stroke index 0/5; tee names 5 ; course_name differs from club: false
+Keperra: hole fields [par,yardage,meters]; tees with stroke index 0/18; tee names 18 Black(18), Blue(18), Blue(18), Black(18), White(18), Yellow(18), Yellow(18), Blue(18), White(18), Yellow(18), White(18), Red(18), Red(18), Red(18), Green(18), Red(18), Red(18), Red(18); course_name differs from club: false
+Wantima: hole fields [par,yardage,meters]; tees with stroke index 0/8; tee names 8 ; course_name differs from club: false

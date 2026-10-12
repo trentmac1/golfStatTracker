@@ -5,6 +5,7 @@ import { allCsv } from './export.js';
 import { APP_VERSION, BUILT_IN_COURSES, DEFAULT_BAG, newCourse } from './config.js';
 import { holeView } from './views/hole.js';
 import { cardView } from './views/card.js';
+import { reviewView } from './views/review.js';
 import { statsView } from './views/stats.js';
 import { coursesView, courseEditView, courseMapView } from './views/courses.js';
 import { $, esc, signed, fmtDate, toast, saveFile, pickFile, confirmSheet, sheet } from './ui.js';
@@ -233,6 +234,7 @@ const routes = [
   [/^#?\/?$/, homeView, () => ({}), 'home'],
   [/^#\/round\/([^/]+)\/hole\/(\d+)$/, holeView, (m) => ({ roundId: m[1], hole: Number(m[2]) }), null],
   [/^#\/round\/([^/]+)\/card$/, cardView, (m) => ({ roundId: m[1] }), 'rounds'],
+  [/^#\/round\/([^/]+)\/review\/(\d+)$/, reviewView, (m) => ({ roundId: m[1], hole: Number(m[2]) }), null],
   [/^#\/rounds$/, roundsView, () => ({}), 'rounds'],
   [/^#\/stats$/, statsView, () => ({}), 'stats'],
   [/^#\/courses$/, coursesView, () => ({}), 'courses'],

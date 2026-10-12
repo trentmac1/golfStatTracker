@@ -55,6 +55,7 @@ Geolocation needs HTTPS on a phone, so test on the phone through GitHub Pages.
 - Tap a shot to set its club, lie, a penalty or mishit, or a target point on the map (for tee shots). Drag any dot on the map to correct a bad GPS position; drag the yellow flag to move the green centre.
 - **Add a course** (Courses screen): search by name or list courses near you. Courses mapped in OpenStreetMap arrive with their holes, pars, tees, green centres, fronts, backs and outlines filled in, plus slopes in Queensland. Check the pars against the card and add the rating, slope and stroke indexes.
 - **Courses › Place greens on the map**: set every green centre (and tees, front and back) from home on the satellite map, so distances to the green work from the first round.
+- **Round review**: tap a round in Rounds for a hole-by-hole grid of your shot paths; tap a hole for its satellite map (facing down the hole) with every shot, its distance, club and result.
 - **Backup**: JSON export/import (import merges, never deletes) and CSV export of holes and shots.
 
 ### Strokes gained, clubs to work on, handicap

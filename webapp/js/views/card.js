@@ -3,6 +3,7 @@ import * as db from '../db.js';
 import { deriveRound, layoutLabel } from '../stats.js';
 import { roundCsv } from '../export.js';
 import { sgSummary, CATEGORIES } from '../sg.js';
+import { holeGrid } from './review.js';
 import { esc, m, one, signed, pctText, fmtDate, toast, confirmSheet, saveFile } from '../ui.js';
 
 export function scoreClass(toPar) {
@@ -76,6 +77,9 @@ export async function cardView(root, { roundId }) {
       </div>
       <div class="card-scroll">${r.holes.length > 9 ? `${half(0, 9, 'Out')}${half(9, r.holes.length, 'In')}` : half(0, r.holes.length, 'Total')}</div>
       <p class="legend"><span class="sc-mark birdie">3</span> birdie or better <span class="sc-mark bogey">5</span> bogey <span class="sc-mark double">6</span> double+ · tap a hole number to open it</p>
+      <h2>Hole by hole</h2>
+      ${holeGrid(roundId, r, course)}
+      <p class="note">Tap a hole to see your shots on the map.</p>
       <h2>This round</h2>
       <div class="tiles">${statTiles(r)}</div>
       ${sgBlock(r, round)}

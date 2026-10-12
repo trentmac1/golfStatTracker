@@ -423,6 +423,29 @@ td.bar-col { height: 34px; }
 .lg-ar.steep { border-color: #d6a000; border-top-width: 4px; }
 .lg-shade { display: inline-block; width: 26px; height: 12px; border-radius: 3px; background: linear-gradient(90deg, hsl(128 42% 30%), hsl(128 42% 72%)); }
 
+/* ---------- round review ---------- */
+.hole-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ht { position: relative; display: block; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: #2f5a37; text-decoration: none; }
+.ht-svg { display: block; width: 100%; height: 100%; }
+.ht-svg path, .ht-svg circle { vector-effect: non-scaling-stroke; }
+.ht-green { fill: #7fd17f; fill-opacity: .55; stroke: #fff; stroke-width: 1.5; }
+.ht-path { fill: none; stroke: #fff; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.ht-dot { fill: var(--flag); stroke: var(--ink); stroke-width: 1.5; }
+.ht-dot.pen { fill: var(--red); }
+.ht-empty { display: grid; place-items: center; height: 100%; color: #cfe3d4; font-size: 13px; }
+.ht-n { position: absolute; left: 6px; top: 4px; font: 700 22px/1 var(--num); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.ht-score { position: absolute; right: 6px; top: 6px; background: #fff; font: 700 15px/1 var(--num); width: 26px; height: 26px; color: var(--ink); }
+.ht-score.birdie, .ht-score.eagle { color: var(--red); }
+.ht-score.bogey, .ht-score.double { color: var(--blue); }
+.review { display: flex; flex-direction: column; min-height: 100dvh; }
+.review .nav-btn[aria-disabled="true"] { opacity: .25; pointer-events: none; }
+.review-map { height: 52dvh; }
+.review-body { padding: 0 0 12px; }
+.review-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 12px; }
+.review-stats span { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 4px; text-align: center; font-size: 12px; color: var(--muted); font-weight: 600; }
+.review-stats b { display: block; font: 700 22px/1.1 var(--num); color: var(--ink); }
+.shot-row.static { cursor: default; }
+
 /* ---------- course card entry ---------- */
 .quick-card { margin: 14px 0 6px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }
 .quick-card summary { font-weight: 700; cursor: pointer; padding: 4px 0; }

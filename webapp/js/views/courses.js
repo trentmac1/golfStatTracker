@@ -8,6 +8,8 @@ import * as gps from '../gps.js';
 import { $, esc, toast, confirmSheet } from '../ui.js';
 import { downloadGreens } from './green.js';
 import { searchCourses, nearbyCourses, loadCourseOsm, holesFromOsm } from '../greens.js';
+import { searchScorecards, getScorecard, applyScorecard } from '../scorecards.js';
+import { sheet } from '../ui.js';
 
 export async function coursesView(root) {
   const courses = (await db.all('courses')).sort((a, b) => a.name.localeCompare(b.name));
@@ -142,6 +144,9 @@ export async function courseEditView(root, { courseId }) {
           ${[9, 18, 27, 36].map((v) => `<button data-count="${v}" class="${course.holes.length === v ? 'on' : ''}">${v}</button>`).join('')}
         </div>
         <p class="note">Courses with more than 18 holes are split into nines (1–9, 10–18, 19–27…). You pick which ones when you tee off.</p>
+        <h2>Scorecard</h2>
+        <button class="btn ghost wide" data-a="lookup">Look up scorecard</button>
+        <p class="note">${course.scorecard ? `From GolfCourseAPI: ${esc(course.scorecard.name)}, ${esc(course.scorecard.tee)} tees${course.scorecard.from > 1 ? `, on holes ${course.scorecard.from} onward` : ''}.` : 'Fills in pars, stroke indexes, hole lengths, rating and slope from GolfCourseAPI (needs your key in Backup & settings).'}</p>
         <h2>Rating for handicap</h2>
         <p class="note">From the scorecard, for the tees you play. Golf Australia cards list them as scratch (or course) rating and slope.</p>
         <div class="rating-row">
@@ -219,6 +224,10 @@ export async function courseEditView(root, { courseId }) {
       await db.put('courses', course);
       toast(`Saved ${[pars.length && 'pars', sis.length && 'stroke indexes'].filter(Boolean).join(' and ')}`);
       draw();
+    } else if (b.dataset.a === 'lookup') {
+      const key = await db.getSetting('gcaKey', '');
+      if (!key) { toast('Add your GolfCourseAPI key in Backup & settings first.', 'warn'); return; }
+      lookupSheet(course, key, () => draw());
     } else if (b.dataset.count) {
       const want = Number(b.dataset.count);
       const have = course.holes.length;
@@ -334,4 +343,64 @@ export async function courseMapView(root, { courseId, hole }) {
     }
   });
   return { destroy() { map.remove(); } };
+}
+
+// Search GolfCourseAPI, pick the course and tee, apply the card.
+function lookupSheet(course, key, onDone) {
+  const near = course.centre ?? course.holes.find((h) => h.green)?.green ?? null;
+  let results = [], picked = null;
+  sheet(`
+    <h3 class="sheet-title">Look up scorecard</h3>
+    <form class="find-form" id="lkForm">
+      <input id="lkQ" type="search" value="${esc(course.name.replace(/\b(golf|country|club|course|inc\.?)\b/gi, '').replace(/\s+/g, ' ').trim())}" aria-label="Course name" enterkeyhint="search">
+      <button class="btn primary" type="submit">Search</button>
+    </form>
+    <div id="lkBody"><p class="sheet-note">Each search uses one of your daily lookups.</p></div>`,
+  (el, close) => {
+    const body = el.querySelector('#lkBody');
+    const say = (t) => { body.innerHTML = `<p class="sheet-note">${esc(t)}</p>`; };
+    const showCourses = () => {
+      body.innerHTML = results.length ? `<ul class="course-list find-results">${results.map((r, i) => `
+        <li><button data-lk="${i}"><span>${esc(r.name)}<small>${esc([r.where, r.km != null ? `${r.km.toFixed(1)} km away` : '', `${r.tees.length} tee${r.tees.length === 1 ? '' : 's'}`].filter(Boolean).join(' · '))}</small></span><i>Pick</i></button></li>`).join('')}</ul>`
+        : '<p class="sheet-note">No match. Try the club name only, or the suburb.</p>';
+    };
+    const showTees = () => {
+      const N = course.holes.length;
+      const starts = [1, 10, 19, 28].filter((s) => s + Math.min(...picked.tees.map((t) => t.holes.length)) - 1 <= N);
+      body.innerHTML = `
+        <p class="sheet-label">${esc(picked.name)}: which tees?</p>
+        <ul class="course-list find-results">${picked.tees.map((t, i) => `
+          <li><button data-tee="${i}"><span>${esc(t.name)} <small>${t.gender === 'female' ? 'women' : 'men'} · ${t.holes.length} holes · par ${t.par}${t.metres ? ` · ${t.metres.toLocaleString()} m` : ''}${t.rating ? ` · rating ${t.rating}` : ''}${t.slope ? ` / slope ${t.slope}` : ''}</small></span><i>Use</i></button></li>`).join('')}</ul>
+        ${starts.length > 1 ? `<p class="sheet-label">Fill from hole</p><div class="seg small" id="lkFrom">${starts.map((s, i) => `<button data-from="${s}" class="${i === 0 ? 'on' : ''}">${s}</button>`).join('')}</div>` : ''}`;
+    };
+    el.querySelector('#lkForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = el.querySelector('#lkQ').value.trim();
+      if (q.length < 3) { say('Type at least 3 letters.'); return; }
+      say('Searching…');
+      try { results = (await searchScorecards(q, { key, near })); showCourses(); } catch (err) { say(err.message); }
+    });
+    el.addEventListener('click', async (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.lk) {
+        picked = results[Number(b.dataset.lk)];
+        if (!picked.tees.length) {
+          say('Getting the full scorecard…');
+          try { picked = { ...picked, ...(await getScorecard(picked.id, { key })) }; } catch (err) { say(err.message); return; }
+          if (!picked.tees.length) { say("GolfCourseAPI has no hole-by-hole card for this course."); return; }
+        }
+        showTees();
+      } else if (b.dataset.from) {
+        el.querySelectorAll('[data-from]').forEach((x) => x.classList.toggle('on', x === b));
+      } else if (b.dataset.tee) {
+        const tee = picked.tees[Number(b.dataset.tee)];
+        const from = Number(el.querySelector('[data-from].on')?.dataset.from ?? 1);
+        const n = applyScorecard(course, picked, tee, from);
+        await db.put('courses', course);
+        toast(`Filled ${n} holes from the ${tee.name} card${tee.rating && tee.slope ? ', with rating and slope' : ''}`);
+        close(); onDone?.();
+      }
+    });
+  });
 }

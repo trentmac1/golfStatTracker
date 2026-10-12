@@ -37,7 +37,7 @@ export async function holeView(root, { roundId, hole }) {
       <button class="nav-btn" data-a="prev" aria-label="Previous hole" ${pos === 0 ? 'disabled' : ''}>‹</button>
       <div class="hole-title">
         <span class="hole-no">${n}</span>
-        <span class="hole-meta"><b>Par ${ch().par}${order.length !== 18 || order[0] !== 1 ? ` <small>· ${pos + 1} of ${order.length}</small>` : ''}</b><span id="roundScore"></span></span>
+        <span class="hole-meta"><b>Par ${ch().par}${ch().metres ? ` <small>· ${ch().metres} m</small>` : ''}${order.length !== 18 || order[0] !== 1 ? ` <small>· ${pos + 1} of ${order.length}</small>` : ''}</b><span id="roundScore"></span></span>
       </div>
       <button class="nav-btn" data-a="next" aria-label="Next hole">›</button>
     </header>

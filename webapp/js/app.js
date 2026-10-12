@@ -161,7 +161,7 @@ async function roundsView(root) {
 }
 
 async function settingsView(root) {
-  const [bag, lastBackup] = await Promise.all([db.getSetting('bag', DEFAULT_BAG), db.getSetting('lastBackup', null)]);
+  const [bag, lastBackup, gcaKey] = await Promise.all([db.getSetting('bag', DEFAULT_BAG), db.getSetting('lastBackup', null), db.getSetting('gcaKey', '')]);
   const persisted = await navigator.storage?.persisted?.();
   let clubs = [...bag];
   const draw = () => {
@@ -176,6 +176,12 @@ async function settingsView(root) {
         <button class="btn ghost" data-a="csv">Export all rounds (CSV)</button>
       </div>
       <p class="note">${lastBackup ? `Last backup: ${fmtDate(lastBackup)}.` : 'No backup yet.'} ${persisted ? 'Storage is protected from automatic clearing.' : 'Add this app to your Home Screen so Safari keeps its data.'}</p>
+      <h2>Scorecard lookup</h2>
+      <p class="note">Paste your GolfCourseAPI key to look up pars, stroke indexes, lengths, rating and slope on a course's screen. The key stays on this phone and isn't included in backups.</p>
+      <div class="find-form">
+        <input id="gcaKey" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="GolfCourseAPI key" value="${esc(gcaKey)}" aria-label="GolfCourseAPI key">
+        <button class="btn primary" data-a="savekey">Save</button>
+      </div>
       <h2>Clubs in your bag</h2>
       <p class="note">These show when you tag a shot. Tap to add or remove.</p>
       <div class="chips clubs">${ALL_CLUBS.map((c) => `<button data-club="${esc(c)}" class="${clubs.includes(c) ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>
@@ -192,6 +198,10 @@ async function settingsView(root) {
       clubs = clubs.includes(c) ? clubs.filter((x) => x !== c) : ALL_CLUBS.filter((x) => clubs.includes(x) || x === c);
       await db.setSetting('bag', clubs);
       b.classList.toggle('on', clubs.includes(c));
+    } else if (b.dataset.a === 'savekey') {
+      const v = $('#gcaKey', root).value.trim();
+      await db.setSetting('gcaKey', v);
+      toast(v ? 'Key saved on this phone' : 'Key removed');
     } else if (b.dataset.a === 'export') {
       const data = await db.exportAll();
       await saveFile(`golf-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), 'application/json');

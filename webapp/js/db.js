@@ -74,6 +74,7 @@ export const setSetting = (key, value) => put('settings', { key, value });
 export async function exportAll() {
   const out = { app: 'golftracker', version: 1, exportedAt: new Date().toISOString() };
   for (const s of STORES) out[s] = await all(s);
+  out.settings = out.settings.filter((r) => r.key !== 'gcaKey'); // API keys stay on the phone
   return out;
 }
 

@@ -361,7 +361,7 @@ function lookupSheet(course, key, onDone) {
     const say = (t) => { body.innerHTML = `<p class="sheet-note">${esc(t)}</p>`; };
     const showCourses = () => {
       body.innerHTML = results.length ? `<ul class="course-list find-results">${results.map((r, i) => `
-        <li><button data-lk="${i}"><span>${esc(r.name)}<small>${esc([r.where, r.km != null ? `${r.km.toFixed(1)} km away` : '', `${r.tees.length} tee${r.tees.length === 1 ? '' : 's'}`].filter(Boolean).join(' · '))}</small></span><i>Pick</i></button></li>`).join('')}</ul>`
+        <li><button data-lk="${i}"><span>${esc(r.name)}<small>${esc([r.where, r.km != null ? `${r.km.toFixed(1)} km away` : '', `${r.teeCount} tee${r.teeCount === 1 ? '' : 's'}`].filter(Boolean).join(' · '))}</small></span><i>Pick</i></button></li>`).join('')}</ul>`
         : '<p class="sheet-note">No match. Try the club name only, or the suburb.</p>';
     };
     const showTees = () => {

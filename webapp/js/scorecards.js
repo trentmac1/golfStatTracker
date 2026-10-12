@@ -33,8 +33,12 @@ const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Nu
 export function normaliseCourse(c) {
   const loc = c.location ?? {};
   const tees = [];
+  let teeCount = 0;
   for (const [gender, list] of Object.entries(c.tees ?? {})) {
-    for (const t of list ?? []) {
+    if (typeof list === 'number') { teeCount += list; continue; } // search results only count the tees
+    if (!Array.isArray(list)) continue;
+    teeCount += list.length;
+    for (const t of list) {
       const holes = (t.holes ?? []).map((h) => ({
         par: num(h.par), si: num(h.handicap),
         metres: num(h.yardage) != null ? Math.round(num(h.yardage) * YD_TO_M) : null,
@@ -54,6 +58,7 @@ export function normaliseCourse(c) {
     where: [loc.city, loc.state, loc.country].filter(Boolean).join(', '),
     centre: num(loc.latitude) != null && num(loc.longitude) != null ? { lat: num(loc.latitude), lon: num(loc.longitude) } : null,
     tees: tees.filter((t) => t.holes.length),
+    teeCount,
   };
 }
 

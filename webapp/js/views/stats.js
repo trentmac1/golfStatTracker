@@ -86,6 +86,8 @@ export async function statsView(root) {
       ? `Average of your best ${hc.used} of ${hc.of} score differentials${hc.of < items.length ? ' (most recent 20)' : ''}, World Handicap System method. An estimate, not an official Golf Australia handicap.`
       : hc.usable ? `A handicap estimate needs 3 rated rounds: ${3 - hc.usable} more to go. A differential is what that round would count as towards a handicap.`
       : 'Needs rounds of 14 or more holes on a course with its rating and slope entered.';
+    const nineHole = items.filter((x) => x.r.holes.length <= 13).length;
+    const hcNine = nineHole ? `<p class="note">${nineHole} 9-hole round${nineHole === 1 ? ' isn\'t' : 's aren\'t'} counted in the handicap estimate yet.</p>` : '';
     const hcMissing = noRating.length
       ? `<p class="note warn-note">Add the rating and slope for ${noRating.map((c) => `<a href="#/course/${c.id}">${esc(c.name)}</a>`).join(', ')} (on the scorecard) so ${noRating.length === 1 ? 'its rounds count' : 'their rounds count'}.</p>` : '';
 
@@ -137,7 +139,7 @@ export async function statsView(root) {
           : hc.usable ? `<b>${hc.diffs.at(-1).toFixed(1)}</b><span>Latest differential</span>` : '<b class="none">–</b><span>Handicap estimate</span>'}</div>
         <p>${hcNote}</p>
       </div>
-      ${hcMissing}
+      ${hcMissing}${hcNine}
 
       <h2>Score to par, per 18</h2>
       <svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="Score to par by round">

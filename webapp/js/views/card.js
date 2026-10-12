@@ -1,6 +1,6 @@
 // Round summary: scorecard and totals.
 import * as db from '../db.js';
-import { deriveRound } from '../stats.js';
+import { deriveRound, layoutLabel } from '../stats.js';
 import { roundCsv } from '../export.js';
 import { sgSummary, CATEGORIES } from '../sg.js';
 import { esc, m, one, signed, pctText, fmtDate, toast, confirmSheet, saveFile } from '../ui.js';
@@ -68,13 +68,13 @@ export async function cardView(root, { roundId }) {
       <header class="page-head">
         <a class="back" href="${active ? `#/round/${roundId}/hole/${round.currentHole ?? 1}` : '#/rounds'}">‹ ${active ? `Hole ${round.currentHole ?? 1}` : 'Rounds'}</a>
         <h1>${esc(course.name)}</h1>
-        <p class="sub">${fmtDate(round.date)}${active ? ' · in progress' : ''}</p>
+        <p class="sub">${fmtDate(round.date)} · ${esc(layoutLabel(course, round))}${active ? ' · in progress' : ''}</p>
       </header>
       <div class="total">
         <b>${r.holesPlayed ? r.score : '–'}</b>
         <span>${r.holesPlayed ? `${signed(r.toPar)} · ${r.holesPlayed} ${r.holesPlayed === 1 ? 'hole' : 'holes'}` : 'No holes finished yet'}</span>
       </div>
-      <div class="card-scroll">${half(0, 9, 'Out')}${half(9, 18, 'In')}</div>
+      <div class="card-scroll">${r.holes.length > 9 ? `${half(0, 9, 'Out')}${half(9, r.holes.length, 'In')}` : half(0, r.holes.length, 'Total')}</div>
       <p class="legend"><span class="sc-mark birdie">3</span> birdie or better <span class="sc-mark bogey">5</span> bogey <span class="sc-mark double">6</span> double+ · tap a hole number to open it</p>
       <h2>This round</h2>
       <div class="tiles">${statTiles(r)}</div>

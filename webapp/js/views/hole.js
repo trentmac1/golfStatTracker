@@ -2,7 +2,7 @@
 import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
-import { deriveHole, deriveRound, emptyHoleStat } from '../stats.js';
+import { deriveHole, deriveRound, emptyHoleStat, playOrder } from '../stats.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
 import { shapePolygon } from '../greens.js';
@@ -20,7 +20,9 @@ export async function holeView(root, { roundId, hole }) {
   const course = await db.get('courses', round.courseId);
   let shots = await db.shotsForRound(roundId);
   const bag = await db.getSetting('bag', DEFAULT_BAG);
-  const n = Math.min(Math.max(1, hole), course.holes.length);
+  const order = playOrder(course, round);
+  const n = order.includes(hole) ? hole : order[0];
+  const pos = order.indexOf(n);
 
   if (round.currentHole !== n) { round.currentHole = n; await db.put('rounds', round); }
 
@@ -32,10 +34,10 @@ export async function holeView(root, { roundId, hole }) {
   root.innerHTML = `
   <section class="hole">
     <header class="hole-head">
-      <button class="nav-btn" data-a="prev" aria-label="Previous hole" ${n === 1 ? 'disabled' : ''}>‹</button>
+      <button class="nav-btn" data-a="prev" aria-label="Previous hole" ${pos === 0 ? 'disabled' : ''}>‹</button>
       <div class="hole-title">
         <span class="hole-no">${n}</span>
-        <span class="hole-meta"><b>Par ${ch().par}</b><span id="roundScore"></span></span>
+        <span class="hole-meta"><b>Par ${ch().par}${order.length !== 18 || order[0] !== 1 ? ` <small>· ${pos + 1} of ${order.length}</small>` : ''}</b><span id="roundScore"></span></span>
       </div>
       <button class="nav-btn" data-a="next" aria-label="Next hole">›</button>
     </header>
@@ -58,7 +60,7 @@ export async function holeView(root, { roundId, hole }) {
     <div class="hole-stats" id="hstats"></div>
     <div class="hole-foot">
       <a class="btn ghost" href="#/round/${roundId}/card">Scorecard</a>
-      <button class="btn primary" data-a="next">${n === course.holes.length ? 'Finish' : `Hole ${n + 1}`}</button>
+      <button class="btn primary" data-a="next">${pos === order.length - 1 ? 'Finish' : `Hole ${order[pos + 1]}`}</button>
     </div>
   </section>`;
 
@@ -524,9 +526,9 @@ export async function holeView(root, { roundId, hole }) {
   }
 
   async function go(delta) {
-    const next = n + delta;
-    if (next > course.holes.length) { location.hash = `#/round/${roundId}/card`; return; }
-    if (next >= 1) location.hash = `#/round/${roundId}/hole/${next}`;
+    const i = pos + delta;
+    if (i >= order.length) { location.hash = `#/round/${roundId}/card`; return; }
+    if (i >= 0) location.hash = `#/round/${roundId}/hole/${order[i]}`;
   }
 
   root.addEventListener('click', async (e) => {

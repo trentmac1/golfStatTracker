@@ -1,13 +1,13 @@
 // App shell: router, home, rounds list and settings.
 import * as db from './db.js';
-import { deriveRound } from './stats.js';
+import { deriveRound, ninesOf, nineLabel, layoutLabel } from './stats.js';
 import { allCsv } from './export.js';
 import { APP_VERSION, BUILT_IN_COURSES, DEFAULT_BAG, newCourse } from './config.js';
 import { holeView } from './views/hole.js';
 import { cardView } from './views/card.js';
 import { statsView } from './views/stats.js';
 import { coursesView, courseEditView, courseMapView } from './views/courses.js';
-import { $, esc, signed, fmtDate, toast, saveFile, pickFile, confirmSheet } from './ui.js';
+import { $, esc, signed, fmtDate, toast, saveFile, pickFile, confirmSheet, sheet } from './ui.js';
 
 const ALL_CLUBS = ['Dr', '2W', '3W', '4W', '5W', '7W', '2H', '3H', '4H', '5H', '6H', '2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i', 'PW', 'AW', 'GW', 'SW', 'LW', '50°', '52°', '54°', '56°', '58°', '60°'];
 
@@ -49,12 +49,63 @@ async function seed() {
   await db.setSetting('seededCourses', [...seeded]);
 }
 
-async function startRound(courseId) {
+async function startRound(courseId, holeList) {
   const round = {
-    id: db.uid(), courseId, date: new Date().toISOString(), status: 'active', holes: {}, currentHole: 1,
+    id: db.uid(), courseId, date: new Date().toISOString(), status: 'active', holes: {}, holeList, currentHole: holeList[0],
   };
   await db.put('rounds', round);
-  location.hash = `#/round/${round.id}/hole/1`;
+  location.hash = `#/round/${round.id}/hole/${holeList[0]}`;
+}
+
+// Pick 18 or 9 holes and which nines. Remembers the last choice per course.
+function chooseLayout(course) {
+  return new Promise((resolve) => {
+    const nines = ninesOf(course);
+    const full = nines.filter((nn) => nn.length === 9);
+    const last = course.lastLayout ?? {};
+    let len = full.length >= 2 ? (last.len ?? 18) : 9;
+    let first = Math.min(last.first ?? 0, nines.length - 1);
+    let second = last.second ?? (first + 1) % nines.length;
+    if (second === first) second = (first + 1) % nines.length;
+    let picked = false;
+    const par = (nine) => nine.reduce((a, n) => a + course.holes[n - 1].par, 0);
+    const seg = (key, chosen, skip) => nines.map((nn, i) => i === skip ? '' : `<button data-${key}="${i}" class="${i === chosen ? 'on' : ''}">${nineLabel(nn)}<small>Par ${par(nn)}</small></button>`).join('');
+    const draw = (el) => {
+      el.querySelector('#lay').innerHTML = `
+        ${full.length >= 2 ? `<p class="sheet-label">Length</p>
+        <div class="seg lay-len">${[18, 9].map((v) => `<button data-len="${v}" class="${len === v ? 'on' : ''}">${v} holes</button>`).join('')}</div>` : ''}
+        ${nines.length > 1 ? `
+        <p class="sheet-label">${len === 18 ? 'First nine' : 'Which nine'}</p>
+        <div class="seg lay-nine">${seg('first', first, -1)}</div>
+        ${len === 18 && nines.length > 2 ? `<p class="sheet-label">Second nine</p><div class="seg lay-nine">${seg('second', second, first)}</div>` : ''}` : ''}
+        <p class="sheet-note">${esc(summary())}</p>`;
+    };
+    const order = () => len === 18 ? [...nines[first], ...nines[nines.length > 2 ? second : (first + 1) % 2]] : nines[first];
+    const summary = () => { const o = order(); return `Holes ${o.length === 18 ? `${nineLabel(nines[first])}, then ${nineLabel(nines[nines.length > 2 ? second : (first + 1) % 2])}` : nineLabel(nines[first])} · par ${o.reduce((a, n) => a + course.holes[n - 1].par, 0)}`; };
+    sheet(`
+      <h3 class="sheet-title">${esc(course.name)}</h3>
+      <div id="lay"></div>
+      <div class="sheet-row"><button class="btn ghost" data-l="cancel">Cancel</button><button class="btn primary" data-l="go">Tee off</button></div>`,
+    (el, close) => {
+      draw(el);
+      el.addEventListener('click', async (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.len) len = Number(b.dataset.len);
+        else if (b.dataset.first) { first = Number(b.dataset.first); if (second === first) second = (first + 1) % nines.length; }
+        else if (b.dataset.second) second = Number(b.dataset.second);
+        else if (b.dataset.l === 'cancel') { close(); return; }
+        else if (b.dataset.l === 'go') {
+          picked = true;
+          course.lastLayout = { len, first, second };
+          await db.put('courses', course);
+          resolve(order()); close(); return;
+        }
+        draw(el);
+      });
+      el.addEventListener('close', () => { if (!picked) resolve(null); });
+    });
+  });
 }
 
 async function homeView(root) {
@@ -77,7 +128,7 @@ async function homeView(root) {
           <span>Continue round</span><small>${activeLine}</small></a>` : ''}
       <h2>${active ? 'Or start a new round' : 'Start a round'}</h2>
       <ul class="course-list">${courses.map((c) => `
-        <li><button data-start="${c.id}"><span>${esc(c.name)}<small>Par ${c.holes.reduce((a, h) => a + h.par, 0)} · ${c.holes.filter((h) => h.green).length}/18 greens set</small></span><i>Tee off</i></button></li>`).join('')}
+        <li><button data-start="${c.id}"><span>${esc(c.name)}<small>${c.holes.length} holes · ${c.holes.filter((h) => h.green).length}/${c.holes.length} greens set</small></span><i>Tee off</i></button></li>`).join('')}
       </ul>
       ${unsaved ? `<a class="backup-nag" href="#/settings">${unsaved} ${unsaved === 1 ? 'round isn\'t' : 'rounds aren\'t'} in a backup yet. Export one.</a>` : ''}
     </section>`;
@@ -86,7 +137,9 @@ async function homeView(root) {
     const b = e.target.closest('[data-start]');
     if (!b) return;
     if (active && !(await confirmSheet('A round is already in progress. Start another one? The current round stays saved.', 'Start new round', false))) return;
-    startRound(b.dataset.start);
+    const course = courses.find((c) => c.id === b.dataset.start);
+    const holeList = await chooseLayout(course);
+    if (holeList) startRound(course.id, holeList);
   });
   return {};
 }
@@ -99,7 +152,7 @@ async function roundsView(root) {
     const course = courseById.get(round.courseId);
     if (!course) continue;
     const r = deriveRound(course, round, await db.shotsForRound(round.id));
-    rows.push(`<li><a href="#/round/${round.id}/card"><span>${fmtDate(round.date)}<small>${esc(course.name)}${round.status !== 'done' ? ' · in progress' : ''}</small></span>
+    rows.push(`<li><a href="#/round/${round.id}/card"><span>${fmtDate(round.date)}<small>${esc(course.name)}${round.holeList && (round.holeList.length !== 18 || round.holeList[0] !== 1) ? ` · ${esc(layoutLabel(course, round))}` : ''}${round.status !== 'done' ? ' · in progress' : ''}</small></span>
       <b>${r.holesPlayed ? r.score : '–'}</b><em>${r.holesPlayed ? signed(r.toPar) : ''}${r.holesPlayed && r.holesPlayed < 18 ? ` · ${r.holesPlayed} holes` : ''}</em></a></li>`);
   }
   root.innerHTML = `<section class="page"><header class="page-head"><h1>Rounds</h1></header>

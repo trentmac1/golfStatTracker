@@ -423,6 +423,12 @@ td.bar-col { height: 34px; }
 .lg-ar.steep { border-color: #d6a000; border-top-width: 4px; }
 .lg-shade { display: inline-block; width: 26px; height: 12px; border-radius: 3px; background: linear-gradient(90deg, hsl(128 42% 30%), hsl(128 42% 72%)); }
 
+/* ---------- start a round ---------- */
+.lay-len button { font-size: 22px; }
+.lay-nine button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 22px; }
+.lay-nine button small { font: 600 12px/1 var(--body); opacity: .75; }
+.hole-meta b small { font-size: 16px; color: #cfe3d4; font-weight: 600; }
+
 /* ---------- add a course ---------- */
 .find-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .find-form input { font: 600 18px/1.2 var(--body); color: var(--ink); background: var(--card); border: 2px solid var(--line); border-radius: var(--r); padding: 0 14px; min-height: 52px; width: 100%; }

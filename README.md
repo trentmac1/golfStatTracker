@@ -44,6 +44,7 @@ Geolocation needs HTTPS on a phone, so test on the phone through GitHub Pages.
 
 ## How the app works
 
+- **Starting a round**: choose 18 or 9 holes and which nines. Courses with more than 18 holes are split into nines (1–9, 10–18, 19–27), so you can play e.g. 10–18 then 19–27, or start on the back nine. The choice is remembered per course. Set a course's size (9/18/27/36) on its Courses screen.
 - **Mark ball**: stand at your ball before each shot and tap it. The phone takes a few seconds of GPS fixes and uses the median of the best ones. A shot's distance runs to the next mark.
 - **On green**: tap it standing at your ball on the green. It measures your last shot to the ball, and on a hole with no green yet it saves an approximate green for the course.
 - **Measure**: tap anywhere on the hole map (a bunker, water, a layup spot) to see the distance from you to that point and from there to the green. Drag the yellow ring to adjust; tap × to clear.

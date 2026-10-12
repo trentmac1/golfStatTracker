@@ -14,6 +14,33 @@ export function greenRadius(courseHole) {
   return DEFAULT_GREEN_RADIUS;
 }
 
+// ---------- which holes a round plays ----------
+// Courses are split into nines: 1-9, 10-18, 19-27. A round lists the course
+// hole numbers it plays, in order (old rounds without a list play them all).
+export const ninesOf = (course) => Array.from({ length: Math.ceil(course.holes.length / 9) }, (_, i) =>
+  course.holes.slice(i * 9, i * 9 + 9).map((h) => h.n));
+export const nineLabel = (nine) => `${nine[0]}–${nine[nine.length - 1]}`;
+
+export function playOrder(course, round) {
+  const valid = new Set(course.holes.map((h) => h.n));
+  const list = (round?.holeList ?? []).filter((n) => valid.has(n));
+  return list.length ? list : course.holes.map((h) => h.n);
+}
+
+// "Holes 10–27", "Front 9 (1–9)" and so on.
+export function layoutLabel(course, round) {
+  const order = playOrder(course, round);
+  const nines = ninesOf(course);
+  const parts = [];
+  for (let i = 0; i < order.length; i += 9) {
+    const nine = nines.find((nn) => nn[0] === order[i]);
+    parts.push(nine ? nineLabel(nine) : `${order[i]}–${order[Math.min(order.length, i + 9) - 1]}`);
+  }
+  if (order.length === course.holes.length && order[0] === 1) return `${order.length} holes`;
+  if (order.length <= 9 && course.holes.length === 18) return `${order[0] === 1 ? 'Front' : 'Back'} 9 (${parts[0]})`;
+  return `${order.length} holes: ${parts.join(', then ')}`;
+}
+
 export function emptyHoleStat() {
   return { putts: null, chips: 0, bunker: 0, penalties: 0, fairway: null, score: null, greenPos: null };
 }
@@ -125,7 +152,8 @@ export function deriveRound(course, round, shots) {
     if (!byHole.has(s.hole)) byHole.set(s.hole, []);
     byHole.get(s.hole).push(s);
   }
-  const holes = course.holes.map((h) => deriveHole(h, round.holes?.[h.n], byHole.get(h.n) ?? []));
+  const holes = playOrder(course, round).map((n) => course.holes[n - 1])
+    .map((h) => deriveHole(h, round.holes?.[h.n], byHole.get(h.n) ?? []));
   const played = holes.filter((h) => h.complete);
   const sum = (arr, f) => arr.reduce((a, h) => a + (f(h) ?? 0), 0);
 

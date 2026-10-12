@@ -134,6 +134,11 @@ export async function courseEditView(root, { courseId }) {
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
         <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape) ? 'Refresh' : 'Get'} green shapes and slopes</button>
         <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data.` : 'Outlines from OpenStreetMap and LiDAR heights for Queensland courses. Needs signal once.'}</p>
+        <h2>Holes</h2>
+        <div class="seg small holes-count" role="group" aria-label="Number of holes">
+          ${[9, 18, 27, 36].map((v) => `<button data-count="${v}" class="${course.holes.length === v ? 'on' : ''}">${v}</button>`).join('')}
+        </div>
+        <p class="note">Courses with more than 18 holes are split into nines (1–9, 10–18, 19–27…). You pick which ones when you tee off.</p>
         <h2>Rating for handicap</h2>
         <p class="note">From the scorecard, for the tees you play. Golf Australia cards list them as scratch (or course) rating and slope.</p>
         <div class="rating-row">
@@ -186,6 +191,23 @@ export async function courseEditView(root, { courseId }) {
     if (b.dataset.par) {
       course.holes[Number(b.dataset.hole) - 1].par = Number(b.dataset.par);
       await db.put('courses', course);
+      draw();
+    } else if (b.dataset.count) {
+      const want = Number(b.dataset.count);
+      const have = course.holes.length;
+      if (want === have) return;
+      if (want < have) {
+        const usedHoles = new Set(rounds.flatMap((r) => [...(r.holeList ?? []), ...Object.keys(r.holes ?? {}).map(Number)]));
+        const lost = course.holes.slice(want).filter((h) => usedHoles.has(h.n)).map((h) => h.n);
+        if (lost.length) { toast(`Rounds use holes ${lost[0]}–${lost.at(-1)}, so they can't be removed.`, 'warn'); return; }
+        if (!(await confirmSheet(`Remove holes ${want + 1}–${have} and anything set on them?`, 'Remove holes'))) return;
+        course.holes = course.holes.slice(0, want);
+      } else {
+        for (let n = have + 1; n <= want; n++) course.holes.push({ n, par: 4, si: null, green: null, front: null, back: null, tee: null });
+      }
+      delete course.lastLayout;
+      await db.put('courses', course);
+      toast(`${course.name} now has ${want} holes`);
       draw();
     } else if (b.dataset.a === 'greens') {
       b.disabled = true;

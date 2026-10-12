@@ -11,7 +11,9 @@ jobs:
         with: { python-version: "3.12" }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: |
+      - env:
+          GCA_KEY: ${{ secrets.GOLFCOURSEAPI_KEY }}
+        run: |
           node analysis/probe/search_live.mjs > probe-output.txt 2>&1 || true
           git config user.name "probe bot"; git config user.email "actions@users.noreply.github.com"
           git checkout -B probe-output

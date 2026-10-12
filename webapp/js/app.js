@@ -260,7 +260,11 @@ async function route() {
     console.error(err);
     el.innerHTML = `<p class="empty">Something went wrong: ${esc(err.message)}. Your data is safe. Go back <a href="#/">home</a>.</p>`;
   }
-  window.scrollTo(0, 0);
+  let target = null;
+  try { target = sessionStorage.getItem('scrollTo'); sessionStorage.removeItem('scrollTo'); } catch { /* fine */ }
+  const el2 = target && document.getElementById(target);
+  if (el2) el2.scrollIntoView({ block: 'start' });
+  else window.scrollTo(0, 0);
 }
 
 window.addEventListener('hashchange', route);

@@ -81,7 +81,8 @@ export async function reviewView(root, { roundId, hole }) {
       </div>
       <a class="nav-btn" href="#/round/${roundId}/review/${next?.hole ?? dh.hole}" aria-label="Next hole" ${next ? '' : 'aria-disabled="true"'}>›</a>
     </header>
-    <div class="map-wrap review-map"><div id="map" class="map"></div></div>
+    <div class="map-wrap review-map"><div id="map" class="map"></div>
+      <a class="back-chip" href="#/round/${roundId}/card" data-back="grid">‹ Round</a></div>
     <div class="review-body">
       <div class="review-stats">
         <span><b>${dh.putts ?? '–'}</b>Putts</span>
@@ -133,5 +134,9 @@ export async function reviewView(root, { roundId, hole }) {
   } else {
     root.querySelector('#map').innerHTML = '<p class="map-off">The map needs signal the first time.</p>';
   }
+  // Coming back from a hole: land on the hole grid, not the top of the page.
+  root.addEventListener('click', (e) => {
+    if (e.target.closest('[data-back="grid"]')) { try { sessionStorage.setItem('scrollTo', 'holeGrid'); } catch { /* fine */ } }
+  });
   return { destroy() { map?.remove(); } };
 }

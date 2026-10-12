@@ -77,7 +77,7 @@ export async function cardView(root, { roundId }) {
       </div>
       <div class="card-scroll">${r.holes.length > 9 ? `${half(0, 9, 'Out')}${half(9, r.holes.length, 'In')}` : half(0, r.holes.length, 'Total')}</div>
       <p class="legend"><span class="sc-mark birdie">3</span> birdie or better <span class="sc-mark bogey">5</span> bogey <span class="sc-mark double">6</span> double+ · tap a hole number to open it</p>
-      <h2>Hole by hole</h2>
+      <h2 id="holeGrid">Hole by hole</h2>
       ${holeGrid(roundId, r, course)}
       <p class="note">Tap a hole to see your shots on the map.</p>
       <h2>This round</h2>

@@ -14,6 +14,7 @@ static uint16_t busyPins = 0;
 static bool echoNmea = false;
 static uint32_t phoneUnix = 0, phoneUnixAtMs = 0;  // time set by the app
 static uint32_t identifyUntil = 0;
+static uint32_t flashUntil = 0;       // short solid white: button feedback
 
 // ---------- time ----------
 static uint32_t nowUnix() {
@@ -35,6 +36,7 @@ static void leds(bool r, bool g, bool b) {
 // while a round is active. Then a blue flash if the phone is connected.
 static void updateLeds() {
   uint32_t now = millis();
+  if (now < flashUntil) { leds(true, true, true); return; }
   if (now < identifyUntil) {                 // "find my tracker": fast white blink
     bool on = (now / 125) % 2;
     leds(on, on, on);
@@ -67,11 +69,11 @@ static void updateButton() {
   if (pressed && down && !held && now - since > 2000) {
     held = true;
     roundActive = !roundActive;
-    identifyUntil = now + 600;
+    flashUntil = now + 600;
   }
   if (!pressed && down) {
     down = false;
-    if (!held) { buttonPresses++; identifyUntil = now + 120; }
+    if (!held) { buttonPresses++; flashUntil = now + 120; }
   }
 }
 
@@ -129,11 +131,11 @@ void setup() {
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 1500) delay(10);   // don't wait without USB
 
-  busyPins = probePins();               // before anything else claims the pins
+  battery::begin();                     // first: puts VBAT_ENABLE LOW (Seeed's advice)
+  gnss::begin();                        // holds the GNSS control lines HIGH
+  busyPins = probePins();               // before the button pin gets its pull-up
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  battery::begin();
-  gnss::begin();
   bool imuOk = imu::begin();
   blelink::begin(onControl);
   bool micOk = mic::begin();            // after BLE: PDM asks the SoftDevice for the HF clock
@@ -186,4 +188,5 @@ void loop() {
     blelink::publish(s, l);
     if (Serial && !echoNmea) printStatus(gyro, micPeak);
   }
+  delay(2);                             // let the CPU idle between polls (IMU is 104 Hz)
 }

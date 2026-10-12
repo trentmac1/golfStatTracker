@@ -5,7 +5,7 @@ An Arccos-style golf stat system: a pocket shot tracker (Seeed XIAO nRF52840 Sen
 | Folder | What's in it | Status |
 |---|---|---|
 | `webapp/` | Offline-first PWA (plain HTML/CSS/JS, IndexedDB) | **Phase 1 done: manual mode** |
-| `firmware/` | PlatformIO project for the tracker | Phase 2 |
+| `firmware/` | PlatformIO project for the tracker | **Phase 2: bring-up firmware built**. See [docs/tracker-build.md](docs/tracker-build.md) |
 | `analysis/` | Python notebooks for tuning swing detection | Phase 4 |
 | `docs/` | BLE protocol, shot record format, green preview spec | Draft |
 

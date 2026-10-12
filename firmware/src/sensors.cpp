@@ -109,6 +109,10 @@ void battery::begin() {
   pinMode(VBAT_ENABLE, OUTPUT);
   digitalWrite(VBAT_ENABLE, LOW);
   pinMode(PIN_CHG, INPUT);
+  // Charge at 100 mA (LOW) rather than 50 mA, so an 1100 mAh cell fills
+  // overnight. 100 mA is at most 0.25 C for the 400 mAh cell later on.
+  pinMode(PIN_CHARGING_CURRENT, OUTPUT);
+  digitalWrite(PIN_CHARGING_CURRENT, LOW);
   analogReference(AR_INTERNAL_3_0);
   analogReadResolution(12);
   delay(2);

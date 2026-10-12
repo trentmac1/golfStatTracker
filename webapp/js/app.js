@@ -6,6 +6,7 @@ import { APP_VERSION, BUILT_IN_COURSES, DEFAULT_BAG, newCourse } from './config.
 import { holeView } from './views/hole.js';
 import { cardView } from './views/card.js';
 import { reviewView } from './views/review.js';
+import { trackerView } from './views/tracker.js';
 import { statsView } from './views/stats.js';
 import { coursesView, courseEditView, courseMapView } from './views/courses.js';
 import { $, esc, signed, fmtDate, toast, saveFile, pickFile, confirmSheet, sheet } from './ui.js';
@@ -177,6 +178,9 @@ async function settingsView(root) {
         <button class="btn ghost" data-a="csv">Export all rounds (CSV)</button>
       </div>
       <p class="note">${lastBackup ? `Last backup: ${fmtDate(lastBackup)}.` : 'No backup yet.'} ${persisted ? 'Storage is protected from automatic clearing.' : 'Add this app to your Home Screen so Safari keeps its data.'}</p>
+      <h2>Tracker</h2>
+      <p class="note">Connect the shot tracker over Bluetooth (in Bluefy on iPhone) to check its battery, GPS and sensors.</p>
+      <div class="btn-col"><a class="btn ghost" href="#/tracker">Open tracker</a></div>
       <h2>Scorecard lookup</h2>
       <p class="note">Paste your GolfCourseAPI key to look up pars, hole lengths, rating and slope on a course's screen (35 free lookups a day). The key stays on this phone and isn't included in backups.</p>
       <div class="find-form">
@@ -187,7 +191,7 @@ async function settingsView(root) {
       <p class="note">These show when you tag a shot. Tap to add or remove.</p>
       <div class="chips clubs">${ALL_CLUBS.map((c) => `<button data-club="${esc(c)}" class="${clubs.includes(c) ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>
       <h2>About</h2>
-      <p class="note">Golf Tracker ${APP_VERSION}. Distances in metres. Satellite imagery © Esri. Phase 1: manual marking; tracker sync comes in Phase 2.</p>
+      <p class="note">Golf Tracker ${APP_VERSION}. Distances in metres. Satellite imagery © Esri. Manual marking works everywhere; the tracker connects in Bluefy.</p>
     </section>`;
   };
   draw();
@@ -241,6 +245,7 @@ const routes = [
   [/^#\/course\/([^/]+)$/, courseEditView, (m) => ({ courseId: m[1] }), 'courses'],
   [/^#\/course\/([^/]+)\/map\/(\d+)$/, courseMapView, (m) => ({ courseId: m[1], hole: Number(m[2]) }), null],
   [/^#\/settings$/, settingsView, () => ({}), 'settings'],
+  [/^#\/tracker$/, trackerView, () => ({}), 'settings'],
 ];
 
 let current = null;

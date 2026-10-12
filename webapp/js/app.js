@@ -177,7 +177,7 @@ async function settingsView(root) {
       </div>
       <p class="note">${lastBackup ? `Last backup: ${fmtDate(lastBackup)}.` : 'No backup yet.'} ${persisted ? 'Storage is protected from automatic clearing.' : 'Add this app to your Home Screen so Safari keeps its data.'}</p>
       <h2>Scorecard lookup</h2>
-      <p class="note">Paste your GolfCourseAPI key to look up pars, stroke indexes, lengths, rating and slope on a course's screen. The key stays on this phone and isn't included in backups.</p>
+      <p class="note">Paste your GolfCourseAPI key to look up pars, hole lengths, rating and slope on a course's screen (35 free lookups a day). The key stays on this phone and isn't included in backups.</p>
       <div class="find-form">
         <input id="gcaKey" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="GolfCourseAPI key" value="${esc(gcaKey)}" aria-label="GolfCourseAPI key">
         <button class="btn primary" data-a="savekey">Save</button>

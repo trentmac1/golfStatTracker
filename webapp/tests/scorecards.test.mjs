@@ -40,3 +40,12 @@ test('reports a bad key and the daily limit clearly', async () => {
   await assert.rejects(searchScorecards('x', { key: '' }), /Add your GolfCourseAPI key/);
   assert.deepEqual(await searchScorecards('x', { key: 'k', fetchFn: fake(200) }), []);
 });
+
+test('search results count tees; details use metres when given', () => {
+  const c = normaliseCourse({ id: '9', club_name: 'X', course_name: 'X', location: {}, tees: { female: 2, male: 3 } });
+  assert.equal(c.teeCount, 5);
+  assert.equal(c.tees.length, 0);
+  const d = normaliseCourse({ id: '9', club_name: 'X', tees: { male: [{ tee_name: 'Blue', holes: [{ par: 4, yardage: 400, meters: 366 }] }] } });
+  assert.equal(d.tees[0].holes[0].metres, 366);
+  assert.equal(d.tees[0].holes[0].si, null);
+});

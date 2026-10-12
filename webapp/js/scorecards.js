@@ -1,5 +1,6 @@
-// Scorecards from GolfCourseAPI (golfcourseapi.com): pars, stroke indexes,
-// lengths, course rating and slope per tee. Needs the player's own API key,
+// Scorecards from GolfCourseAPI (golfcourseapi.com): pars, lengths, course
+// rating and slope per tee. (Checked Oct 2026: Brisbane courses have no
+// stroke index in the data, so that still comes from the card.) Needs the player's own API key,
 // which stays on this phone (Backup & settings). Free keys allow about 35
 // requests a day; one lookup is usually one request.
 //
@@ -41,7 +42,7 @@ export function normaliseCourse(c) {
     for (const t of list) {
       const holes = (t.holes ?? []).map((h) => ({
         par: num(h.par), si: num(h.handicap),
-        metres: num(h.yardage) != null ? Math.round(num(h.yardage) * YD_TO_M) : null,
+        metres: num(h.meters) != null ? Math.round(num(h.meters)) : num(h.yardage) != null ? Math.round(num(h.yardage) * YD_TO_M) : null,
       }));
       tees.push({
         gender, name: t.tee_name ?? 'Tee', rating: num(t.course_rating), slope: num(t.slope_rating),

@@ -15,7 +15,8 @@ Courses → Add a course searches OpenStreetMap by name (Nominatim) or lists cou
 When the map has gaps:
 - **Pars** missing from hole lines are estimated from the line's length (tee to green centre): under 225 m par 3, under 400 m par 4, otherwise par 5. On Pine Rivers and Ashgrove this gets all 36 holes right. Estimated pars are marked "est." until you confirm or change them, and "Type in the card" on the course screen takes all the pars (and stroke indexes) in one go.
 - **Greens** without outlines are placed at the end of the hole line (approximate), and replaced when you tap On green or place them on the map.
-- **Other scorecard sources:** OpenGolfAPI (open, ODbL) only covers the US so far. GolfCourseAPI lists 30,000+ courses worldwide but needs a sign-up key and allows 35 requests a day free; its Australian coverage and terms weren't checked.
+- **Scorecard lookup (GolfCourseAPI):** with your own key (Backup & settings, kept on the phone and out of backups), a course's screen can fill pars, hole lengths, rating and slope per tee. Checked Oct 2026: Pine Rivers, Ashgrove, Keperra, Wantima, Nudgee and Brookwater have full cards; North Pine isn't listed; none include stroke indexes. Its terms allow caching for use in your own app but not republishing, so the data stays on the phone. A lookup takes two requests (search, then the full card); free keys allow 35 a day.
+- **OpenGolfAPI** (open, ODbL) only covers the US so far.
 
 ## Limits
 

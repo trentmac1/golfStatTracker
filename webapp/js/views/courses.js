@@ -146,7 +146,7 @@ export async function courseEditView(root, { courseId }) {
         <p class="note">Courses with more than 18 holes are split into nines (1–9, 10–18, 19–27…). You pick which ones when you tee off.</p>
         <h2>Scorecard</h2>
         <button class="btn ghost wide" data-a="lookup">Look up scorecard</button>
-        <p class="note">${course.scorecard ? `From GolfCourseAPI: ${esc(course.scorecard.name)}, ${esc(course.scorecard.tee)} tees${course.scorecard.from > 1 ? `, on holes ${course.scorecard.from} onward` : ''}.` : 'Fills in pars, stroke indexes, hole lengths, rating and slope from GolfCourseAPI (needs your key in Backup & settings).'}</p>
+        <p class="note">${course.scorecard ? `From GolfCourseAPI: ${esc(course.scorecard.name)}, ${esc(course.scorecard.tee)} tees${course.scorecard.from > 1 ? `, on holes ${course.scorecard.from} onward` : ''}.` : 'Fills in pars, hole lengths, rating and slope from GolfCourseAPI (needs your key in Backup & settings). Stroke indexes aren\'t in its data, so type those from the card below.'}</p>
         <h2>Rating for handicap</h2>
         <p class="note">From the scorecard, for the tees you play. Golf Australia cards list them as scratch (or course) rating and slope.</p>
         <div class="rating-row">
@@ -398,7 +398,7 @@ function lookupSheet(course, key, onDone) {
         const from = Number(el.querySelector('[data-from].on')?.dataset.from ?? 1);
         const n = applyScorecard(course, picked, tee, from);
         await db.put('courses', course);
-        toast(`Filled ${n} holes from the ${tee.name} card${tee.rating && tee.slope ? ', with rating and slope' : ''}`);
+        toast(`Filled ${n} holes from the ${tee.name} card${tee.rating && tee.slope ? ', with rating and slope' : ''}${tee.holes.some((h) => h.si) ? '' : '. Add stroke indexes from the card'}`);
         close(); onDone?.();
       }
     });

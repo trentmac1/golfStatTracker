@@ -3,7 +3,7 @@
 // Merge rules: coursemerge.js. Server: pi/course-server/.
 import * as db from './db.js';
 import { COURSE_SERVER } from './config.js';
-import { localEdits, applyShared, describeChanges } from './coursemerge.js';
+import { snapshotEdits, sharedCounts, applyShared, describeChanges } from './coursemerge.js';
 import { nameScore } from './greens.js';
 import { distance } from './geo.js';
 
@@ -48,38 +48,69 @@ async function link(course) {
 }
 
 const latestEdit = (course) => Math.max(0, ...course.holes.flatMap((h) => Object.values(h.edits ?? {})));
+const POSITIONS = ['green', 'front', 'back', 'tee'];
 
-// Push this course's new edits, then pull everyone's. Saves the course.
-// Returns { pushed, summary, text }.
-export async function syncCourse(course) {
-  const key = await link(course);
-  const holes = localEdits(course, course.sharePushedTs ?? 0);
-  const { course: remote } = holes.length
-    ? await api(`/courses/${key}/edits`, { method: 'POST', body: { name: course.name, centre: centreOf(course), holeCount: course.holes.length, holes } })
-    : await api(`/courses/${key}`);
-  const summary = applyShared(course, remote);
-  course.sharePushedTs = latestEdit(course);
+// The shared copy of a course, if anyone has uploaded it.
+async function findShared(course) {
+  if (course.sharedKey) {
+    try { return (await api(`/courses/${course.sharedKey}`)).course; }
+    catch (e) { if (!/No such course/.test(e.message)) throw e; }
+  }
+  const centre = centreOf(course);
+  const list = (await api(centre ? `/courses?lat=${centre.lat}&lon=${centre.lon}&km=3` : '/courses')).courses;
+  const match = list.find((c) => sameCourse(course.name, c.name) && (!centre || distance(centre, c.centre) < 2500))
+    ?? (course.seedKey && list.find((c) => c.key === course.seedKey));
+  return match ? (await api(`/courses/${match.key}`)).course : null;
+}
+
+const countsText = (course) => {
+  const n = course.holes.length;
+  return `${course.holes.filter((h) => h.green).length}/${n} greens, ${course.holes.filter((h) => h.tee).length}/${n} tees set`;
+};
+
+// Course screen: bring in green and tee positions from the server. Nothing
+// is sent. Saves the course. Returns { found, summary, text, counts }.
+export async function pullCourse(course) {
+  const remote = await findShared(course);
+  if (!remote) return { found: false };
+  course.sharedKey = remote.key;
+  const summary = applyShared(course, remote, { fields: POSITIONS });
   course.sharedVersion = remote.version;
   course.sharedAt = new Date().toISOString();
   await db.put('courses', course);
-  const pushed = holes.reduce((a, h) => a + Object.keys(h.fields).length, 0);
-  return { pushed, summary, text: describeChanges(summary) };
+  return { found: true, summary, text: describeChanges(summary), counts: countsText(course) };
 }
 
-// Before a course added from the map is saved: bring in what others shared.
-// Quietly does nothing if sharing isn't set up or the server can't be reached.
+// Backup tab: upload every course on this phone, with all its greens and
+// tees. Returns one result per course: { course, counts, error }.
+export async function uploadAll(say = () => {}) {
+  const results = [];
+  for (const c of await db.all('courses')) {
+    const holes = snapshotEdits(c);
+    if (!holes.length) { results.push({ course: c, skipped: true }); continue; }
+    say(`Uploading ${c.name}…`);
+    try {
+      const key = await link(c);
+      const { course: remote } = await api(`/courses/${key}/edits`, { method: 'POST', body: { name: c.name, centre: centreOf(c), holeCount: c.holes.length, holes } });
+      c.sharePushedTs = latestEdit(c);
+      c.sharedVersion = remote.version;
+      c.sharedAt = new Date().toISOString();
+      await db.put('courses', c);
+      results.push({ course: c, counts: sharedCounts(remote) });
+    } catch (e) { results.push({ course: c, error: e.message }); }
+  }
+  return results;
+}
+
+// Adding a course from the map: start from what others have shared.
+// Quietly does nothing if the server can't be reached.
 export async function pullForNewCourse(course) {
-  if (!(await sharingOn())) return null;
-  const centre = centreOf(course);
-  if (!centre) return null;
+  if (!(await sharingOn()) || !centreOf(course)) return null;
   try {
-    const { courses } = await api(`/courses?lat=${centre.lat}&lon=${centre.lon}&km=3`, { timeout: 8000 });
-    const match = courses.find((c) => sameCourse(course.name, c.name) && distance(centre, c.centre) < 2500);
-    if (!match) return null;
-    const { course: remote } = await api(`/courses/${match.key}`, { timeout: 8000 });
+    const remote = await findShared(course);
+    if (!remote) return null;
     course.sharedKey = remote.key;
     const summary = applyShared(course, remote);
-    course.sharePushedTs = latestEdit(course);
     course.sharedVersion = remote.version;
     course.sharedAt = new Date().toISOString();
     return { summary, text: describeChanges(summary) };
@@ -87,34 +118,4 @@ export async function pullForNewCourse(course) {
     console.warn('share', e);
     return null;
   }
-}
-
-// After editing greens on the map: send the edits without bothering anyone.
-export async function pushQuietly(course) {
-  try {
-    if (!(await sharingOn()) || !(latestEdit(course) > (course.sharePushedTs ?? 0))) return;
-    const fresh = await db.get('courses', course.id);
-    if (fresh) await syncCourse(fresh);
-  } catch (e) { console.warn('share', e); }
-}
-
-// The Backup tab's Update courses: every course on this phone.
-export async function syncAll(say = () => {}) {
-  const courses = await db.all('courses');
-  const { courses: shared } = await api('/courses');
-  const results = [];
-  for (const c of courses) {
-    if (!c.sharedKey) {
-      const centre = centreOf(c);
-      const m = centre && shared.find((s) => sameCourse(c.name, s.name) && distance(centre, s.centre) < 2500);
-      if (m) c.sharedKey = m.key;
-      else if (c.seedKey && shared.some((s) => s.key === c.seedKey)) c.sharedKey = c.seedKey;
-    }
-    const hasEdits = latestEdit(c) > (c.sharePushedTs ?? 0);
-    if (!c.sharedKey && !hasEdits) continue;
-    say(`Updating ${c.name}…`);
-    try { results.push({ course: c, ...(await syncCourse(c)) }); }
-    catch (e) { results.push({ course: c, error: e.message }); }
-  }
-  return results;
 }

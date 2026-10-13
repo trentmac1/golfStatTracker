@@ -67,3 +67,28 @@ test('a rough shared green does not replace a mapped one', () => {
   assert.equal(applyShared(empty, { holeCount: 1, holes: [{ n: 1, fields: { green: { v: P(0.002, 0, { estimated: true }), ts: 5 } } }] }).greens, 1);
   assert.equal(empty.holes[0].green.estimated, true);
 });
+
+import { snapshotEdits, sharedCounts } from '../js/coursemerge.js';
+
+test('full upload sends every green and tee, unedited ones as a baseline', () => {
+  const course = { holes: Array.from({ length: 18 }, (_, i) => ({ n: i + 1, par: 4, si: null, green: P(0.001 * i, 0, i === 2 ? { estimated: true, fromHoleLine: true } : { estimated: false }), front: null, back: null, tee: i < 10 ? P(0.001 * i, 0.002) : null })) };
+  markEdited(course.holes[0], 'green', 'par');
+  course.holes[17].green = null; markEdited(course.holes[17], 'green');   // cleared here
+  const up = snapshotEdits(course);
+  assert.equal(up.length, 18);
+  assert.ok(up[0].fields.green.ts > 1e12 && up[0].fields.par.v === 4);
+  assert.equal(up[1].fields.green.ts, 1); assert.equal(up[1].fields.par, undefined, 'untouched pars stay home');
+  assert.equal(up[2].fields.green.v.estimated, true);
+  assert.equal(up[17].fields.green.v, null);
+  // On the server: a baseline fills gaps but doesn't beat a real edit.
+  const stored = { key: 'x', name: 'X', centre, holeCount: 18, holes: [{ n: 2, fields: { green: { v: P(0.05), ts: 500 } } }] };
+  const { course: srv } = mergeShared(stored, { holeCount: 18, holes: up }, { now: Date.now() });
+  assert.ok(Math.abs(srv.holes.find((h) => h.n === 2).fields.green.v.lat - (centre.lat + 0.05)) < 1e-9);
+  assert.deepEqual(sharedCounts(srv), { holes: 18, greens: 17, tees: 10 });
+});
+
+test('pulling only positions leaves pars alone', () => {
+  const mine = { holes: [{ n: 1, par: 4, green: null, tee: null }] };
+  applyShared(mine, { holeCount: 1, holes: [{ n: 1, fields: { par: { v: 3, ts: 9 }, green: { v: P(0.001), ts: 9 }, tee: { v: P(0.002), ts: 9 } } }] }, { fields: ['green', 'front', 'back', 'tee'] });
+  assert.equal(mine.holes[0].par, 4); assert.ok(mine.holes[0].green && mine.holes[0].tee);
+});

@@ -50,10 +50,10 @@ Send me the address and I'll build it into the app, so every user gets it automa
 
 ## Day to day
 
-- **Update courses** (Backup tab) sends your edits for every course and brings in everyone else's.
-- **Update green and tee locations** (on a course's screen, under Place greens on the map) does the same for one course.
-- Leaving the map editor sends what you placed straight away, if there's signal.
-- Adding a course from the map brings in what others have shared for it.
+- **Update courses** (Backup tab) uploads every course on the phone with all its green, green-edge and tee locations, plus pars and stroke indexes typed in by hand. It reports what the server now has, e.g. "18/18 greens, 18/18 tees set".
+- **Update green and tee locations** (on a course's screen, under Place greens on the map) only downloads. It brings the server's green and tee locations into that course on the phone, and sends nothing.
+- Adding a course from the map starts from what's on the server for it.
+- Positions edited on a phone carry the time they were placed, and newer edits win. Positions nobody edited (from OpenStreetMap, or placed before sharing existed) go up as a baseline: they fill empty holes on the server but never replace someone's edit.
 
 ## Looking after it
 

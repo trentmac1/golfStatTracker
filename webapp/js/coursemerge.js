@@ -98,9 +98,37 @@ export function localEdits(course, since = 0) {
   return holes;
 }
 
+// Everything this phone knows about a course's positions, for a full upload:
+// every green, edge and tee it has, plus pars and stroke indexes typed in.
+// Positions nobody edited here (from the map, or set before sharing existed)
+// go up as a baseline (ts 1): they fill gaps on the server but never replace
+// a real edit.
+export function snapshotEdits(course) {
+  const holes = [];
+  for (const h of course.holes) {
+    const fields = {};
+    for (const f of POINT_FIELDS) {
+      if (!h[f]) continue;
+      fields[f] = { v: { lat: h[f].lat, lon: h[f].lon, ...(f === 'green' && h[f].estimated ? { estimated: true } : {}) }, ts: h.edits?.[f] ?? 1 };
+    }
+    for (const f of ['par', 'si']) if (h.edits?.[f] && h[f] != null) fields[f] = { v: h[f], ts: h.edits[f] };
+    // A position cleared here on purpose.
+    for (const f of POINT_FIELDS) if (!h[f] && h.edits?.[f]) fields[f] = { v: null, ts: h.edits[f] };
+    if (Object.keys(fields).length) holes.push({ n: h.n, fields });
+  }
+  return holes;
+}
+
+// How many holes of a shared course have a green / tee.
+export function sharedCounts(shared) {
+  const n = shared.holeCount ?? 18;
+  const has = (f) => (shared.holes ?? []).filter((h) => h.n <= n && h.fields?.[f]?.v).length;
+  return { holes: n, greens: has('green'), tees: has('tee') };
+}
+
 // Put shared edits onto a course on this phone. Edits made here that are
 // newer stay. Returns a summary of what changed.
-export function applyShared(course, shared) {
+export function applyShared(course, shared, { fields: only = FIELDS } = {}) {
   const out = { greens: 0, tees: 0, edges: 0, pars: 0, sis: 0, holesAdded: 0, moved: [] };
   const count = Math.min(shared.holeCount ?? 0, MAX_HOLES);
   while (course.holes.length < count) {
@@ -112,7 +140,7 @@ export function applyShared(course, shared) {
     const h = course.holes[sh.n - 1];
     if (!h) continue;
     for (const [f, edit] of Object.entries(sh.fields ?? {})) {
-      if (!FIELDS.includes(f)) continue;
+      if (!only.includes(f)) continue;
       const localTs = h.edits?.[f] ?? 0;
       const local = h[f] ?? null;
       // A value from the map (OSM) or a rough guess has no edit time, so any

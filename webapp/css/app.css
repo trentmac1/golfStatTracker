@@ -525,3 +525,4 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .check-list li { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 14px; }
 .check-list li.good { border-left: 5px solid var(--turf); }
 .check-list li.bad { border-left: 5px solid var(--red); }
+.share-line { display: block; }

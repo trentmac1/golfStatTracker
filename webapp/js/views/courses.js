@@ -149,7 +149,7 @@ export async function courseEditView(root, { courseId }) {
         ${course.importNotes?.length ? `<div class="note warn-note">From OpenStreetMap, with gaps: ${course.importNotes.map(esc).join('; ')}.</div>` : ''}
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
         <button class="btn ghost wide" data-a="share">Update green and tee locations</button>
-        <p class="note" id="sprog">${course.sharedAt ? `Shared with other players. Last updated ${new Date(course.sharedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}.` : 'Sends the greens and tees you\'ve placed to other players and brings in theirs.'}</p>
+        <p class="note" id="sprog">${course.sharedAt ? `Green and tee locations last updated ${new Date(course.sharedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}.` : 'Brings in the green and tee locations other players have uploaded.'}</p>
         <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape) ? 'Refresh' : 'Get'} green shapes and slopes</button>
         <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data.` : 'Outlines from OpenStreetMap and LiDAR heights for Queensland courses. Needs signal once.'}</p>
         <h2>Holes</h2>
@@ -265,9 +265,13 @@ export async function courseEditView(root, { courseId }) {
       b.disabled = true;
       if (el) el.textContent = 'Updating…';
       try {
-        const r = await share.syncCourse(course);
-        const msg = [r.text ? `Brought in ${r.text} from other players` : 'Already up to date', r.pushed ? `shared ${r.pushed} of your changes` : ''].filter(Boolean).join('; ');
-        toast(`${msg}.`);
+        const r = await share.pullCourse(course);
+        if (!r.found) {
+          toast("Nobody has uploaded this course yet. Use Update courses in Backup to share yours.", 'warn');
+          if (el) el.textContent = 'Not on the course server yet.';
+          return;
+        }
+        toast(`${r.text ? `Updated ${r.text}` : 'Already up to date'}. ${r.counts}.`);
         if (r.summary.moved.length) {
           if (el) el.textContent = 'Getting the outlines for moved greens…';
           await downloadGreens(course, (m) => { const e2 = $('#sprog', root); if (e2) e2.textContent = m; });
@@ -378,8 +382,7 @@ export async function courseMapView(root, { courseId, hole }) {
       }
     }
   });
-  // Leaving the map editor: share what was placed (quietly; offline is fine).
-  return { destroy() { map.remove(); share.pushQuietly(course); } };
+  return { destroy() { map.remove(); } };
 }
 
 // Search GolfCourseAPI, pick the course and tee, apply the card.

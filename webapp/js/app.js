@@ -181,7 +181,7 @@ async function settingsView(root) {
       </div>
       <p class="note">${lastBackup ? `Last backup: ${fmtDate(lastBackup)}.` : 'No backup yet.'} ${persisted ? 'Storage is protected from automatic clearing.' : 'Add this app to your Home Screen so Safari keeps its data.'}</p>
       <h2>Shared courses</h2>
-      <p class="note">Greens, tees, pars and stroke indexes you place are shared with everyone using the app, and theirs come to you. Ratings, slopes and hole lengths from your scorecard lookups stay on this phone.</p>
+      <p class="note">Update courses uploads the green and tee locations of every course on this phone (and pars or stroke indexes you've typed in), so other players can bring them in with Update green and tee locations on a course. Ratings, slopes and hole lengths from your scorecard lookups stay on this phone.</p>
       <div class="btn-col"><button class="btn primary" data-a="share">Update courses</button></div>
       <p class="note" id="shareMsg">${lastShare ? `Last updated ${fmtDate(lastShare)}.` : ''}${!COURSE_SERVER && !shareServer ? ' The course server isn\'t set up yet.' : ''}</p>
       <details class="quick-card">
@@ -219,17 +219,13 @@ async function settingsView(root) {
       const msg = $('#shareMsg', root);
       b.disabled = true;
       try {
-        const results = await share.syncAll((t) => { msg.textContent = t; });
-        const got = results.filter((x) => x.text), sent = results.reduce((a, x) => a + (x.pushed ?? 0), 0);
-        const failed = results.filter((x) => x.error);
+        const results = await share.uploadAll((t) => { msg.textContent = t; });
+        const done = results.filter((x) => x.counts), failed = results.filter((x) => x.error);
         const lines = [
-          ...got.map((x) => `${x.course.name}: ${x.text} from other players.`),
-          sent ? `Shared ${sent} of your changes.` : '',
+          ...done.map((x) => `${x.course.name}: ${x.counts.greens}/${x.counts.holes} greens, ${x.counts.tees}/${x.counts.holes} tees set on the server.`),
           ...failed.map((x) => `${x.course.name}: ${x.error}`),
-        ].filter(Boolean);
-        msg.textContent = lines.length ? lines.join(' ') : 'All your courses are up to date.';
-        const moved = got.filter((x) => x.summary.moved.length).map((x) => x.course.name);
-        if (moved.length) msg.textContent += ` Some greens moved on ${moved.join(', ')}: tap Refresh green shapes on the course to update their outlines.`;
+        ];
+        msg.innerHTML = lines.length ? lines.map((l) => `<span class="share-line">${esc(l)}</span>`).join('') : 'No greens or tees placed on any course yet.';
         await db.setSetting('lastShare', new Date().toISOString());
       } catch (err) {
         msg.textContent = err.message;

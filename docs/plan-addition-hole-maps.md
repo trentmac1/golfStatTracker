@@ -13,8 +13,8 @@ Decision (Trent): outlines are traced in OpenStreetMap, not in the app. Trent tr
 ## Matching features to holes
 
 `matchFeatures` in `webapp/js/holemap.js`:
-- Line of play: OSM's numbered `golf=hole` line if it ends near the green, otherwise tee to green.
-- Fairways: the line runs through it for at least 16 m. If none, on par 4s and 5s, a fairway lying beside the line (dogleg corner cut), between tee and green.
+- Line of play: the OSM `golf=hole` line (drawn tee to green) whose end is nearest the hole's green, within 50 m. The line's number only breaks ties (it counts as 10 m closer), because mappers sometimes number holes differently from the card. Holes with no green yet use the line with the same number. Without a hole line, tee to green.
+- Fairways are matched through the hole lines (updated 13 Oct 2026): each fairway is scored against every hole's line by the metres of line running through it, plus, for a dogleg the line cuts across, the share of its edge lying within 30 m beside the line between the landing area and the green. It goes to the best-scoring hole only, so a neighbouring hole's fairway isn't pulled in. A fairway two holes really share (both lines run 40 m or more through it) goes to both. Minimum to match: 10 m of line through it, or 40% of its edge beside the line.
 - Tees: within 70 m of the start of the line and 20 m of it. Bunkers: within 32 m of the line or 35 m of the green. Water: within 45 m of the line.
 
 ## Smooth outlines
@@ -44,7 +44,7 @@ Fairway estimate: a par 4 or 5 with no fairway mapped gets a rough fairway, draw
 ## Limits
 
 - Lies are only as good as the GPS (about 2–3 m from the phone or L76K). A ball within a couple of metres of a fairway or bunker edge can be reported either way; the shot can be dragged to correct it.
-- A ball on a neighbouring hole's fairway counts as fairway.
+- A ball on a neighbouring hole's fairway counts as rough, since only the hole's own fairways are checked.
 - Fringe isn't mapped separately; a ball just off the green shows as rough.
 - Rounds already played pick up lies once the course's hole maps are downloaded (Courses → the course → Refresh hole maps and green slopes).
 

@@ -132,18 +132,50 @@ const wayPts = (e) => clean((e.geometry ?? []).map((g) => ({ lat: g.lat, lon: g.
 const minDist = (line, poly) => Math.min(...poly.map((p) => toLine(p, line).d));
 const r7 = (p) => [Math.round(p.lat * 1e7) / 1e7, Math.round(p.lon * 1e7) / 1e7];
 
-// The line of play for a hole: the map's numbered hole line if it reaches
-// near the hole's green, otherwise straight from the tee to the green.
-function playLine(h, holeWays) {
-  const way = holeWays.get(h.n);
-  if (way?.length >= 2 && (!h.green || distance(way.at(-1), h.green) < 60)) return way;
-  if (h.tee && h.green) return [h.tee, h.green];
-  return null;
+// Each course hole's OSM hole line (golf=hole, drawn tee to green). The
+// line is found by where it ends: the one finishing at this hole's green,
+// since mappers sometimes number holes differently from the card. Holes with
+// no green yet use the line with the same number.
+function holeWaysFor(course, ways) {
+  const out = new Map();
+  const used = new Set();
+  // Closest line end to each green first; a matching number counts as 10 m
+  // closer, so it only decides between lines ending about equally near.
+  const pairs = [];
+  for (const h of course.holes) {
+    if (!h.green) continue;
+    for (const w of ways) {
+      const d = distance(w.pts.at(-1), h.green);
+      if (d < 50) pairs.push({ h, w, cost: d - (w.ref === h.n ? 10 : 0) });
+    }
+  }
+  pairs.sort((a, b) => a.cost - b.cost);
+  for (const { h, w } of pairs) {
+    if (out.has(h.n) || used.has(w)) continue;
+    out.set(h.n, w); used.add(w);
+  }
+  for (const h of course.holes) {
+    if (out.has(h.n) || h.green) continue;
+    const w = ways.find((x) => x.ref === h.n && !used.has(x));
+    if (w) { out.set(h.n, w); used.add(w); }
+  }
+  return out;
+}
+
+// How strongly a fairway belongs to a line of play: metres of the line that
+// run through it, plus, for a fairway the line only skirts (a dogleg the line
+// cuts across), the share of its edge lying close beside the line between
+// the landing area and the green.
+function fairwayScore(poly, line, samples, len) {
+  const through = samples.filter((s) => inside(s, poly)).length * 2;
+  const near = poly.map((q) => toLine(q, line));
+  const beside = near.filter((n) => n.d <= 30 && n.along > 30 && n.along < len - 5).length / near.length;
+  return { through, beside, score: through + beside * 60 };
 }
 
 // Match OSM fairways, tees, bunkers and water to holes.
-// Returns { [holeNumber]: { line, fairways, tees, bunkers, water } } with rings
-// (and the line of play) as [[lat, lon]].
+// Returns { [holeNumber]: { line, fromHoleWay, fairways, tees, bunkers, water }
+// } with rings (and the line of play) as [[lat, lon]].
 export function matchFeatures(course, osm) {
   const els = osm?.elements ?? [];
   const kind = (e) => {
@@ -152,29 +184,41 @@ export function matchFeatures(course, osm) {
   };
   const polys = (k) => els.filter((e) => kind(e) === k).map(wayPts).filter((p) => p.length >= 3);
   const fairways = polys('fairway'), tees = polys('tee'), bunkers = polys('bunker'), water = polys('water');
-  const holeWays = new Map(els.filter((e) => e.tags?.golf === 'hole' && /^\d+$/.test(e.tags.ref ?? '')).map((e) => [Number(e.tags.ref), wayPts(e)]));
+  const ways = els.filter((e) => e.tags?.golf === 'hole').map((e) => ({ ref: /^\d+$/.test(e.tags.ref ?? '') ? Number(e.tags.ref) : null, pts: wayPts(e) }))
+    .filter((w) => w.pts.length >= 2);
+  const wayOf = holeWaysFor(course, ways);
+
+  // Lines of play: the hole's OSM line, else straight from tee to green.
+  const lines = new Map();
+  for (const h of course.holes) {
+    const w = wayOf.get(h.n);
+    const line = w?.pts ?? (h.tee && h.green ? [h.tee, h.green] : null);
+    if (!line) continue;
+    lines.set(h.n, { line, fromHoleWay: !!w, len: lineLength(line), samples: sampleLine(line, 2) });
+  }
+
+  // Each fairway goes to the hole whose line it suits best. A fairway two
+  // holes really share (both lines run 40 m or more through it) goes to both.
+  const fwFor = new Map([...lines.keys()].map((n) => [n, []]));
+  for (const poly of fairways) {
+    const scored = [...lines].map(([n, L]) => ({ n, ...fairwayScore(poly, L.line, L.samples, L.len) }))
+      .filter((s) => s.through >= 10 || s.beside >= 0.4)
+      .sort((a, b) => b.score - a.score);
+    if (!scored.length) continue;
+    fwFor.get(scored[0].n).push(poly);
+    for (const s of scored.slice(1)) if (s.through >= 40 && scored[0].through >= 40) fwFor.get(s.n).push(poly);
+  }
+
   const out = {};
   for (const h of course.holes) {
-    const line = playLine(h, holeWays);
-    if (!line) continue;
-    const len = lineLength(line);
-    const samples = sampleLine(line);
-    // Fairways the line of play runs through for at least 16 m.
-    let fw = fairways.filter((p) => samples.filter((s) => inside(s, p)).length * 4 >= 16);
-    // Doglegs where the line cuts the corner: a fairway close beside the line,
-    // between tee and green. Only when nothing else matched, so a neighbouring
-    // hole's fairway isn't pulled in.
-    if (!fw.length && h.par >= 4) {
-      fw = fairways.filter((p) => {
-        const near = p.map((q) => toLine(q, line));
-        const close = near.filter((n) => n.d <= 25 && n.along > 30 && n.along < len - 10);
-        return close.length >= Math.max(2, near.length * 0.3);
-      });
-    }
+    const L = lines.get(h.n);
+    if (!L) continue;
+    const { line } = L;
     const start = line[0];
     out[h.n] = {
       line: line.map(r7),
-      fairways: fw.map((p) => p.map(r7)),
+      fromHoleWay: L.fromHoleWay,
+      fairways: fwFor.get(h.n).map((p) => p.map(r7)),
       tees: tees.filter((p) => p.some((q) => distance(q, start) < 70) && minDist(line, p) < 20).map((p) => p.map(r7)),
       bunkers: bunkers.filter((p) => minDist(line, p) < 32 || (h.green && p.some((q) => distance(q, h.green) < 35))).map((p) => p.map(r7)),
       water: water.filter((p) => minDist(line, p) < 45).map((p) => p.map(r7)),

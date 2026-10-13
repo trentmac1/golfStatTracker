@@ -95,3 +95,25 @@ test('a rough fairway is estimated only where none is mapped', async () => {
   assert.equal(estimateFairway({ n: 1, par: 4, tee: at(0, 0) }), null);
   assert.equal(holeLine(h).length, 2);
 });
+
+test('fairways follow the OSM hole line, one hole each', () => {
+  // Two parallel holes 45 m apart. The map numbers them the other way round
+  // from the card, and hole 2's fairway sits close beside hole 1's line.
+  const c = { holes: [
+    { n: 1, par: 4, green: at(0, 300) },
+    { n: 2, par: 4, green: at(45, 300) },
+  ] };
+  const o = { elements: [
+    way('hole', [at(0, 0), at(-20, 150), at(0, 300)], { ref: '2' }),   // dogleg left
+    way('hole', [at(45, 0), at(45, 300)], { ref: '1' }),
+    way('fairway', rect(-35, 110, -5, 260)),                               // hole 1, inside the dogleg
+    way('fairway', rect(32, 110, 58, 280)),                                // hole 2
+  ] };
+  const m = matchFeatures(c, o);
+  assert.equal(m[1].fromHoleWay, true);
+  assert.ok(Math.abs(m[1].line[1][1] - at(-20, 150).lon) < 1e-6, 'hole 1 uses the line ending at its green');
+  assert.equal(m[1].fairways.length, 1);
+  assert.equal(m[2].fairways.length, 1);
+  assert.ok(Math.abs(m[1].fairways[0][0][1] - at(-35, 0).lon) < 1e-6);
+  assert.ok(Math.abs(m[2].fairways[0][0][1] - at(32, 0).lon) < 1e-6);
+});

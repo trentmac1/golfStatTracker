@@ -37,6 +37,7 @@ Fairway estimate: a par 4 or 5 with no fairway mapped gets a rough fairway, draw
 
 `lieAt(point, hole)` returns green, bunker, water, fairway, tee or rough. It returns nothing on holes without a map, rather than guessing; rough is only reported when the hole's fairway is mapped (or it's a par 3).
 - Each shot gets `startLie` and `endLie` in `deriveHole`. A lie the player set on a shot still wins.
+- Automatic lie while playing (added 13 Oct 2026): on a mapped hole (its own fairway outline, or a par 3, plus a green outline; `holeMapped`), marking a shot sets its lie to fairway, rough or bunker from where the ball is (`applyAutoLie`). The toast says "Shot 2 marked from the rough", and the shot sheet shows the lie with a dashed outline and "Marked from the course map". Dragging the shot re-marks it. Tapping a lie makes it the player's, and the map never changes it after that. The tee shot stays Tee, and a ball on the green, a tee or in water is left unmarked. Shots marked before the hole map was downloaded are marked when the hole is next opened. Lies tapped in by hand in older rounds are kept.
 - Shot lists (hole screen and round review) show where each shot finished. Hole tiles and the review map colour each ball position by its lie.
 - Fairway result: the player's Hit/Left/Right tap wins; otherwise the drive's finish on the map decides (fairway = hit, otherwise left or right of the line to the green). This replaces the 15 m guess from a tapped target where a map exists.
 - Strokes gained uses the mapped lie for each shot's start.

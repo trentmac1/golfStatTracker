@@ -5,7 +5,7 @@ import { distance } from '../geo.js';
 import { deriveHole, deriveRound, emptyHoleStat, playOrder } from '../stats.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
-import { smoothed, LIE_LABEL } from '../holemap.js';
+import { smoothed, LIE_LABEL, applyAutoLie, holeMapped } from '../holemap.js';
 import { DEFAULT_BAG, LIES, DEFAULT_CENTRE } from '../config.js';
 import { $, esc, m, signed, toast, vibrate, sheet, confirmSheet } from '../ui.js';
 import { markEdited } from '../coursemerge.js';
@@ -30,7 +30,14 @@ export async function holeView(root, { roundId, hole }) {
   const ch = () => course.holes[n - 1];
   const hs = () => (round.holes[n] ??= emptyHoleStat());
   const holeShots = () => shots.filter((s) => s.hole === n);
+  const firstShotId = () => [...holeShots()].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || (a.time ?? 0) - (b.time ?? 0))[0]?.id;
   const derived = () => deriveHole(ch(), hs(), holeShots());
+
+  // Shots marked before the hole map was downloaded get their lie now.
+  if (holeMapped(ch())) {
+    const tee = firstShotId();
+    for (const s of holeShots()) if (applyAutoLie(s, ch(), s.id === tee)) await db.put('shots', s);
+  }
 
   root.innerHTML = `
   <section class="hole">
@@ -199,6 +206,7 @@ export async function holeView(root, { roundId, hole }) {
     const s = shots.find((x) => x.id === id);
     if (!s) return;
     s.lat = p.lat; s.lon = p.lng; s.edited = true;
+    applyAutoLie(s, ch(), firstShotId() === s.id);
     await db.put('shots', s);
     render();
     toast(`Shot ${derived().shots.find((x) => x.id === id).index + 1} moved`);
@@ -401,12 +409,15 @@ export async function holeView(root, { roundId, hole }) {
         time: pos.time, club: null, source: 'manual', confidence: null, penalty: false,
         lie: holeShots().length ? null : 'tee', mishit: false, target: null,
       };
+      // On a mapped hole, mark fairway, rough or bunker from where the ball is.
+      applyAutoLie(shot, ch(), !holeShots().length);
       shots.push(shot);
       await db.put('shots', shot);
       vibrate();
       render();
       if (map && !orient(pos, true) && !map.getBounds().contains(ll(pos))) fit(map, [...derived().shots.map((s) => s.start), ch().green]);
-      toast(pos.accuracy > 12 ? `Shot ${holeShots().length} marked, weak GPS ±${Math.round(pos.accuracy)} m. Drag it on the map if it's off.` : `Shot ${holeShots().length} marked`, pos.accuracy > 12 ? 'warn' : '');
+      const lieNote = shot.lieAuto ? ` from the ${shot.lie}` : '';
+      toast(pos.accuracy > 12 ? `Shot ${holeShots().length} marked${lieNote}, weak GPS ±${Math.round(pos.accuracy)} m. Drag it on the map if it's off.` : `Shot ${holeShots().length} marked${lieNote}`, pos.accuracy > 12 ? 'warn' : '');
     } catch (e) {
       toast(e.message, 'warn');
     } finally {
@@ -451,7 +462,8 @@ export async function holeView(root, { roundId, hole }) {
       <p class="sheet-label">Club</p>
       <div class="chips clubs">${bag.map((c) => `<button data-club="${esc(c)}" class="${raw.club === c ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>
       <p class="sheet-label">Lie</p>
-      <div class="chips">${LIES.map(([v, t]) => `<button data-lie="${v}" class="${raw.lie === v ? 'on' : ''}">${t}</button>`).join('')}</div>
+      <div class="chips lies">${LIES.map(([v, t]) => `<button data-lie="${v}" class="${raw.lie === v ? (raw.lieAuto ? 'auto' : 'on') : ''}">${t}</button>`).join('')}</div>
+      <p class="sheet-note" id="lieNote" ${raw.lieAuto ? '' : 'hidden'}>Marked from the course map. Tap another lie if it's wrong.</p>
       <div class="toggles">
         <label><input type="checkbox" data-t="penalty" ${raw.penalty ? 'checked' : ''}> Penalty on this shot <small>adds 1 stroke</small></label>
         <label><input type="checkbox" data-t="mishit" ${raw.mishit ? 'checked' : ''}> Mishit <small>left out of club distances</small></label>
@@ -473,9 +485,14 @@ export async function holeView(root, { roundId, hole }) {
           render();
           close();
         } else if (b.dataset.lie) {
-          raw.lie = raw.lie === b.dataset.lie ? null : b.dataset.lie;
-          el.querySelectorAll('[data-lie]').forEach((x) => x.classList.toggle('on', x.dataset.lie === raw.lie));
+          // Tapping the auto-marked lie confirms it; tapping it again clears it.
+          raw.lie = raw.lie === b.dataset.lie && !raw.lieAuto ? null : b.dataset.lie;
+          raw.lieAuto = false;
+          raw.lieByHand = true;
+          el.querySelectorAll('[data-lie]').forEach((x) => { x.classList.toggle('on', x.dataset.lie === raw.lie); x.classList.remove('auto'); });
+          el.querySelector('#lieNote').hidden = true;
           await db.put('shots', raw);
+          render();
         } else if (b.dataset.x === 'done') close();
         else if (b.dataset.x === 'target') {
           close();

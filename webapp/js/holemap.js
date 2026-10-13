@@ -293,3 +293,32 @@ export function lieAt(p, courseHole) {
   // mapped (or it's a par 3, which has none), otherwise we can't know.
   return f.fairways?.length || courseHole.par === 3 ? 'rough' : null;
 }
+
+// A hole is mapped well enough to mark lies when it has its own fairway
+// outline (or is a par 3) and a green outline.
+export function holeMapped(courseHole) {
+  return !!(courseHole?.shape?.polygon && courseHole.features && (courseHole.features.fairways?.length || courseHole.par === 3));
+}
+
+// The lie to mark on a shot played from point p, from the hole map: fairway,
+// rough or bunker. Null when the map can't say (unmapped hole, or a ball on
+// the green, a tee or in water, which the player sorts out).
+export function autoLie(p, courseHole) {
+  if (!holeMapped(courseHole)) return null;
+  const lie = lieAt(p, courseHole);
+  return lie === 'fairway' || lie === 'rough' || lie === 'bunker' ? lie : null;
+}
+
+// Mark (or re-mark) a shot's lie from the map unless the player chose it.
+// Returns true when the shot changed. The tee shot is left as 'tee'.
+export function applyAutoLie(shot, courseHole, isTee) {
+  // Any lie the map didn't set is the player's (older rounds have no flag).
+  if (isTee || shot.lieByHand || (shot.lie && !shot.lieAuto)) return false;
+  const lie = autoLie({ lat: shot.lat, lon: shot.lon }, courseHole);
+  if (lie === (shot.lie ?? null) && !!shot.lieAuto === !!lie) return false;
+  if (!lie && !shot.lieAuto) return false; // nothing to say, and nothing of ours to clear
+  shot.lie = lie;
+  shot.lieAuto = !!lie;
+  return true;
+}
+

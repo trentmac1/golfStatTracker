@@ -117,3 +117,47 @@ test('fairways follow the OSM hole line, one hole each', () => {
   assert.ok(Math.abs(m[1].fairways[0][0][1] - at(-35, 0).lon) < 1e-6);
   assert.ok(Math.abs(m[2].fairways[0][0][1] - at(32, 0).lon) < 1e-6);
 });
+
+test('shots on a mapped hole are marked fairway or rough automatically', async () => {
+  const { applyAutoLie, holeMapped } = await import('../js/holemap.js');
+  const m = matchFeatures(course, osm);
+  const h = { ...course.holes[0], features: m[1] };
+  assert.equal(holeMapped(h), true);
+  assert.equal(holeMapped(course.holes[1]), false);
+
+  const fw = { ...at(0, 200), lie: null };
+  assert.equal(applyAutoLie(fw, h, false), true);
+  assert.deepEqual([fw.lie, fw.lieAuto], ['fairway', true]);
+  // dragged into the rough: re-marked
+  Object.assign(fw, at(25, 200));
+  applyAutoLie(fw, h, false);
+  assert.equal(fw.lie, 'rough');
+  // into the bunker
+  Object.assign(fw, at(22, 226));
+  applyAutoLie(fw, h, false);
+  assert.equal(fw.lie, 'bunker');
+  // onto the green: the map's mark is cleared, nothing guessed
+  Object.assign(fw, at(0, 300));
+  applyAutoLie(fw, h, false);
+  assert.deepEqual([fw.lie, fw.lieAuto], [null, false]);
+
+  // the player's choice and the tee shot are never touched
+  const hand = { ...at(25, 200), lie: 'fairway', lieByHand: true };
+  assert.equal(applyAutoLie(hand, h, false), false);
+  assert.equal(hand.lie, 'fairway');
+  const tee = { ...at(0, 0), lie: 'tee' };
+  assert.equal(applyAutoLie(tee, h, true), false);
+  assert.equal(tee.lie, 'tee');
+  // unmapped hole: left alone
+  const un = { ...at(25, 200), lie: null };
+  assert.equal(applyAutoLie(un, course.holes[1], false), false);
+  assert.equal(un.lie, null);
+});
+
+test('a lie set by hand in an older round is kept', async () => {
+  const { applyAutoLie } = await import('../js/holemap.js');
+  const h = { ...course.holes[0], features: matchFeatures(course, osm)[1] };
+  const old = { ...at(25, 200), lie: 'fairway' };
+  assert.equal(applyAutoLie(old, h, false), false);
+  assert.equal(old.lie, 'fairway');
+});

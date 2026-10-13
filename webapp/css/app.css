@@ -318,6 +318,7 @@ dialog.sheet::backdrop { background: rgba(10,25,15,.55); }
   background: var(--card); font: 700 21px/1 var(--num); cursor: pointer;
 }
 .chips button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.chips button.auto { background: #dfe9dc; border-color: var(--turf); border-style: dashed; color: var(--turf-deep); }
 .toggles { display: grid; gap: 8px; margin-top: 14px; }
 .toggles label { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-weight: 600; }
 .toggles input { width: 24px; height: 24px; accent-color: var(--turf); }

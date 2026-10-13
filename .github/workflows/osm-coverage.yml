@@ -14,6 +14,9 @@ jobs:
         with: { python-version: "3.12" }
       - run: python analysis/probe/osm_coverage.py > coverage-log.txt 2>&1 || true
       - run: |
+          sed -i 's/green|hole|bunker)/green|hole|bunker|fairway|tee|water_hazard|lateral_water_hazard)/' analysis/greens/update_osm.py
+          python analysis/greens/update_osm.py >> coverage-log.txt 2>&1 || true
+      - run: |
           git config user.name "probe bot"; git config user.email "actions@users.noreply.github.com"
           git checkout -B osm-coverage
-          git rm -rq --cached . ; git add -f osm-coverage.md coverage-log.txt 2>/dev/null; git commit -qm "OSM coverage" && git push -f origin osm-coverage
+          git rm -rq --cached . ; git add -f osm-coverage.md coverage-log.txt webapp/data/osm/*.json 2>/dev/null; git commit -qm "OSM coverage" && git push -f origin osm-coverage

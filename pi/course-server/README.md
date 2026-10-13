@@ -29,16 +29,20 @@ The app runs from an `https://` page, so the server needs an `https://` address 
 ```sh
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up                 # opens a sign-in link: sign up free and approve the Pi
-sudo tailscale funnel --bg 8787
+sudo tailscale funnel --bg --https=8443 8787
 ```
+
+This uses public port 8443, so it sits alongside anything you already serve on the normal port (443). Running `tailscale funnel --bg 8787` without `--https=8443` would replace whatever is already on 443. Funnel allows ports 443, 8443 and 10000, so a Pi can have up to three. `sudo tailscale funnel status` lists them all.
 
 The first time, `tailscale funnel` prints a link to switch on HTTPS and Funnel for your account. Open it, approve, then run the command again. It then shows the address, something like:
 
 ```
-https://raspberrypi.tail1234.ts.net
+https://raspberrypi.tail1234.ts.net:8443
 ```
 
-Check it from your phone (on mobile data, to be sure it's public): open `https://raspberrypi.tail1234.ts.net/api/health`. You should see `{"ok":true,...}`.
+Check it from your phone (on mobile data, to be sure it's public): open `https://raspberrypi.tail1234.ts.net:8443/api/health`. You should see `{"ok":true,...}`.
+
+To stop it later: `sudo tailscale funnel --https=8443 off`.
 
 ### 3. Tell the app
 

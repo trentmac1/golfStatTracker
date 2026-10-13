@@ -1,0 +1,110 @@
+OSM golf coverage, South East Queensland, bbox -28.25,152.40,-26.40,153.60, 2026-10-13
+
+| Course | green | fairway | tee | bunker | rough | water | hole |
+|---|---|---|---|---|---|---|---|
+| Brookwater Golf & Country Club | 21 | 92 | 63 | 68 | 60 | 7 | 19 |
+| RACV Royal Pines Resort Golf Course | 28 | 40 | 112 | 134 | 0 | 19 | 18 |
+| Coolangatta & Tweed Heads Golf Club | 37 | 39 | 66 | 137 | 0 | 21 | 36 |
+| Nudgee Golf Club | 28 | 31 | 85 | 53 | 44 | 36 | 18 |
+| Palmer Gold Coast (Robina Woods) Golf Club | 25 | 28 | 60 | 43 | 0 | 14 | 18 |
+| Howeston Golf Course | 30 | 27 | 27 | 43 | 0 | 19 | 0 |
+| Pines Course | 26 | 25 | 93 | 79 | 2 | 14 | 19 |
+| The Grand Golf Club | 19 | 25 | 61 | 94 | 0 | 14 | 18 |
+| Ashgrove Golf Club | 18 | 25 | 18 | 32 | 41 | 3 | 18 |
+| Carbrook Golf Club | 17 | 23 | 56 | 40 | 18 | 35 | 18 |
+| Palmer Colonial Golf Course | 25 | 22 | 72 | 80 | 0 | 5 | 54 |
+| Royal Queensland Golf Club | 24 | 22 | 47 | 122 | 0 | 7 | 18 |
+| Pacific Golf Club | 21 | 22 | 39 | 52 | 0 | 6 | 18 |
+| Wynnum Golf Club | 21 | 22 | 32 | 46 | 5 | 0 | 0 |
+| Lakelands Golf Course | 26 | 21 | 74 | 106 | 0 | 8 | 19 |
+| Palm Meadows Golf Course | 24 | 21 | 50 | 88 | 0 | 12 | 17 |
+| The Brisbane Golf Club Inc. | 22 | 21 | 35 | 75 | 0 | 18 | 18 |
+| Saint Lucia Golf Links | 21 | 21 | 33 | 32 | 0 | 1 | 18 |
+| Caboolture Golf Club | 20 | 20 | 33 | 36 | 0 | 6 | 18 |
+| Emerald Lakes Golf Club | 20 | 20 | 50 | 49 | 0 | 13 | 18 |
+| Glades Golf Course | 19 | 20 | 59 | 89 | 14 | 17 | 18 |
+| Nambour Golf Club | 19 | 20 | 18 | 18 | 0 | 7 | 18 |
+| Tallebudgera Golf Course | 18 | 20 | 19 | 11 | 0 | 3 | 1 |
+| Mount Coolum Golf Club | 19 | 19 | 55 | 24 | 0 | 5 | 18 |
+| Pine Rivers Golf Club | 19 | 19 | 46 | 25 | 0 | 6 | 18 |
+| Sandy Gallop Golf Course | 19 | 19 | 21 | 9 | 1 | 0 | 19 |
+| Gold Coast Burleigh Golf Club | 18 | 18 | 19 | 53 | 0 | 3 | 18 |
+| Redcliffe Golf Club | 18 | 18 | 33 | 54 | 0 | 7 | 18 |
+| Pacific Harbour Golf Club | 12 | 18 | 50 | 0 | 0 | 25 | 18 |
+| Kooralbyn Valley Golf Course | 17 | 17 | 40 | 44 | 0 | 0 | 17 |
+| Links Hope Island | 17 | 14 | 61 | 94 | 0 | 11 | 15 |
+| Palms Course | 12 | 11 | 35 | 57 | 0 | 8 | 10 |
+| Lowood & District Golf Club | 10 | 9 | 18 | 14 | 0 | 0 | 18 |
+| Chinderah Golf Course | 7 | 8 | 6 | 9 | 0 | 1 | 0 |
+| Palms Course | 7 | 7 | 28 | 22 | 0 | 3 | 7 |
+| Oxley Golf Complex - Corinda Golf Course | 26 | 4 | 26 | 13 | 1 | 5 | 0 |
+| Redland Bay Golf Club | 19 | 4 | 18 | 40 | 0 | 8 | 18 |
+| Boomerang Hills | 3 | 4 | 7 | 0 | 0 | 6 | 4 |
+| Surfers Paradise Golf Club | 22 | 3 | 30 | 46 | 0 | 12 | 18 |
+| Links Hope Island | 4 | 3 | 12 | 28 | 0 | 1 | 3 |
+| Oxley Golf Club | 18 | 2 | 18 | 39 | 0 | 0 | 25 |
+| Beerwah Golf Club | 5 | 2 | 7 | 6 | 0 | 0 | 18 |
+| Indooroopilly Golf Course | 2 | 1 | 19 | 12 | 0 | 0 | 18 |
+| Maroochy River Golf Club | 1 | 1 | 20 | 3 | 0 | 18 | 18 |
+| Rosewood Golf Club | 1 | 1 | 2 | 0 | 0 | 0 | 0 |
+| Virginia Golf Club | 1 | 1 | 1 | 7 | 0 | 0 | 1 |
+| Riverlakes Golf Course | 0 | 2 | 4 | 1 | 0 | 1 | 1 |
+| (unnamed way/1228707391) | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| Helensvale Golf Course | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| Meadowbrook Golf Club | 27 | 0 | 38 | 2 | 0 | 9 | 27 |
+| Southport Golf Club | 18 | 0 | 0 | 0 | 0 | 0 | 18 |
+| Bulimba Golf Club | 9 | 0 | 9 | 3 | 0 | 2 | 0 |
+| Sandgate Golf Club | 9 | 0 | 17 | 15 | 0 | 0 | 18 |
+| Wantima Country Club | 5 | 0 | 0 | 4 | 0 | 0 | 0 |
+| Jindalee Golf Club | 4 | 0 | 4 | 2 | 0 | 0 | 0 |
+| (unnamed way/1316055739) | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| (unnamed way/1316055740) | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| (unnamed way/863735410) | 1 | 0 | 1 | 3 | 0 | 0 | 1 |
+| Burleigh West Golf Driving Range | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Ipswich Country Club | 1 | 0 | 1 | 2 | 0 | 0 | 1 |
+| Ipswich Golf Driving Range | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Keperra Golf Course | 1 | 0 | 0 | 1 | 0 | 1 | 18 |
+| (unnamed way/1197041095) | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| (unnamed way/1228799038) | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
+| (unnamed way/1242615715) | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| (unnamed way/596234542) | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| (unnamed way/596234543) | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Bay Islands Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Beachside Championship Golf Course | 0 | 0 | 18 | 0 | 0 | 0 | 18 |
+| Beaudesert Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Boonah Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Bribie Island Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Caloundra Golf Club | 0 | 0 | 18 | 0 | 0 | 0 | 18 |
+| Canungra Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Chancellor Park Golf Driving Range | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Cliff Douglas Tally Valley Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Club Banora Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Cooroy Golf Course | 0 | 0 | 0 | 9 | 0 | 0 | 0 |
+| Esk Country Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Gailes Golf Club | 0 | 0 | 15 | 0 | 0 | 0 | 18 |
+| Gainsborough Greens | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Glenview Par 3 Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Headland Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Imbil Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Isle of Coochie Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Karana Downs Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Kilcoy Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Lakeside Country Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Marsden Golf Driving Range | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| McLeod Country Golf Course | 0 | 0 | 18 | 0 | 0 | 0 | 18 |
+| Meadow Park Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Mister Tees Golf Driving Range | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Mount Warren Park Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Mt Tamborine Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Noosa Springs | 0 | 0 | 18 | 0 | 0 | 0 | 18 |
+| Noosa Valley Country Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| North Stradbroke Island Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| One Mile Country Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Parkwood International Golf Course | 0 | 0 | 0 | 20 | 0 | 6 | 0 |
+| Pelican Waters Golf Course | 0 | 0 | 0 | 28 | 0 | 0 | 0 |
+| Peregian Springs Golf Club | 0 | 0 | 0 | 67 | 0 | 0 | 0 |
+| Samford Valley Golf and Country Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Twin Waters Golf Club | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Village Links | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Windaroo Golf Course | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Wolston Park Golf Club | 0 | 0 | 2 | 0 | 0 | 0 | 0 |

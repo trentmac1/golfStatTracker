@@ -7,6 +7,8 @@ import { holeView } from './views/hole.js';
 import { cardView } from './views/card.js';
 import { reviewView } from './views/review.js';
 import { trackerView } from './views/tracker.js';
+import * as share from './share.js';
+import { COURSE_SERVER } from './config.js';
 import { statsView } from './views/stats.js';
 import { coursesView, courseEditView, courseMapView } from './views/courses.js';
 import { $, esc, signed, fmtDate, toast, saveFile, pickFile, confirmSheet, sheet } from './ui.js';
@@ -163,7 +165,7 @@ async function roundsView(root) {
 }
 
 async function settingsView(root) {
-  const [bag, lastBackup, gcaKey] = await Promise.all([db.getSetting('bag', DEFAULT_BAG), db.getSetting('lastBackup', null), db.getSetting('gcaKey', '')]);
+  const [bag, lastBackup, gcaKey, shareServer, lastShare] = await Promise.all([db.getSetting('bag', DEFAULT_BAG), db.getSetting('lastBackup', null), db.getSetting('gcaKey', ''), db.getSetting('shareServer', ''), db.getSetting('lastShare', null)]);
   const persisted = await navigator.storage?.persisted?.();
   let clubs = [...bag];
   const draw = () => {
@@ -178,6 +180,16 @@ async function settingsView(root) {
         <button class="btn ghost" data-a="csv">Export all rounds (CSV)</button>
       </div>
       <p class="note">${lastBackup ? `Last backup: ${fmtDate(lastBackup)}.` : 'No backup yet.'} ${persisted ? 'Storage is protected from automatic clearing.' : 'Add this app to your Home Screen so Safari keeps its data.'}</p>
+      <h2>Shared courses</h2>
+      <p class="note">Greens, tees, pars and stroke indexes you place are shared with everyone using the app, and theirs come to you. Ratings, slopes and hole lengths from your scorecard lookups stay on this phone.</p>
+      <div class="btn-col"><button class="btn primary" data-a="share">Update courses</button></div>
+      <p class="note" id="shareMsg">${lastShare ? `Last updated ${fmtDate(lastShare)}.` : ''}${!COURSE_SERVER && !shareServer ? ' The course server isn\'t set up yet.' : ''}</p>
+      <details class="quick-card">
+        <summary>Course server</summary>
+        <label>Address<input id="shareServer" type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="${esc(COURSE_SERVER || 'https://…')}" value="${esc(shareServer)}"></label>
+        <button class="btn ghost" data-a="saveserver">Save</button>
+        <p class="note">Leave empty to use the app's own server${COURSE_SERVER ? ` (${esc(COURSE_SERVER)})` : ''}.</p>
+      </details>
       <h2>Tracker</h2>
       <p class="note">Connect the shot tracker over Bluetooth (in Bluefy on iPhone) to check its battery, GPS and sensors.</p>
       <div class="btn-col"><a class="btn ghost" href="#/tracker">Open tracker</a></div>
@@ -203,6 +215,30 @@ async function settingsView(root) {
       clubs = clubs.includes(c) ? clubs.filter((x) => x !== c) : ALL_CLUBS.filter((x) => clubs.includes(x) || x === c);
       await db.setSetting('bag', clubs);
       b.classList.toggle('on', clubs.includes(c));
+    } else if (b.dataset.a === 'share') {
+      const msg = $('#shareMsg', root);
+      b.disabled = true;
+      try {
+        const results = await share.syncAll((t) => { msg.textContent = t; });
+        const got = results.filter((x) => x.text), sent = results.reduce((a, x) => a + (x.pushed ?? 0), 0);
+        const failed = results.filter((x) => x.error);
+        const lines = [
+          ...got.map((x) => `${x.course.name}: ${x.text} from other players.`),
+          sent ? `Shared ${sent} of your changes.` : '',
+          ...failed.map((x) => `${x.course.name}: ${x.error}`),
+        ].filter(Boolean);
+        msg.textContent = lines.length ? lines.join(' ') : 'All your courses are up to date.';
+        const moved = got.filter((x) => x.summary.moved.length).map((x) => x.course.name);
+        if (moved.length) msg.textContent += ` Some greens moved on ${moved.join(', ')}: tap Refresh green shapes on the course to update their outlines.`;
+        await db.setSetting('lastShare', new Date().toISOString());
+      } catch (err) {
+        msg.textContent = err.message;
+      } finally { b.disabled = false; }
+    } else if (b.dataset.a === 'saveserver') {
+      const v = $('#shareServer', root).value.trim().replace(/\/+$/, '');
+      if (v && !/^https:\/\//.test(v) && !/^http:\/\/(localhost|127\.)/.test(v)) { toast('The address must start with https://', 'warn'); return; }
+      await db.setSetting('shareServer', v);
+      toast(v ? 'Course server saved' : 'Using the app\'s own server');
     } else if (b.dataset.a === 'savekey') {
       const v = $('#gcaKey', root).value.trim();
       await db.setSetting('gcaKey', v);

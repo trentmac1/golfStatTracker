@@ -10,6 +10,8 @@ import { downloadGreens } from './green.js';
 import { searchCourses, nearbyCourses, loadCourseOsm, holesFromOsm } from '../greens.js';
 import { searchScorecards, getScorecard, applyScorecard } from '../scorecards.js';
 import { sheet } from '../ui.js';
+import { markEdited } from '../coursemerge.js';
+import * as share from '../share.js';
 
 export async function coursesView(root) {
   const courses = (await db.all('courses')).sort((a, b) => a.name.localeCompare(b.name));
@@ -98,12 +100,21 @@ export async function addCourseFromMap(place, say = () => {}) {
       if (h.green) course.holes[i].green = { ...h.green, estimated: true, fromHoleLine: true };
     });
     course.source = 'osm';
+    // Greens and tees other players have placed on this course.
+    const fromOthers = await share.pullForNewCourse(course);
     await db.put('courses', course);
-    if (!holes) {
+    if (!holes && !fromOthers?.text) {
       toast(`${place.name} added. Its holes aren't numbered on the map, so set pars and greens yourself.`, 'warn');
       return course;
     }
     await downloadGreens(course, say, { osm });
+    if (fromOthers?.text) {
+      toast(`${course.name} added, with ${fromOthers.text} from other players.`);
+      course.importNotes = [];
+      await db.put('courses', course);
+      return course;
+    }
+    if (!holes) return course;
     // Tell the player what the map didn't have.
     const notes = [];
     const missing = holes.filter((h) => !h.mapped).length;
@@ -137,6 +148,8 @@ export async function courseEditView(root, { courseId }) {
         <p class="sub">Par ${total}. Tap a par to change it. Greens and tees can be placed on the map from anywhere.</p>
         ${course.importNotes?.length ? `<div class="note warn-note">From OpenStreetMap, with gaps: ${course.importNotes.map(esc).join('; ')}.</div>` : ''}
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
+        <button class="btn ghost wide" data-a="share">Update green and tee locations</button>
+        <p class="note" id="sprog">${course.sharedAt ? `Shared with other players. Last updated ${new Date(course.sharedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}.` : 'Sends the greens and tees you\'ve placed to other players and brings in theirs.'}</p>
         <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape) ? 'Refresh' : 'Get'} green shapes and slopes</button>
         <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data.` : 'Outlines from OpenStreetMap and LiDAR heights for Queensland courses. Needs signal once.'}</p>
         <h2>Holes</h2>
@@ -197,6 +210,7 @@ export async function courseEditView(root, { courseId }) {
       const h = course.holes[Number(t.dataset.si) - 1];
       h.si = Number.isFinite(v) && v >= 1 && v <= course.holes.length ? v : null;
       t.value = h.si ?? '';
+      markEdited(h, 'si');
       await db.put('courses', course);
     }
   });
@@ -207,6 +221,7 @@ export async function courseEditView(root, { courseId }) {
       const hh = course.holes[Number(b.dataset.hole) - 1];
       hh.par = Number(b.dataset.par);
       delete hh.parEstimated;
+      markEdited(hh, 'par');
       await db.put('courses', course);
       draw();
     } else if (b.dataset.a === 'quick') {
@@ -217,8 +232,8 @@ export async function courseEditView(root, { courseId }) {
       if (pars.length && pars.length !== N) { toast(`That's ${pars.length} pars; this course has ${N} holes.`, 'warn'); return; }
       if (sis.length && (sis.length !== N || sis.some((v) => v < 1 || v > N))) { toast(`Stroke indexes need ${N} numbers from 1 to ${N}.`, 'warn'); return; }
       course.holes.forEach((h, i) => {
-        if (pars.length) { h.par = pars[i]; delete h.parEstimated; }
-        if (sis.length) h.si = sis[i];
+        if (pars.length) { h.par = pars[i]; delete h.parEstimated; markEdited(h, 'par'); }
+        if (sis.length) { h.si = sis[i]; markEdited(h, 'si'); }
       });
       if (pars.length) course.importNotes = (course.importNotes ?? []).filter((t) => !/par/i.test(t));
       await db.put('courses', course);
@@ -245,6 +260,23 @@ export async function courseEditView(root, { courseId }) {
       await db.put('courses', course);
       toast(`${course.name} now has ${want} holes`);
       draw();
+    } else if (b.dataset.a === 'share') {
+      const el = $('#sprog', root);
+      b.disabled = true;
+      if (el) el.textContent = 'Updating…';
+      try {
+        const r = await share.syncCourse(course);
+        const msg = [r.text ? `Brought in ${r.text} from other players` : 'Already up to date', r.pushed ? `shared ${r.pushed} of your changes` : ''].filter(Boolean).join('; ');
+        toast(`${msg}.`);
+        if (r.summary.moved.length) {
+          if (el) el.textContent = 'Getting the outlines for moved greens…';
+          await downloadGreens(course, (m) => { const e2 = $('#sprog', root); if (e2) e2.textContent = m; });
+        }
+        draw();
+      } catch (err) {
+        toast(err.message, 'warn');
+        if (el) el.textContent = err.message;
+      } finally { b.disabled = false; }
     } else if (b.dataset.a === 'greens') {
       b.disabled = true;
       await downloadGreens(course, (msg) => { const el = $('#gprog', root); if (el) el.textContent = msg; });
@@ -321,6 +353,7 @@ export async function courseMapView(root, { courseId, hole }) {
     if (b.dataset.p) {
       const c = map.getCenter();
       h[b.dataset.p] = { lat: c.lat, lon: c.lng, ...(b.dataset.p === 'green' ? { estimated: false } : {}) };
+      markEdited(h, b.dataset.p);
       await db.put('courses', course);
       draw();
       toast(`${b.textContent} saved`);
@@ -330,6 +363,7 @@ export async function courseMapView(root, { courseId, hole }) {
       catch (err) { toast(err.message, 'warn'); return; }
       finally { b.disabled = false; }
       h.green = { lat: f.lat, lon: f.lon, estimated: false };
+      markEdited(h, 'green');
       map.setView(ll(f), 19);
       await db.put('courses', course);
       draw();
@@ -337,12 +371,15 @@ export async function courseMapView(root, { courseId, hole }) {
     } else if (b.dataset.a === 'clear') {
       if (await confirmSheet(`Clear the green and tee for hole ${n}?`, 'Clear hole')) {
         h.green = h.front = h.back = h.tee = null;
+        delete h.shape;
+        markEdited(h, 'green', 'front', 'back', 'tee');
         await db.put('courses', course);
         draw();
       }
     }
   });
-  return { destroy() { map.remove(); } };
+  // Leaving the map editor: share what was placed (quietly; offline is fine).
+  return { destroy() { map.remove(); share.pushQuietly(course); } };
 }
 
 // Search GolfCourseAPI, pick the course and tee, apply the card.

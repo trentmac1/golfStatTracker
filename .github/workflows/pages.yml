@@ -2,7 +2,7 @@ name: Deploy web app
 on:
   push:
     branches: [main]
-    paths: ['webapp/**', '.github/workflows/pages.yml']
+    paths: ['webapp/**', 'pi/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: node --test webapp/tests/*.test.mjs
+      - run: node --test webapp/tests/*.test.mjs pi/course-server/*.test.mjs
   deploy:
     needs: test
     runs-on: ubuntu-latest

@@ -8,6 +8,7 @@ import { openGreenSheet, viewPoint } from './green.js';
 import { shapePolygon } from '../greens.js';
 import { DEFAULT_BAG, LIES, DEFAULT_CENTRE } from '../config.js';
 import { $, esc, m, signed, toast, vibrate, sheet, confirmSheet } from '../ui.js';
+import { markEdited } from '../coursemerge.js';
 
 // First putt length buckets (metres stored at the bucket's middle).
 const FIRST_PUTT = [[0.6, '<1'], [1.5, '1–2'], [3, '2–4'], [5, '4–6'], [8, '6–10'], [12, '10–15'], [18, '15+']];
@@ -205,6 +206,7 @@ export async function holeView(root, { roundId, hole }) {
   async function moveGreen(p) {
     const h = ch();
     h.green = { lat: p.lat, lon: p.lng, estimated: false };
+    markEdited(h, 'green');
     await db.put('courses', course);
     render();
     toast('Green centre moved for this course');
@@ -423,6 +425,7 @@ export async function holeView(root, { roundId, hole }) {
       const h = ch();
       if (!h.green) {
         h.green = { lat: pos.lat, lon: pos.lon, estimated: true };
+        markEdited(h, 'green');
         await db.put('courses', course);
         toast('Ball on green. Green saved for this course; drag the flag to its centre.');
       } else toast('Ball on green');

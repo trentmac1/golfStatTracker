@@ -1,6 +1,6 @@
 // Service worker: the app works with no signal once it has loaded once.
 // Bump VERSION when you deploy so phones pick up the new files.
-const VERSION = 'v0.3.0';
+const VERSION = 'v0.3.1';
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = 'runtime-v1';   // Leaflet, fonts
 const TILES = 'tiles-v1';       // satellite imagery you've looked at
@@ -9,7 +9,7 @@ const MAX_TILES = 4000;         // roughly 60–100 MB of imagery
 const LOCAL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/db.js', './js/geo.js', './js/gps.js', './js/map.js', './js/stats.js',
-  './js/ui.js', './js/config.js', './js/export.js', './js/sg.js', './js/handicap.js', './js/greens.js', './js/scorecards.js', './js/transport.js',
+  './js/ui.js', './js/config.js', './js/export.js', './js/sg.js', './js/handicap.js', './js/greens.js', './js/scorecards.js', './js/transport.js', './js/share.js', './js/coursemerge.js',
   './js/views/hole.js', './js/views/card.js', './js/views/stats.js', './js/views/courses.js', './js/views/green.js', './js/views/review.js', './js/views/tracker.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];

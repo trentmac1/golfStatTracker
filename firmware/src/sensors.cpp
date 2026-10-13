@@ -30,9 +30,16 @@ namespace {
 }
 
 bool imu::begin() {
-  pinMode(PIN_LSM6DS3TR_C_POWER, OUTPUT);
+  // The IMU (and its I2C pull-ups) run off this pin: high drive, as Seeed's
+  // own IMU library does.
+  pinMode(PIN_LSM6DS3TR_C_POWER, OUTPUT_H0H1);
   digitalWrite(PIN_LSM6DS3TR_C_POWER, HIGH);
-  delay(20);
+  delay(50);
+  // The nRF52 I2C driver waits forever on a stuck bus, so check both lines
+  // are pulled high before using it.
+  pinMode(PIN_WIRE1_SDA, INPUT); pinMode(PIN_WIRE1_SCL, INPUT);
+  delayMicroseconds(50);
+  if (digitalRead(PIN_WIRE1_SDA) == LOW || digitalRead(PIN_WIRE1_SCL) == LOW) { imuOk = false; return false; }
   Wire1.begin();
   Wire1.setClock(400000);
   uint8_t id = 0;

@@ -77,6 +77,15 @@ The XIAO has two pads on the **back**, marked **BAT+** and **BAT−**.
 
 The separate charge LED by the USB socket is wired to the charger, not the firmware.
 
+**While starting up** (the first second or two), the LED shows which step is running. If it stays on one colour, that step has hung:
+
+| Stuck on | Step | What to check |
+|---|---|---|
+| red | USB, battery, GPS lines, pin check | unplug the GPS board and button, then try again |
+| green | Bluetooth | open `INFO_UF2.TXT` on the XIAO-SENSE drive (double-tap reset): it should say `SoftDevice: S140 7.3.0` |
+| blue | motion sensor | send me the serial log |
+| yellow | microphone | send me the serial log |
+
 ## Optional: the serial log
 
 With USB connected, any serial monitor at 115200 baud (the Arduino IDE's, or a Web Serial terminal in Chrome) prints a status line every second: battery, GPS, IMU, mic, button and Bluetooth. Type `n` to see the raw GPS sentences, `p` to re-run the pin check, and `h` for help. It's handy if something on the Tracker screen looks wrong.

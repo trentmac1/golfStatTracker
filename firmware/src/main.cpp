@@ -125,19 +125,37 @@ static void handleSerial() {
 }
 
 // ---------- main ----------
+// Start-up shows which step it's on, so a hang can be read off the LED:
+//   red     USB serial, battery, GPS lines, pin check
+//   green   Bluetooth (needs the SoftDevice from the bootloader)
+//   blue    motion sensor (IMU)
+//   yellow  microphone
+// then the normal 2-second heartbeat. Stuck on one colour = that step hung.
+static void stage(bool r, bool g, bool b, const char* what) {
+  leds(r, g, b);
+  if (Serial) { Serial.print("start: "); Serial.println(what); Serial.flush(); }
+}
+
 void setup() {
   leds(true, false, false);
   Serial.begin(115200);
   uint32_t t0 = millis();
-  while (!Serial && millis() - t0 < 1500) delay(10);   // don't wait without USB
+  while (!Serial && millis() - t0 < 3000) delay(10);   // don't wait without USB
+  stage(true, false, false, "battery, GPS lines, pin check");
 
   battery::begin();                     // first: puts VBAT_ENABLE LOW (Seeed's advice)
   gnss::begin();                        // holds the GNSS control lines HIGH
   busyPins = probePins();               // before the button pin gets its pull-up
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  bool imuOk = imu::begin();
+  // Bluetooth before the sensors, so the phone can connect even if one fails.
+  stage(false, true, false, "Bluetooth");
   blelink::begin(onControl);
+
+  stage(false, false, true, "motion sensor");
+  bool imuOk = imu::begin();
+
+  stage(true, true, false, "microphone");
   bool micOk = mic::begin();            // after BLE: PDM asks the SoftDevice for the HF clock
 
   Serial.printf("\nGolf tracker firmware %d.%d.%d (protocol %d)\n", FW_MAJOR, FW_MINOR, FW_PATCH, PROTOCOL_VERSION);

@@ -1,5 +1,5 @@
 // Defaults and the seeded home course.
-export const APP_VERSION = '0.3.5';
+export const APP_VERSION = '0.3.6';
 
 export const DEFAULT_BAG = ['Dr', '3W', '5W', '4H', '5i', '6i', '7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 

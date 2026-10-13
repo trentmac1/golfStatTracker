@@ -25,6 +25,14 @@ Mappers often trace with few points, which gives sharp corners. Every outline (g
 
 Lies are tested against the smoothed shapes, so what you see matches what's reported.
 
+## Hole previews on the course screen (added 13 Oct 2026)
+
+Each course's screen shows a tile for every hole, drawn from its map: tee at the bottom, green at the top, along the line of play (OSM's hole line, so doglegs bend; otherwise tee to green). Tiles show the fairway, tees, water, bunkers, green, the hole number, par and length. Tapping a tile opens that hole on the map editor. The round's hole tiles use the same drawing (`webapp/js/views/holeart.js`).
+
+The line of play is saved with the hole map (`features.line`). Courses mapped before this change draw a straight tee-to-green line until Refresh hole maps is tapped.
+
+Fairway estimate: a par 4 or 5 with no fairway mapped gets a rough fairway, drawn lighter with a dashed edge. It's a 30 m wide strip along the line of play, from where a typical drive lands (a third of the hole, 70–150 m from the tee) to 22 m short of the green, narrowing at the ends so they round off (`estimateFairway` in `holemap.js`). It's only for drawing: lies and the fairway result never use it. The note under the tiles lists which holes are estimated, as a list of what to trace in OSM.
+
 ## Ball positions and lies
 
 `lieAt(point, hole)` returns green, bunker, water, fairway, tee or rough. It returns nothing on holes without a map, rather than guessing; rough is only reported when the hole's fairway is mapped (or it's a par 3).
@@ -55,5 +63,6 @@ Not mapped beyond the boundary or hole lines: Keperra, Indooroopilly, Virginia, 
 
 ## Done when
 
-- Ashgrove and Pine Rivers hole tiles show fairways, bunkers, water and smooth greens.
+- Ashgrove and Pine Rivers hole tiles show fairways, bunkers, water and smooth greens, on both the course screen and the round summary.
+- A course with no fairways mapped shows an estimated fairway on every par 4 and 5.
 - On a played round, at least 15 of 18 drives are labelled with the lie Trent saw on the course.

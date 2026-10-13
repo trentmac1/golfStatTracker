@@ -3,7 +3,8 @@
 import * as db from '../db.js';
 import { toLocal } from '../geo.js';
 import { deriveRound } from '../stats.js';
-import { previewRing, smoothPathD, smoothed, LIE_LABEL } from '../holemap.js';
+import { previewRing, smoothed, LIE_LABEL } from '../holemap.js';
+import { holeLayers } from './holeart.js';
 import { createMap, pin, line, circle, polygon, frame, fit, hasMap, drawHoleMap } from '../map.js';
 import { esc, signed } from '../ui.js';
 import { scoreClass } from './card.js';
@@ -40,19 +41,14 @@ export function holeThumb(dh, courseHole) {
   x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
   const w = x1 - x0, h = y1 - y0;
   if (w / h > 0.75) { const nh = w / 0.75; y0 -= (nh - h) / 2; y1 = y0 + nh; } else { const nw = h * 0.75; x0 -= (nw - w) / 2; x1 = x0 + nw; }
-  // Hole map underneath: fairways, tees, water and bunkers, all rounded.
-  const fe = courseHole?.features;
-  const shapes = (rings, cls) => (rings ?? []).map((r) => `<path d="${smoothPathD(ring(r), f)}" class="${cls}"/>`).join('');
-  const holeMap = fe ? shapes(fe.fairways, 'ht-fairway') + shapes(fe.tees, 'ht-tee') + shapes(fe.water, 'ht-water') : '';
-  const sand = shapes(fe?.bunkers ?? courseHole?.shape?.bunkers, 'ht-bunker');
-  const greenShape = outline
-    ? `<path d="${smoothPathD(outline, f)}" class="ht-green"/>`
-    : `<circle cx="0" cy="0" r="${f(dh.radius)}" class="ht-green"/>`;
+  // Hole map underneath: fairways (mapped or estimated), tees, water, bunkers.
+  const layers = holeLayers(courseHole, S);
+  const greenShape = layers.green || `<circle cx="0" cy="0" r="${f(dh.radius)}" class="ht-green"/>`;
   const path = sp.length > 1 ? `<path d="M${sp.map((p) => `${f(p[0])},${f(p[1])}`).join('L')}" class="ht-path"/>` : '';
   const r = ((x1 - x0) * 0.028).toFixed(2); // about 3 px on a phone tile
   // Each dot is where a shot was played from, coloured by its lie.
   const dots = sp.slice(0, dh.shots.length).map((p, i) => `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${r}" class="ht-dot${dh.shots[i].penalty ? ' pen' : ''}${dh.shots[i].startLie && i ? ` lie-${dh.shots[i].startLie}` : ''}"/>`).join('');
-  return `<svg viewBox="${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)}" class="ht-svg" aria-hidden="true">${holeMap}${sand}${greenShape}${path}${dots}</svg>`;
+  return `<svg viewBox="${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)}" class="ht-svg" aria-hidden="true">${layers.under}${greenShape}${path}${dots}</svg>`;
 }
 
 // Grid of every hole in the round, for the round summary.

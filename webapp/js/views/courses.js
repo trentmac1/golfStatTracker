@@ -7,11 +7,33 @@ import { greenRadius } from '../stats.js';
 import * as gps from '../gps.js';
 import { $, esc, toast, confirmSheet } from '../ui.js';
 import { downloadGreens } from './green.js';
+import { holePreview } from './holeart.js';
 import { searchCourses, nearbyCourses, loadCourseOsm, holesFromOsm } from '../greens.js';
 import { searchScorecards, getScorecard, applyScorecard } from '../scorecards.js';
 import { sheet } from '../ui.js';
 import { markEdited } from '../coursemerge.js';
 import * as share from '../share.js';
+
+// Every hole drawn from its map, tee at the bottom. Tapping one opens it on
+// the map editor.
+function previewGrid(course, courseId) {
+  const tiles = course.holes.map((h) => ({ h, p: holePreview(h) }));
+  if (!tiles.some((t) => t.p.svg)) return '';
+  const est = tiles.filter((t) => t.p.estimated).map((t) => t.h.n);
+  const fairways = course.holes.filter((h) => h.features?.fairways?.length).length;
+  return `
+        <h2>Hole previews</h2>
+        <div class="hole-grid course-holes">${tiles.map(({ h, p }) => `
+          <a class="ht" href="#/course/${courseId}/map/${h.n}" aria-label="Hole ${h.n}, par ${h.par}${p.length ? `, ${p.length} metres` : ''}">
+            ${p.svg || '<div class="ht-empty">No tee or green yet</div>'}
+            <span class="ht-n">${h.n}</span>
+            <span class="ht-par">Par ${h.par}${p.length ? ` · ${h.metres ?? p.length} m` : ''}</span>
+          </a>`).join('')}</div>
+        <p class="note">${est.length
+          ? `Lighter, outlined fairways are estimates (hole${est.length === 1 ? '' : 's'} ${est.join(', ')}). Trace them in OpenStreetMap, then tap Refresh hole maps above to replace them.`
+          : fairways ? 'Fairways, tees, bunkers and water from OpenStreetMap.' : ''}
+          ${course.holes.some((h) => h.shape || h.features) ? '' : ' Tap Get hole maps above for fairways and green outlines.'}</p>`;
+}
 
 export async function coursesView(root) {
   const courses = (await db.all('courses')).sort((a, b) => a.name.localeCompare(b.name));
@@ -153,6 +175,7 @@ export async function courseEditView(root, { courseId }) {
         <p class="note" id="sprog">${course.sharedAt ? `Last updated from other players ${new Date(course.sharedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}.` : 'Brings in the greens, tees, pars, stroke indexes, rating and slope other players have uploaded.'}</p>
         <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape || h.features) ? 'Refresh' : 'Get'} hole maps and green slopes</button>
         <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data, ${course.holes.filter((h) => h.features?.fairways?.length).length} holes have fairways.` : 'Greens, fairways, tees, bunkers and water from OpenStreetMap, and LiDAR heights for Queensland courses. Needs signal once.'}</p>
+        ${previewGrid(course, courseId)}
         <h2>Holes</h2>
         <div class="seg small holes-count" role="group" aria-label="Number of holes">
           ${[9, 18, 27, 36].map((v) => `<button data-count="${v}" class="${course.holes.length === v ? 'on' : ''}">${v}</button>`).join('')}

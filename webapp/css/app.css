@@ -444,6 +444,10 @@ td.bar-col { height: 34px; }
 .ht-svg path, .ht-svg circle { vector-effect: non-scaling-stroke; }
 .ht-green { fill: #7fd17f; fill-opacity: .55; stroke: #fff; stroke-width: 1.5; }
 .ht-fairway { fill: #6fb552; fill-opacity: .75; stroke: none; }
+.ht-fairway.est { fill: #6fb552; fill-opacity: .4; stroke: #cfe8c0; stroke-width: 1; stroke-dasharray: 3 3; }
+.ht-line { fill: none; stroke: #fff; stroke-opacity: .55; stroke-width: 1; stroke-dasharray: 2 3; }
+.ht-par { position: absolute; left: 6px; bottom: 5px; font: 600 13px/1 var(--num); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.course-holes { margin-top: 10px; }
 .ht-tee { fill: #6fb552; fill-opacity: .8; stroke: none; }
 .ht-water { fill: #3d8fd6; fill-opacity: .8; stroke: none; }
 .ht-bunker { fill: var(--sand); stroke: none; }

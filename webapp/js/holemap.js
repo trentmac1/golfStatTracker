@@ -3,7 +3,7 @@
 // rough). Outlines are smoothed before they are drawn or tested, so a shape a
 // mapper traced with few points still shows as a soft, rounded outline.
 // Pure functions, no DOM, so they can be unit tested in Node.
-import { toLocal, distance } from './geo.js';
+import { toLocal, fromLocal, distance } from './geo.js';
 
 // ---------- smoothing ----------
 // Drop a repeated closing point and points closer than ~0.3 m to the last kept.
@@ -142,7 +142,8 @@ function playLine(h, holeWays) {
 }
 
 // Match OSM fairways, tees, bunkers and water to holes.
-// Returns { [holeNumber]: { fairways, tees, bunkers, water } } with rings as [[lat, lon]].
+// Returns { [holeNumber]: { line, fairways, tees, bunkers, water } } with rings
+// (and the line of play) as [[lat, lon]].
 export function matchFeatures(course, osm) {
   const els = osm?.elements ?? [];
   const kind = (e) => {
@@ -172,6 +173,7 @@ export function matchFeatures(course, osm) {
     }
     const start = line[0];
     out[h.n] = {
+      line: line.map(r7),
       fairways: fw.map((p) => p.map(r7)),
       tees: tees.filter((p) => p.some((q) => distance(q, start) < 70) && minDist(line, p) < 20).map((p) => p.map(r7)),
       bunkers: bunkers.filter((p) => minDist(line, p) < 32 || (h.green && p.some((q) => distance(q, h.green) < 35))).map((p) => p.map(r7)),
@@ -179,6 +181,53 @@ export function matchFeatures(course, osm) {
     };
   }
   return out;
+}
+
+// The line of play as {lat, lon}: the saved map line, else tee to green.
+export function holeLine(courseHole) {
+  if (courseHole?.features?.line?.length >= 2) return ringPts(courseHole.features.line);
+  if (courseHole?.tee && courseHole?.green) return [courseHole.tee, courseHole.green];
+  return null;
+}
+
+// A rough fairway for a par 4 or 5 with none mapped: a 30 m wide strip
+// along the line of play, from where a typical drive lands to just short of
+// the green. Only for drawing; lies never use it.
+export function estimateFairway(courseHole) {
+  if (!courseHole || courseHole.par < 4 || courseHole.features?.fairways?.length) return null;
+  const line = holeLine(courseHole);
+  if (!line) return null;
+  const len = lineLength(line);
+  const from = Math.min(150, Math.max(70, len * 0.33));
+  const to = len - 22;
+  if (to - from < 40) return null;
+  const O = line[0];
+  const xy = line.map((p) => toLocal(O, p));
+  // point and unit direction at distance d along the line
+  const at = (d) => {
+    let run = 0;
+    for (let i = 0; i < xy.length - 1; i++) {
+      const a = xy[i], b = xy[i + 1], L = Math.hypot(b.x - a.x, b.y - a.y);
+      if (run + L >= d || i === xy.length - 2) {
+        const t = L ? Math.min(1, Math.max(0, (d - run) / L)) : 0;
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, ux: (b.x - a.x) / (L || 1), uy: (b.y - a.y) / (L || 1) };
+      }
+      run += L;
+    }
+    return null;
+  };
+  const HALF = 15;
+  const n = Math.max(2, Math.round((to - from) / 20));
+  const left = [], right = [];
+  for (let k = 0; k <= n; k++) {
+    const p = at(from + ((to - from) * k) / n);
+    // narrower at the ends, so they round off once smoothed
+    const w = k === 0 || k === n ? HALF * 0.6 : HALF;
+    left.push({ x: p.x - p.uy * w, y: p.y + p.ux * w });
+    right.push({ x: p.x + p.uy * w, y: p.y - p.ux * w });
+  }
+  const ring = [...left, ...right.reverse()];
+  return ring.map((q) => r7(fromLocal(O, q)));
 }
 
 // ---------- lies ----------

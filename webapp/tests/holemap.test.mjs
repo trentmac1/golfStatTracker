@@ -81,3 +81,17 @@ test('lies and the automatic fairway result', () => {
   // the player's tap still wins
   assert.equal(deriveHole(h, { putts: 2, fairway: 'right' }, shots).fairway, 'right');
 });
+
+test('a rough fairway is estimated only where none is mapped', async () => {
+  const { estimateFairway, holeLine } = await import('../js/holemap.js');
+  const h = { n: 1, par: 4, tee: at(0, 0), green: at(0, 340) };
+  const est = estimateFairway(h).map(([lat, lon]) => toLocal(O, { lat, lon }));
+  const ys = est.map((p) => p.y), xs = est.map((p) => p.x);
+  assert.ok(Math.min(...ys) > 100 && Math.min(...ys) < 125, `starts ${Math.min(...ys)}`);
+  assert.ok(Math.max(...ys) > 310 && Math.max(...ys) < 325, `ends ${Math.max(...ys)}`);
+  assert.ok(Math.max(...xs) <= 15.01 && Math.min(...xs) >= -15.01);
+  assert.equal(estimateFairway({ ...h, par: 3 }), null);
+  assert.equal(estimateFairway({ ...h, features: { fairways: [ring(rect(-15, 120, 15, 280))] } }), null);
+  assert.equal(estimateFairway({ n: 1, par: 4, tee: at(0, 0) }), null);
+  assert.equal(holeLine(h).length, 2);
+});

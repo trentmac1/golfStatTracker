@@ -4,6 +4,7 @@
 // Rotation comes from the leaflet-rotate plugin; without it the map stays
 // north-up and everything else still works.
 import { bearing, distance, fromLocal, toLocal } from './geo.js';
+import { smoothed } from './holemap.js';
 
 const L = () => window.L;
 
@@ -46,6 +47,14 @@ export function line(points, cls) {
 
 export function polygon(points, cls) {
   return L().polygon(points.map(ll), { className: cls, interactive: false });
+}
+
+// A hole's fairways, tees, water and bunkers from the map, smoothed.
+export function drawHoleMap(courseHole, layer) {
+  const f = courseHole?.features;
+  const add = (rings, cls) => (rings ?? []).forEach((r) => polygon(smoothed(r), cls).addTo(layer));
+  if (f) { add(f.fairways, 'hm-fairway'); add(f.tees, 'hm-tee'); add(f.water, 'hm-water'); }
+  add(f?.bunkers ?? courseHole?.shape?.bunkers, 'hm-bunker');
 }
 
 export function circle(p, radius, cls) {

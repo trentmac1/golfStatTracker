@@ -2,6 +2,7 @@
 // so they can be unit tested in Node.
 import { distance, miss, missLabel, missBucket, median, quantile } from './geo.js';
 import { pointInPolygon } from './greens.js';
+import { lieAt } from './holemap.js';
 
 export const DEFAULT_GREEN_RADIUS = 12; // m, used until front/back are known
 export const FAIRWAY_HALF_WIDTH = 15;   // m, for auto fairway result from a tee target
@@ -97,16 +98,27 @@ export function deriveHole(courseHole, holeStat = {}, holeShots = []) {
     if (isTee && par >= 4 && hs.fairway) {
       result = { hit: 'Fairway', left: 'Left of fairway', right: 'Right of fairway', short: 'Short of fairway' }[hs.fairway];
     }
+    // Lies from the hole map (null when the hole has no map). A lie the
+    // player set on the shot wins for where it was played from.
+    const startLie = s.lie ?? (isTee ? 'tee' : lieAt(start, courseHole));
+    const endLie = endKind === 'ball-on-green' ? 'green' : endKind === 'shot' ? lieAt(end, courseHole) : null;
     return {
-      ...s, index: i, start, end, endKind, dist, isTee, isLast, onGreen,
+      ...s, index: i, start, end, endKind, dist, isTee, isLast, onGreen, startLie, endLie,
       target, targetKind, miss: m, result,
       approach: targetKind === 'green',
     };
   });
 
-  // Fairway: the user's tap wins; otherwise infer from a tapped tee target.
+  // Fairway: the user's tap wins; then where the drive finished on the hole
+  // map; otherwise infer from a tapped tee target.
   let fairway = hs.fairway;
   let fairwayAuto = false;
+  const drive = out[0];
+  if (par >= 4 && !fairway && drive?.endKind === 'shot' && drive.endLie && drive.endLie !== 'green' && green) {
+    if (drive.endLie === 'fairway') fairway = 'hit';
+    else fairway = miss(drive.start, green, drive.end).right < 0 ? 'left' : 'right';
+    fairwayAuto = true;
+  }
   if (par >= 4 && !fairway && out[0]?.targetKind === 'tapped' && out[0].miss) {
     const r = out[0].miss.right;
     fairway = Math.abs(r) <= FAIRWAY_HALF_WIDTH ? 'hit' : r < 0 ? 'left' : 'right';

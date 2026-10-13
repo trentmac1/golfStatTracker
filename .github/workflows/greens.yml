@@ -1,6 +1,9 @@
 name: Refresh course map data
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [analysis/greens/update_osm.py]
 permissions:
   contents: write
 jobs:

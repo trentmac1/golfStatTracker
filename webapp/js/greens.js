@@ -6,6 +6,7 @@
 // green. Both are fetched once from the phone and saved with the course, so
 // the preview works offline.
 import { toLocal, fromLocal, distance } from './geo.js';
+import { matchFeatures } from './holemap.js';
 
 export const DEM_URL = 'https://spatial-img.information.qld.gov.au/arcgis/rest/services/Elevation/QldDem/ImageServer';
 // Mirrors in order of how reliably they answered (Oct 2026); the main server
@@ -38,7 +39,7 @@ async function overpass(q, { fetchFn = fetch, signal, timeoutMs = 25000 } = {}) 
   }
   throw new Error(`Couldn't reach OpenStreetMap's map servers (${last?.name === 'AbortError' ? 'timed out' : last?.message ?? 'no response'}). Try again in a minute.`);
 }
-export const CREDITS = 'Green outlines © OpenStreetMap contributors (ODbL). Heights © State of Queensland (QldDem LiDAR).';
+export const CREDITS = 'Course outlines © OpenStreetMap contributors (ODbL). Heights © State of Queensland (QldDem LiDAR).';
 
 // ---------- geometry helpers ----------
 const centroidOf = (poly) => ({
@@ -88,9 +89,12 @@ export function frontBack(poly, from, centre) {
 // ---------- OpenStreetMap ----------
 const wayPts = (e) => (e.geometry ?? []).map((g) => ({ lat: g.lat, lon: g.lon }));
 
+// Everything the hole maps use. Keep in step with analysis/greens/update_osm.py.
+export const OSM_KINDS = 'green|hole|bunker|fairway|tee|water_hazard|lateral_water_hazard';
+
 export async function fetchOsm(bbox, { fetchFn = fetch, signal } = {}) {
   const [south, west, north, east] = bbox;
-  const q = `[out:json][timeout:60];(way["golf"~"^(green|hole|bunker)$"](${south},${west},${north},${east}););out tags geom;`;
+  const q = `[out:json][timeout:60];(way["golf"~"^(${OSM_KINDS})$"](${south},${west},${north},${east}););out tags geom;`;
   return overpass(q, { fetchFn, signal, timeoutMs: 45000 });
 }
 
@@ -346,8 +350,14 @@ export async function buildCourseGreens(course, { osmData, fetchFn = fetch, onPr
     }
     onProgress?.(++done, course.holes.length, `Hole ${h.n}`);
   }
+  // Fairways, tees, bunkers and water for the hole maps, matched once the
+  // greens above are placed. Holes with no line of play yet are left alone.
+  const features = matchFeatures(course, osm);
+  const fetchedAt = new Date().toISOString();
+  for (const h of course.holes) if (features[h.n]) h.features = { ...features[h.n], fetchedAt };
   if (!course.centre && ctr) course.centre = ctr;
-  return { course, ok, slopes, problems };
+  const fairways = course.holes.filter((h) => h.features?.fairways?.length).length;
+  return { course, ok, slopes, problems, fairways };
 }
 
 // ---------- finding a course ----------

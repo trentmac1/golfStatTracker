@@ -151,8 +151,8 @@ export async function courseEditView(root, { courseId }) {
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
         <button class="btn ghost wide" data-a="share">Update greens, tees and card</button>
         <p class="note" id="sprog">${course.sharedAt ? `Last updated from other players ${new Date(course.sharedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}.` : 'Brings in the greens, tees, pars, stroke indexes, rating and slope other players have uploaded.'}</p>
-        <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape) ? 'Refresh' : 'Get'} green shapes and slopes</button>
-        <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data.` : 'Outlines from OpenStreetMap and LiDAR heights for Queensland courses. Needs signal once.'}</p>
+        <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape || h.features) ? 'Refresh' : 'Get'} hole maps and green slopes</button>
+        <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data, ${course.holes.filter((h) => h.features?.fairways?.length).length} holes have fairways.` : 'Greens, fairways, tees, bunkers and water from OpenStreetMap, and LiDAR heights for Queensland courses. Needs signal once.'}</p>
         <h2>Holes</h2>
         <div class="seg small holes-count" role="group" aria-label="Number of holes">
           ${[9, 18, 27, 36].map((v) => `<button data-count="${v}" class="${course.holes.length === v ? 'on' : ''}">${v}</button>`).join('')}

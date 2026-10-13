@@ -3,9 +3,9 @@ import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
 import { deriveHole, deriveRound, emptyHoleStat, playOrder } from '../stats.js';
-import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate } from '../map.js';
+import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
-import { shapePolygon } from '../greens.js';
+import { smoothed, LIE_LABEL } from '../holemap.js';
 import { DEFAULT_BAG, LIES, DEFAULT_CENTRE } from '../config.js';
 import { $, esc, m, signed, toast, vibrate, sheet, confirmSheet } from '../ui.js';
 import { markEdited } from '../coursemerge.js';
@@ -96,8 +96,9 @@ export async function holeView(root, { roundId, hole }) {
     layer.clearLayers();
     const d = derived();
     const h = ch();
+    drawHoleMap(h, layer);
     if (h.green) {
-      if (h.shape?.polygon) polygon(shapePolygon(h.shape), 'green-outline').addTo(layer);
+      if (h.shape?.polygon) polygon(smoothed(h.shape.polygon), 'green-outline').addTo(layer);
       else circle(h.green, d.radius, 'green-ring').addTo(layer);
       pin(h.green, 'flag', '<span></span>', { draggable: true, title: 'Green centre (drag to move)' })
         .on('dragend', (e) => moveGreen(e.target.getLatLng()))
@@ -318,7 +319,7 @@ export async function holeView(root, { roundId, hole }) {
         <span class="shot-n">${s.index + 1}</span>
         <span class="shot-club ${s.club ? '' : 'unset'}">${esc(s.club ?? 'Club')}</span>
         <span class="shot-dist">${s.dist ? `${Math.round(s.dist)} m` : '–'}${s.endKind === 'green-centre' ? '<sup>*</sup>' : ''}</span>
-        <span class="shot-res ${s.onGreen && s.approach ? 'good' : ''}">${esc(s.result || '')}${s.penalty ? ' <em class="pen">Penalty</em>' : ''}${s.mishit ? ' <em>Mishit</em>' : ''}</span>
+        <span class="shot-res ${s.onGreen && s.approach ? 'good' : ''}">${s.endLie ? `<em class="lie lie-${s.endLie}">${LIE_LABEL[s.endLie]}</em> ` : ''}${esc(s.result || '')}${s.penalty ? ' <em class="pen">Penalty</em>' : ''}${s.mishit ? ' <em>Mishit</em>' : ''}</span>
       </button></li>`).join('') +
       (d.shots.some((s) => s.endKind === 'green-centre') ? `<li class="shot-foot">* to green centre. Tap <b>On green</b> to measure to your ball.</li>` : '');
   }

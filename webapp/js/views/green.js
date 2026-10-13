@@ -3,6 +3,7 @@
 import * as db from '../db.js';
 import { toLocal, distance } from '../geo.js';
 import { analyse, describeFall, shapePolygon, buildCourseGreens, CREDITS } from '../greens.js';
+import { previewRing, smoothPathD } from '../holemap.js';
 import { esc, sheet, toast } from '../ui.js';
 
 const PAD = 4; // metres around the green in the drawing
@@ -60,9 +61,9 @@ export function greenSvg(h, { from, ball } = {}) {
     const dx = x - oc.x, dy = y - oc.y;
     return [dx * cos - dy * sin, -(dx * sin + dy * cos)];
   };
-  const loc = polygon.map((p) => toLocal(o, p));
-  const sp = loc.map((p) => S(p.x, p.y));
-  const bunkers = (shape.bunkers ?? []).map((b) => b.map(([lat, lon]) => { const q = toLocal(o, { lat, lon }); return S(q.x, q.y); }));
+  const proj = (p) => { const q = toLocal(o, p); return S(q.x, q.y); };
+  const sp = previewRing(shape.polygon).map(proj);
+  const bunkers = (shape.bunkers ?? []).map((b) => previewRing(b).map(proj));
   const xs = sp.map((p) => p[0]), ys = sp.map((p) => p[1]);
   // Frame the green plus any bunker within about 10 m of it.
   const near = bunkers.flat().filter(([x, y]) => x > Math.min(...xs) - 10 && x < Math.max(...xs) + 10 && y > Math.min(...ys) - 10 && y < Math.max(...ys) + 10);
@@ -70,7 +71,7 @@ export function greenSvg(h, { from, ball } = {}) {
   const minX = Math.min(...ax) - PAD, maxX = Math.max(...ax) + PAD, minY = Math.min(...ay) - PAD, maxY = Math.max(...ay) + PAD + 3;
   const vbW = maxX - minX, vbH = maxY - minY;
   const f = (n) => n.toFixed(2);
-  const path = (pts) => `M${pts.map((p) => `${f(p[0])},${f(p[1])}`).join('L')}Z`;
+  const path = (pts) => smoothPathD(pts, f); // rounded outlines, no sharp corners
 
   // Height shading, contours and arrows need the LiDAR grid.
   let cells = '', contourPath = '', arrows = '';
@@ -192,12 +193,12 @@ export async function downloadGreens(course, say = () => {}, { osm } = {}) {
       try { const r = await fetch(`data/osm/${course.seedKey}.json`); if (r.ok) osmData = await r.json(); } catch { /* fall back to Overpass */ }
     }
     say(osmData ? 'Using saved outlines…' : 'Getting green outlines from OpenStreetMap…');
-    const { ok, slopes, problems } = await buildCourseGreens(course, {
+    const { ok, slopes, problems, fairways } = await buildCourseGreens(course, {
       osmData, onProgress: (d, t, label) => say(`${label}: ${d} of ${t}`),
     });
     await db.put('courses', course);
     const msg = ok
-      ? `Saved ${ok} green${ok === 1 ? '' : 's'}${slopes === ok ? ' with slopes' : slopes ? `, ${slopes} with slopes` : ' (no slope data here)'}.${problems.length ? ` Not on the map: hole${problems.length === 1 ? '' : 's'} ${problems.join(', ')}.` : ''}`
+      ? `Saved ${ok} green${ok === 1 ? '' : 's'}${slopes === ok ? ' with slopes' : slopes ? `, ${slopes} with slopes` : ' (no slope data here)'}${fairways ? `, and fairways for ${fairways} hole${fairways === 1 ? '' : 's'}` : ''}.${problems.length ? ` Not on the map: hole${problems.length === 1 ? '' : 's'} ${problems.join(', ')}.` : ''}`
       : 'No greens found on the map for this course.';
     say(msg); toast(msg, problems.length ? 'warn' : '');
     return ok > 0;

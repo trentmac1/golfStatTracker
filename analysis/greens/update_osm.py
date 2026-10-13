@@ -1,4 +1,5 @@
-"""Refresh the bundled OpenStreetMap extracts (greens, hole lines, bunkers) for
+"""Refresh the bundled OpenStreetMap extracts (greens, hole lines, bunkers,
+fairways, tees and water) for
 the app's built-in courses. Run by the "Refresh course map data" workflow.
 The app ships these so built-in courses don't depend on the public Overpass
 servers, which are often busy. Heights are always fetched by the phone."""
@@ -25,13 +26,14 @@ def overpass(q):
     raise SystemExit("All Overpass servers failed")
 
 for key, bbox in COURSES.items():
-    d = overpass(f'[out:json][timeout:90];(way["golf"~"^(green|hole|bunker)$"]({bbox}););out tags geom;')
+    d = overpass(f'[out:json][timeout:90];(way["golf"~"^(green|hole|bunker|fairway|tee|water_hazard|lateral_water_hazard)$"]({bbox}););out tags geom;')
     els = [{"type": e["type"], "id": e["id"],
             "tags": {k: v for k, v in e.get("tags", {}).items() if k in ("golf", "ref", "par", "name")},
             "geometry": [{"lat": round(g["lat"], 7), "lon": round(g["lon"], 7)} for g in e.get("geometry", [])]}
            for e in d["elements"]]
     greens = sum(1 for e in els if e["tags"].get("golf") == "green")
-    print(key, "elements", len(els), "greens", greens, flush=True)
+    fairways = sum(1 for e in els if e["tags"].get("golf") == "fairway")
+    print(key, "elements", len(els), "greens", greens, "fairways", fairways, flush=True)
     if greens < 9:
         print("Too few greens, keeping the old file", flush=True)
         continue

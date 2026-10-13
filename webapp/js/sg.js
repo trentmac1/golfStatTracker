@@ -85,6 +85,10 @@ export function holeSG(dh, hs = {}) {
   const lies = dh.shots.map((s, i) => {
     if (i === 0) return 'tee';
     if (s.lie && s.lie !== 'tee') return s.lie;
+    // From the hole map: a ball on a tee box or the fringe plays like the
+    // fairway, and one dropped out of water like a recovery.
+    const mapped = { fairway: 'fairway', rough: 'rough', bunker: 'bunker', tee: 'fairway', green: 'fairway', water: 'recovery' }[s.startLie];
+    if (mapped) return mapped;
     if (i === 1 && dh.par >= 4 && dh.fairway) return dh.fairway === 'left' || dh.fairway === 'right' ? 'rough' : 'fairway';
     return 'unknown';
   });

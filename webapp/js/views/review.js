@@ -3,8 +3,8 @@
 import * as db from '../db.js';
 import { toLocal } from '../geo.js';
 import { deriveRound } from '../stats.js';
-import { shapePolygon } from '../greens.js';
-import { createMap, pin, line, circle, polygon, frame, fit, hasMap } from '../map.js';
+import { previewRing, smoothPathD, smoothed, LIE_LABEL } from '../holemap.js';
+import { createMap, pin, line, circle, polygon, frame, fit, hasMap, drawHoleMap } from '../map.js';
 import { esc, signed } from '../ui.js';
 import { scoreClass } from './card.js';
 
@@ -30,7 +30,8 @@ export function holeThumb(dh, courseHole) {
   const cos = Math.cos(th), sin = Math.sin(th);
   const S = (p) => { const q = toLocal(o, p); return [q.x * cos - q.y * sin, -(q.x * sin + q.y * cos)]; };
   const sp = pts.map(S);
-  const outline = courseHole?.shape?.polygon ? shapePolygon(courseHole.shape).map(S) : null;
+  const ring = (r) => previewRing(r).map(S);
+  const outline = courseHole?.shape?.polygon ? ring(courseHole.shape.polygon) : null;
   const all = [...sp, ...(outline ?? [[-dh.radius, -dh.radius], [dh.radius, dh.radius]])];
   const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
   let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -39,13 +40,19 @@ export function holeThumb(dh, courseHole) {
   x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
   const w = x1 - x0, h = y1 - y0;
   if (w / h > 0.75) { const nh = w / 0.75; y0 -= (nh - h) / 2; y1 = y0 + nh; } else { const nw = h * 0.75; x0 -= (nw - w) / 2; x1 = x0 + nw; }
+  // Hole map underneath: fairways, tees, water and bunkers, all rounded.
+  const fe = courseHole?.features;
+  const shapes = (rings, cls) => (rings ?? []).map((r) => `<path d="${smoothPathD(ring(r), f)}" class="${cls}"/>`).join('');
+  const holeMap = fe ? shapes(fe.fairways, 'ht-fairway') + shapes(fe.tees, 'ht-tee') + shapes(fe.water, 'ht-water') : '';
+  const sand = shapes(fe?.bunkers ?? courseHole?.shape?.bunkers, 'ht-bunker');
   const greenShape = outline
-    ? `<path d="M${outline.map((p) => `${f(p[0])},${f(p[1])}`).join('L')}Z" class="ht-green"/>`
+    ? `<path d="${smoothPathD(outline, f)}" class="ht-green"/>`
     : `<circle cx="0" cy="0" r="${f(dh.radius)}" class="ht-green"/>`;
   const path = sp.length > 1 ? `<path d="M${sp.map((p) => `${f(p[0])},${f(p[1])}`).join('L')}" class="ht-path"/>` : '';
   const r = ((x1 - x0) * 0.028).toFixed(2); // about 3 px on a phone tile
-  const dots = sp.slice(0, dh.shots.length).map((p, i) => `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${r}" class="ht-dot${dh.shots[i].penalty ? ' pen' : ''}"/>`).join('');
-  return `<svg viewBox="${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)}" class="ht-svg" aria-hidden="true">${greenShape}${path}${dots}</svg>`;
+  // Each dot is where a shot was played from, coloured by its lie.
+  const dots = sp.slice(0, dh.shots.length).map((p, i) => `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${r}" class="ht-dot${dh.shots[i].penalty ? ' pen' : ''}${dh.shots[i].startLie && i ? ` lie-${dh.shots[i].startLie}` : ''}"/>`).join('');
+  return `<svg viewBox="${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)}" class="ht-svg" aria-hidden="true">${holeMap}${sand}${greenShape}${path}${dots}</svg>`;
 }
 
 // Grid of every hole in the round, for the round summary.
@@ -95,7 +102,7 @@ export async function reviewView(root, { roundId, hole }) {
           <span class="shot-n">${s.index + 1}</span>
           <span class="shot-club ${s.club ? '' : 'unset'}">${esc(s.club ?? '–')}</span>
           <span class="shot-dist">${s.dist ? `${Math.round(s.dist)} m` : '–'}</span>
-          <span class="shot-res ${s.onGreen && s.approach ? 'good' : ''}">${esc(s.result || '')}${s.penalty ? ' <em class="pen">Penalty</em>' : ''}${s.mishit ? ' <em>Mishit</em>' : ''}</span>
+          <span class="shot-res ${s.onGreen && s.approach ? 'good' : ''}">${s.endLie ? `<em class="lie lie-${s.endLie}">${LIE_LABEL[s.endLie]}</em> ` : ''}${esc(s.result || '')}${s.penalty ? ' <em class="pen">Penalty</em>' : ''}${s.mishit ? ' <em>Mishit</em>' : ''}</span>
         </li>`).join('') : '<li class="shot-empty">No shots marked on this hole.</li>'}
         ${dh.putts ? `<li class="shot-empty">Then ${dh.putts} putt${dh.putts === 1 ? '' : 's'}.</li>` : ''}
       </ol>
@@ -112,7 +119,8 @@ export async function reviewView(root, { roundId, hole }) {
     const green = dh.green ?? pts.at(-1) ?? course.centre;
     map = createMap(root.querySelector('#map'), green ?? { lat: -27.45, lon: 153 }, 17, { rotate: true });
     const layer = window.L.layerGroup().addTo(map);
-    if (ch?.shape?.polygon) polygon(shapePolygon(ch.shape), 'green-outline').addTo(layer);
+    drawHoleMap(ch, layer);
+    if (ch?.shape?.polygon) polygon(smoothed(ch.shape.polygon), 'green-outline').addTo(layer);
     else if (dh.green) circle(dh.green, dh.radius, 'green-ring').addTo(layer);
     if (dh.green) pin(dh.green, 'flag', '<span></span>', { interactive: false }).addTo(layer);
     if (pts.length > 1) line(pts, 'shot-line').addTo(layer);
@@ -121,7 +129,7 @@ export async function reviewView(root, { roundId, hole }) {
         const mid = { lat: (s.start.lat + s.end.lat) / 2, lon: (s.start.lon + s.end.lon) / 2 };
         pin(mid, 'seg-label', `<span>${Math.round(s.dist)}</span>`, { interactive: false }).addTo(layer);
       }
-      pin(s.start, `shot ${s.source}`, `${s.index + 1}`, { interactive: false }).addTo(layer);
+      pin(s.start, `shot ${s.source}${s.index && s.startLie ? ` lie-${s.startLie}` : ''}`, `${s.index + 1}`, { interactive: false }).addTo(layer);
     }
     if (dh.greenPos) pin(dh.greenPos, 'ball', '', { interactive: false }).addTo(layer);
     // Face down the hole, from the first shot (or tee) to the green.

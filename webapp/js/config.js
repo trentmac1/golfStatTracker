@@ -1,5 +1,5 @@
 // Defaults and the seeded home course.
-export const APP_VERSION = '0.3.1';
+export const APP_VERSION = '0.3.2';
 
 export const DEFAULT_BAG = ['Dr', '3W', '5W', '4H', '5i', '6i', '7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 
@@ -40,7 +40,7 @@ export const BUILT_IN_COURSES = [
 // Fallback map centre when nothing else is known (Brisbane).
 // Course sharing server (pi/course-server), reached over HTTPS. Empty until
 // the Pi is set up; a phone can also set its own in Backup & settings.
-export const COURSE_SERVER = '';
+export const COURSE_SERVER = 'https://rolls.tail2ff631.ts.net:8443';
 
 export const DEFAULT_CENTRE = { lat: -27.4433, lon: 152.9615 };
 

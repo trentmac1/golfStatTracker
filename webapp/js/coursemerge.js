@@ -37,6 +37,17 @@ export function cleanValue(field, v, centre, holeCount = MAX_HOLES) {
   return undefined;
 }
 
+// Course-wide scorecard details.
+export const CARD_FIELDS = ['tee', 'rating', 'slope', 'holes'];
+export function cleanCard(field, v) {
+  if (field === 'tee') { const t = String(v ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 30); return t || null; }
+  if (v === null) return null;
+  if (field === 'rating') return isNum(v) && v >= 50 && v <= 85 ? Math.round(v * 10) / 10 : undefined;
+  if (field === 'slope') return Number.isInteger(v) && v >= 55 && v <= 155 ? v : undefined;
+  if (field === 'holes') return Number.isInteger(v) && v >= 1 && v <= MAX_HOLES ? v : undefined;
+  return undefined;
+}
+
 // Which of two {v, ts} edits to keep.
 export function pickEdit(field, cur, inc) {
   if (!inc) return cur;
@@ -78,6 +89,15 @@ export function mergeShared(stored, incoming, { now = Date.now() } = {}) {
     }
     if (n > (course.holeCount ?? 0)) course.holeCount = n;
   }
+  course.card ??= {};
+  for (const [field, edit] of Object.entries(incoming.card ?? {})) {
+    if (!CARD_FIELDS.includes(field) || !edit || !isNum(edit.ts)) continue;
+    const v = cleanCard(field, edit.v);
+    if (v === undefined) continue;
+    const inc = { v, ts: Math.min(edit.ts, now) }, cur = course.card[field];
+    if (pickEdit(field, cur, inc) === inc && !(cur && sameValue(cur.v, inc.v) && cur.ts === inc.ts)) { course.card[field] = inc; changed++; }
+  }
+  if (course.card.holes?.v) course.holeCount = course.card.holes.v;
   course.holes.sort((a, b) => a.n - b.n);
   return { course, changed };
 }
@@ -98,11 +118,24 @@ export function localEdits(course, since = 0) {
   return holes;
 }
 
-// Everything this phone knows about a course's positions, for a full upload:
-// every green, edge and tee it has, plus pars and stroke indexes typed in.
-// Positions nobody edited here (from the map, or set before sharing existed)
-// go up as a baseline (ts 1): they fill gaps on the server but never replace
-// a real edit.
+// Everything this phone knows about a course, for a full upload: every
+// green, edge and tee, the pars and stroke indexes, the hole count and the
+// tees/rating/slope. Values nobody edited here (from the map, built in, or
+// set before sharing existed) go up as a baseline (ts 1): they fill gaps on
+// the server but never replace a real edit. Values that came straight from a
+// GolfCourseAPI lookup stay on the phone (its terms don't allow passing them
+// on) unless the player has since typed them in themselves.
+export function snapshotCard(course) {
+  const card = {};
+  const gca = (f) => course.fromGca?.includes?.(f) && !course.edits?.[f];
+  for (const f of ['tee', 'rating', 'slope']) {
+    if (course[f] == null || course[f] === '' || gca(f)) continue;
+    card[f] = { v: course[f], ts: course.edits?.[f] ?? 1 };
+  }
+  card.holes = { v: course.holes.length, ts: course.edits?.holes ?? 1 };
+  return card;
+}
+
 export function snapshotEdits(course) {
   const holes = [];
   for (const h of course.holes) {
@@ -111,7 +144,11 @@ export function snapshotEdits(course) {
       if (!h[f]) continue;
       fields[f] = { v: { lat: h[f].lat, lon: h[f].lon, ...(f === 'green' && h[f].estimated ? { estimated: true } : {}) }, ts: h.edits?.[f] ?? 1 };
     }
-    for (const f of ['par', 'si']) if (h.edits?.[f] && h[f] != null) fields[f] = { v: h[f], ts: h.edits[f] };
+    for (const f of ['par', 'si']) {
+      if (h[f] == null) continue;
+      if (h.edits?.[f]) fields[f] = { v: h[f], ts: h.edits[f] };
+      else if (!h.fromGca?.includes?.(f) && !(f === 'par' && h.parEstimated)) fields[f] = { v: h[f], ts: 1 };
+    }
     // A position cleared here on purpose.
     for (const f of POINT_FIELDS) if (!h[f] && h.edits?.[f]) fields[f] = { v: null, ts: h.edits[f] };
     if (Object.keys(fields).length) holes.push({ n: h.n, fields });
@@ -123,17 +160,17 @@ export function snapshotEdits(course) {
 export function sharedCounts(shared) {
   const n = shared.holeCount ?? 18;
   const has = (f) => (shared.holes ?? []).filter((h) => h.n <= n && h.fields?.[f]?.v).length;
-  return { holes: n, greens: has('green'), tees: has('tee') };
+  return { holes: n, greens: has('green'), tees: has('tee'), pars: has('par'), rating: shared.card?.rating?.v ?? null, slope: shared.card?.slope?.v ?? null };
 }
 
 // Put shared edits onto a course on this phone. Edits made here that are
 // newer stay. Returns a summary of what changed.
 export function applyShared(course, shared, { fields: only = FIELDS } = {}) {
-  const out = { greens: 0, tees: 0, edges: 0, pars: 0, sis: 0, holesAdded: 0, moved: [] };
+  const out = { greens: 0, tees: 0, edges: 0, pars: 0, sis: 0, holesAdded: 0, card: [], moved: [] };
   const count = Math.min(shared.holeCount ?? 0, MAX_HOLES);
   while (course.holes.length < count) {
     const n = course.holes.length + 1;
-    course.holes.push({ n, par: 4, si: null, green: null, front: null, back: null, tee: null });
+    course.holes.push({ n, par: 4, parEstimated: true, si: null, green: null, front: null, back: null, tee: null });
     out.holesAdded++;
   }
   for (const sh of shared.holes ?? []) {
@@ -159,7 +196,19 @@ export function applyShared(course, shared, { fields: only = FIELDS } = {}) {
         else out.edges++;
       } else if (f === 'par') { h.par = edit.v ?? h.par; delete h.parEstimated; out.pars++; }
       else if (f === 'si') { h.si = edit.v; out.sis++; }
+      if (h.fromGca) h.fromGca = h.fromGca.filter((x) => x !== f);
       (h.edits ??= {})[f] = edit.ts;
+    }
+  }
+  if (only === FIELDS) {
+    for (const f of ['tee', 'rating', 'slope']) {
+      const edit = shared.card?.[f];
+      if (!edit) continue;
+      const localTs = course.edits?.[f] ?? 0;
+      if (pickEdit(f, localTs ? { v: course[f], ts: localTs } : null, edit) !== edit) continue;
+      if ((course[f] ?? null) !== (edit.v ?? null)) { course[f] = edit.v ?? (f === 'tee' ? '' : null); out.card.push(f === 'tee' ? 'tees' : f); }
+      if (course.fromGca) course.fromGca = course.fromGca.filter((x) => x !== f);
+      (course.edits ??= {})[f] = edit.ts;
     }
   }
   return out;
@@ -178,5 +227,6 @@ export function describeChanges(s) {
   const add = (n, one, many) => { if (n) parts.push(`${n} ${n === 1 ? one : many}`); };
   add(s.greens, 'green', 'greens'); add(s.tees, 'tee', 'tees'); add(s.edges, 'green edge', 'green edges');
   add(s.pars, 'par', 'pars'); add(s.sis, 'stroke index', 'stroke indexes'); add(s.holesAdded, 'new hole', 'new holes');
-  return parts.join(', ');
+  parts.push(...(s.card ?? []));
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts.join('');
 }

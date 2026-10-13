@@ -3,7 +3,7 @@
 // Merge rules: coursemerge.js. Server: pi/course-server/.
 import * as db from './db.js';
 import { COURSE_SERVER } from './config.js';
-import { snapshotEdits, sharedCounts, applyShared, describeChanges } from './coursemerge.js';
+import { snapshotEdits, snapshotCard, sharedCounts, applyShared, describeChanges } from './coursemerge.js';
 import { nameScore } from './greens.js';
 import { distance } from './geo.js';
 
@@ -48,7 +48,6 @@ async function link(course) {
 }
 
 const latestEdit = (course) => Math.max(0, ...course.holes.flatMap((h) => Object.values(h.edits ?? {})));
-const POSITIONS = ['green', 'front', 'back', 'tee'];
 
 // The shared copy of a course, if anyone has uploaded it.
 async function findShared(course) {
@@ -65,16 +64,16 @@ async function findShared(course) {
 
 const countsText = (course) => {
   const n = course.holes.length;
-  return `${course.holes.filter((h) => h.green).length}/${n} greens, ${course.holes.filter((h) => h.tee).length}/${n} tees set`;
+  return `${course.holes.filter((h) => h.green).length}/${n} greens, ${course.holes.filter((h) => h.tee).length}/${n} tees set, par ${course.holes.reduce((a, h) => a + h.par, 0)}${course.rating ? `, rating ${course.rating}` : ''}${course.slope ? ` / slope ${course.slope}` : ''}`;
 };
 
-// Course screen: bring in green and tee positions from the server. Nothing
-// is sent. Saves the course. Returns { found, summary, text, counts }.
+// Course screen: bring in the server's greens, tees, pars, stroke indexes,
+// hole count and tees/rating/slope. Nothing is sent. Saves the course. Returns { found, summary, text, counts }.
 export async function pullCourse(course) {
   const remote = await findShared(course);
   if (!remote) return { found: false };
   course.sharedKey = remote.key;
-  const summary = applyShared(course, remote, { fields: POSITIONS });
+  const summary = applyShared(course, remote);
   course.sharedVersion = remote.version;
   course.sharedAt = new Date().toISOString();
   await db.put('courses', course);
@@ -87,11 +86,11 @@ export async function uploadAll(say = () => {}) {
   const results = [];
   for (const c of await db.all('courses')) {
     const holes = snapshotEdits(c);
-    if (!holes.length) { results.push({ course: c, skipped: true }); continue; }
+    if (!centreOf(c) || !holes.length) { results.push({ course: c, skipped: true }); continue; }
     say(`Uploading ${c.name}…`);
     try {
       const key = await link(c);
-      const { course: remote } = await api(`/courses/${key}/edits`, { method: 'POST', body: { name: c.name, centre: centreOf(c), holeCount: c.holes.length, holes } });
+      const { course: remote } = await api(`/courses/${key}/edits`, { method: 'POST', body: { name: c.name, centre: centreOf(c), holeCount: c.holes.length, holes, card: snapshotCard(c) } });
       c.sharePushedTs = latestEdit(c);
       c.sharedVersion = remote.version;
       c.sharedAt = new Date().toISOString();

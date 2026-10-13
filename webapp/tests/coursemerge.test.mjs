@@ -54,7 +54,7 @@ test('phone: edits go up, others come down, own newer edits stay', () => {
   assert.equal(mine.holes[2].par, 4); assert.equal(mine.holes[2].parEstimated, undefined);
   assert.equal(s.greens, 2); assert.equal(s.tees, 1); assert.equal(s.pars, 1); assert.equal(s.holesAdded, 9);
   assert.deepEqual(s.moved, [2]);
-  assert.equal(describeChanges(s), '2 greens, 1 tee, 1 par, 9 new holes');
+  assert.equal(describeChanges(s), '2 greens, 1 tee, 1 par and 9 new holes');
   // Applying again changes nothing.
   assert.equal(describeChanges(applyShared(mine, shared)), '');
 });
@@ -77,18 +77,52 @@ test('full upload sends every green and tee, unedited ones as a baseline', () =>
   const up = snapshotEdits(course);
   assert.equal(up.length, 18);
   assert.ok(up[0].fields.green.ts > 1e12 && up[0].fields.par.v === 4);
-  assert.equal(up[1].fields.green.ts, 1); assert.equal(up[1].fields.par, undefined, 'untouched pars stay home');
+  assert.equal(up[1].fields.green.ts, 1); assert.deepEqual(up[1].fields.par, { v: 4, ts: 1 }, 'pars go up as a baseline');
   assert.equal(up[2].fields.green.v.estimated, true);
   assert.equal(up[17].fields.green.v, null);
   // On the server: a baseline fills gaps but doesn't beat a real edit.
   const stored = { key: 'x', name: 'X', centre, holeCount: 18, holes: [{ n: 2, fields: { green: { v: P(0.05), ts: 500 } } }] };
   const { course: srv } = mergeShared(stored, { holeCount: 18, holes: up }, { now: Date.now() });
   assert.ok(Math.abs(srv.holes.find((h) => h.n === 2).fields.green.v.lat - (centre.lat + 0.05)) < 1e-9);
-  assert.deepEqual(sharedCounts(srv), { holes: 18, greens: 17, tees: 10 });
+  assert.deepEqual(sharedCounts(srv), { holes: 18, greens: 17, tees: 10, pars: 18, rating: null, slope: null });
 });
 
 test('pulling only positions leaves pars alone', () => {
   const mine = { holes: [{ n: 1, par: 4, green: null, tee: null }] };
   applyShared(mine, { holeCount: 1, holes: [{ n: 1, fields: { par: { v: 3, ts: 9 }, green: { v: P(0.001), ts: 9 }, tee: { v: P(0.002), ts: 9 } } }] }, { fields: ['green', 'front', 'back', 'tee'] });
   assert.equal(mine.holes[0].par, 4); assert.ok(mine.holes[0].green && mine.holes[0].tee);
+});
+
+import { snapshotCard } from '../js/coursemerge.js';
+import { applyScorecard } from '../js/scorecards.js';
+
+test('pars, hole count and card details are shared; GolfCourseAPI values are not', () => {
+  const course = { name: 'X', tee: 'White', rating: 68.8, slope: 125, holes: Array.from({ length: 18 }, (_, i) => ({ n: i + 1, par: i % 3 ? 4 : 3, si: i + 1, green: null, tee: null })) };
+  let up = snapshotEdits(course), card = snapshotCard(course);
+  assert.equal(up.length, 18); assert.equal(up[0].fields.par.v, 3); assert.equal(up[0].fields.par.ts, 1);
+  assert.deepEqual(Object.keys(card).sort(), ['holes', 'rating', 'slope', 'tee']);
+  assert.equal(card.holes.v, 18);
+  // A GolfCourseAPI card replaces pars, rating, slope and tee: none of those go up now.
+  applyScorecard(course, { id: 1, name: 'X' }, { name: 'Blue', rating: 70.1, slope: 130, holes: Array(18).fill({ par: 5, metres: 300 }) });
+  up = snapshotEdits(course); card = snapshotCard(course);
+  assert.ok(up.every((h) => !h.fields.par && h.fields.si), 'API pars stay home; typed stroke indexes still go');
+  assert.deepEqual(Object.keys(card), ['holes']);
+  // Typed in by the player afterwards: shared again.
+  course.rating = 70.1; markEdited(course, 'rating');
+  course.holes[4].par = 4; markEdited(course.holes[4], 'par');
+  up = snapshotEdits(course); card = snapshotCard(course);
+  assert.deepEqual(up.filter((h) => h.fields.par).map((h) => h.n), [5]); assert.ok(card.rating.ts > 1);
+});
+
+test('server keeps the card; phones take it, newest edit wins', () => {
+  let { course: srv, changed } = mergeShared(blank(), { holes: [], card: { tee: { v: 'White', ts: 1 }, rating: { v: 68.8, ts: 1 }, slope: { v: 125, ts: 1 }, holes: { v: 27, ts: 1 } } });
+  assert.equal(changed, 4); assert.equal(srv.holeCount, 27);
+  ({ course: srv, changed } = mergeShared(srv, { holes: [], card: { rating: { v: 99, ts: 5 }, slope: { v: 126, ts: 5 } } }));
+  assert.equal(changed, 1, 'bad rating refused'); assert.equal(srv.card.slope.v, 126);
+  const mine = { tee: '', rating: null, slope: null, edits: { slope: 10 }, holes: [{ n: 1, par: 4 }] };
+  const s = applyShared(mine, srv);
+  assert.equal(mine.holes.length, 27); assert.equal(mine.rating, 68.8); assert.equal(mine.tee, 'White');
+  assert.equal(mine.slope, null, 'my newer slope edit stays');
+  assert.deepEqual(s.card, ['tees', 'rating']);
+  assert.equal(describeChanges(s), '26 new holes, tees and rating');
 });

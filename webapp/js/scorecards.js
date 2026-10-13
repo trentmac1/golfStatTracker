@@ -84,14 +84,17 @@ export function applyScorecard(course, place, tee, from = 1) {
   tee.holes.forEach((h, i) => {
     const ch = course.holes[from - 1 + i];
     if (!ch) return;
-    if (h.par) { ch.par = h.par; delete ch.parEstimated; }
-    if (h.si) ch.si = h.si;
+    // Card values from GolfCourseAPI aren't shared (coursemerge.js).
+    const mark = (f) => { ch.fromGca = [...new Set([...(ch.fromGca ?? []), f])]; if (ch.edits) delete ch.edits[f]; };
+    if (h.par) { ch.par = h.par; delete ch.parEstimated; mark('par'); }
+    if (h.si) { ch.si = h.si; mark('si'); }
     if (h.metres) ch.metres = h.metres;
     n++;
   });
-  if (tee.rating) course.rating = tee.rating;
-  if (tee.slope) course.slope = tee.slope;
-  course.tee = tee.name;
+  const markC = (f) => { course.fromGca = [...new Set([...(course.fromGca ?? []), f])]; if (course.edits) delete course.edits[f]; };
+  if (tee.rating) { course.rating = tee.rating; markC('rating'); }
+  if (tee.slope) { course.slope = tee.slope; markC('slope'); }
+  course.tee = tee.name; markC('tee');
   course.scorecard = { source: 'GolfCourseAPI', id: place.id, name: place.name, tee: tee.name, gender: tee.gender, from, fetchedAt: new Date().toISOString() };
   course.importNotes = (course.importNotes ?? []).filter((t) => !/par/i.test(t));
   return n;

@@ -61,6 +61,7 @@ export async function coursesView(root) {
     if (!b) return;
     if (b.dataset.a === 'new') {
       const c = newCourse(db.uid(), 'New course');
+      c.holes.forEach((h) => { h.parEstimated = true; });   // guesses until set
       const fix = gps.latest();
       if (fix) c.centre = { lat: fix.lat, lon: fix.lon };
       await db.put('courses', c);
@@ -148,8 +149,8 @@ export async function courseEditView(root, { courseId }) {
         <p class="sub">Par ${total}. Tap a par to change it. Greens and tees can be placed on the map from anywhere.</p>
         ${course.importNotes?.length ? `<div class="note warn-note">From OpenStreetMap, with gaps: ${course.importNotes.map(esc).join('; ')}.</div>` : ''}
         <a class="btn primary wide" href="#/course/${courseId}/map/1">Place greens on the map</a>
-        <button class="btn ghost wide" data-a="share">Update green and tee locations</button>
-        <p class="note" id="sprog">${course.sharedAt ? `Green and tee locations last updated ${new Date(course.sharedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}.` : 'Brings in the green and tee locations other players have uploaded.'}</p>
+        <button class="btn ghost wide" data-a="share">Update greens, tees and card</button>
+        <p class="note" id="sprog">${course.sharedAt ? `Last updated from other players ${new Date(course.sharedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}.` : 'Brings in the greens, tees, pars, stroke indexes, rating and slope other players have uploaded.'}</p>
         <button class="btn ghost wide" data-a="greens">${course.holes.some((h) => h.shape) ? 'Refresh' : 'Get'} green shapes and slopes</button>
         <p class="note" id="gprog">${course.holes.filter((h) => h.shape).length ? `${course.holes.filter((h) => h.shape).length} of ${course.holes.length} greens have shape and slope data.` : 'Outlines from OpenStreetMap and LiDAR heights for Queensland courses. Needs signal once.'}</p>
         <h2>Holes</h2>
@@ -159,7 +160,7 @@ export async function courseEditView(root, { courseId }) {
         <p class="note">Courses with more than 18 holes are split into nines (1–9, 10–18, 19–27…). You pick which ones when you tee off.</p>
         <h2>Scorecard</h2>
         <button class="btn ghost wide" data-a="lookup">Look up scorecard</button>
-        <p class="note">${course.scorecard ? `From GolfCourseAPI: ${esc(course.scorecard.name)}, ${esc(course.scorecard.tee)} tees${course.scorecard.from > 1 ? `, on holes ${course.scorecard.from} onward` : ''}.` : 'Fills in pars, hole lengths, rating and slope from GolfCourseAPI (needs your key in Backup & settings). Stroke indexes aren\'t in its data, so type those from the card below.'}</p>
+        <p class="note">${course.scorecard ? `From GolfCourseAPI: ${esc(course.scorecard.name)}, ${esc(course.scorecard.tee)} tees${course.scorecard.from > 1 ? `, on holes ${course.scorecard.from} onward` : ''}.` : 'Fills in pars, hole lengths, rating and slope from GolfCourseAPI (needs your key in Backup & settings). Stroke indexes aren\'t in its data, so type those in the table below. Values from a lookup stay on this phone and aren\'t shared.'}</p>
         <h2>Rating for handicap</h2>
         <p class="note">From the scorecard, for the tees you play. Golf Australia cards list them as scratch (or course) rating and slope.</p>
         <div class="rating-row">
@@ -167,13 +168,6 @@ export async function courseEditView(root, { courseId }) {
           <label>Rating<input id="crating" inputmode="decimal" value="${course.rating ?? ''}" placeholder="e.g. 68.8"></label>
           <label>Slope<input id="cslope" inputmode="numeric" value="${course.slope ?? ''}" placeholder="e.g. 125"></label>
         </div>
-        <details class="quick-card"${course.holes.some((h) => h.parEstimated) ? ' open' : ''}>
-          <summary>Type in the card</summary>
-          <label>Pars, in hole order<input id="qpars" inputmode="numeric" autocomplete="off" placeholder="${course.holes.map((h) => h.par).join('')}"></label>
-          <label>Stroke index, in hole order<input id="qsi" inputmode="numeric" autocomplete="off" placeholder="e.g. 7 15 3 11 …"></label>
-          <button class="btn primary" data-a="quick">Save card</button>
-          <p class="note">Pars as one string of digits (${course.holes.length} for this course). Stroke indexes separated by spaces or commas.</p>
-        </details>
         <table class="par-table">
           <thead><tr><th>Hole</th><th>Par</th><th>Index</th><th>Green</th></tr></thead>
           <tbody>${course.holes.map((h) => `
@@ -195,6 +189,7 @@ export async function courseEditView(root, { courseId }) {
       toast('Name saved');
     } else if (t.id === 'ctee') {
       course.tee = t.value.trim();
+      markEdited(course, 'tee');
       await db.put('courses', course);
       toast('Tees saved');
     } else if (t.id === 'crating' || t.id === 'cslope') {
@@ -203,6 +198,7 @@ export async function courseEditView(root, { courseId }) {
       if (t.value.trim() === '') course[key] = null;
       else if (!Number.isFinite(v) || v < lo || v > hi) { toast(`${key === 'rating' ? 'Rating' : 'Slope'} should be between ${lo} and ${hi}`, 'warn'); t.value = course[key] ?? ''; return; }
       else course[key] = key === 'slope' ? Math.round(v) : Math.round(v * 10) / 10;
+      markEdited(course, key);
       await db.put('courses', course);
       toast(`${key === 'rating' ? 'Rating' : 'Slope'} saved`);
     } else if (t.dataset.si) {
@@ -224,21 +220,6 @@ export async function courseEditView(root, { courseId }) {
       markEdited(hh, 'par');
       await db.put('courses', course);
       draw();
-    } else if (b.dataset.a === 'quick') {
-      const pars = ($('#qpars', root).value.match(/[3-6]/g) ?? []).map(Number);
-      const sis = ($('#qsi', root).value.match(/\d+/g) ?? []).map(Number);
-      const N = course.holes.length;
-      if (!pars.length && !sis.length) { toast('Type the pars or stroke indexes first', 'warn'); return; }
-      if (pars.length && pars.length !== N) { toast(`That's ${pars.length} pars; this course has ${N} holes.`, 'warn'); return; }
-      if (sis.length && (sis.length !== N || sis.some((v) => v < 1 || v > N))) { toast(`Stroke indexes need ${N} numbers from 1 to ${N}.`, 'warn'); return; }
-      course.holes.forEach((h, i) => {
-        if (pars.length) { h.par = pars[i]; delete h.parEstimated; markEdited(h, 'par'); }
-        if (sis.length) { h.si = sis[i]; markEdited(h, 'si'); }
-      });
-      if (pars.length) course.importNotes = (course.importNotes ?? []).filter((t) => !/par/i.test(t));
-      await db.put('courses', course);
-      toast(`Saved ${[pars.length && 'pars', sis.length && 'stroke indexes'].filter(Boolean).join(' and ')}`);
-      draw();
     } else if (b.dataset.a === 'lookup') {
       const key = await db.getSetting('gcaKey', '');
       if (!key) { toast('Add your GolfCourseAPI key in Backup & settings first.', 'warn'); return; }
@@ -254,9 +235,10 @@ export async function courseEditView(root, { courseId }) {
         if (!(await confirmSheet(`Remove holes ${want + 1}–${have} and anything set on them?`, 'Remove holes'))) return;
         course.holes = course.holes.slice(0, want);
       } else {
-        for (let n = have + 1; n <= want; n++) course.holes.push({ n, par: 4, si: null, green: null, front: null, back: null, tee: null });
+        for (let n = have + 1; n <= want; n++) course.holes.push({ n, par: 4, parEstimated: true, si: null, green: null, front: null, back: null, tee: null });
       }
       delete course.lastLayout;
+      markEdited(course, 'holes');
       await db.put('courses', course);
       toast(`${course.name} now has ${want} holes`);
       draw();
@@ -272,6 +254,7 @@ export async function courseEditView(root, { courseId }) {
           return;
         }
         toast(`${r.text ? `Updated ${r.text}` : 'Already up to date'}. ${r.counts}.`);
+        if (r.summary.holesAdded) delete course.lastLayout;
         if (r.summary.moved.length) {
           if (el) el.textContent = 'Getting the outlines for moved greens…';
           await downloadGreens(course, (m) => { const e2 = $('#sprog', root); if (e2) e2.textContent = m; });

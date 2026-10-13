@@ -50,10 +50,11 @@ Send me the address and I'll build it into the app, so every user gets it automa
 
 ## Day to day
 
-- **Update courses** (Backup tab) uploads every course on the phone with all its green, green-edge and tee locations, plus pars and stroke indexes typed in by hand. It reports what the server now has, e.g. "18/18 greens, 18/18 tees set".
-- **Update green and tee locations** (on a course's screen, under Place greens on the map) only downloads. It brings the server's green and tee locations into that course on the phone, and sends nothing.
+- **Update courses** (Backup tab) uploads every course on the phone: green, green-edge and tee locations, pars, stroke indexes, number of holes, tees played, rating and slope. It reports what the server now has, e.g. "18/18 greens, 18/18 tees, 18/18 pars, rating 68.8 / slope 125".
+- **Update greens, tees and card** (on a course's screen) only downloads. It brings all of that into the course on the phone and sends nothing. It only ever adds holes, never removes them, so rounds on extra holes are safe.
 - Adding a course from the map starts from what's on the server for it.
-- Positions edited on a phone carry the time they were placed, and newer edits win. Positions nobody edited (from OpenStreetMap, or placed before sharing existed) go up as a baseline: they fill empty holes on the server but never replace someone's edit.
+- Values edited on a phone carry the time they were set, and newer edits win. Values nobody edited (from OpenStreetMap, built in, or set before sharing existed) go up as a baseline: they fill gaps on the server but never replace someone's edit. Pars still marked "est." aren't uploaded.
+- Values filled in by a GolfCourseAPI lookup (pars, rating, slope, tee name) stay on the phone, because its terms don't allow passing them on. Typing a value in yourself (from the printed card) makes it shareable.
 
 ## Looking after it
 

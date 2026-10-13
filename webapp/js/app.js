@@ -181,7 +181,7 @@ async function settingsView(root) {
       </div>
       <p class="note">${lastBackup ? `Last backup: ${fmtDate(lastBackup)}.` : 'No backup yet.'} ${persisted ? 'Storage is protected from automatic clearing.' : 'Add this app to your Home Screen so Safari keeps its data.'}</p>
       <h2>Shared courses</h2>
-      <p class="note">Update courses uploads the green and tee locations of every course on this phone (and pars or stroke indexes you've typed in), so other players can bring them in with Update green and tee locations on a course. Ratings, slopes and hole lengths from your scorecard lookups stay on this phone.</p>
+      <p class="note">Update courses uploads every course on this phone: greens, tees, pars, stroke indexes, number of holes, tees played, rating and slope. Other players bring them in with Update greens, tees and card on a course. Values filled in by a GolfCourseAPI lookup stay on this phone (its terms don't allow sharing them) unless you type them in yourself.</p>
       <div class="btn-col"><button class="btn primary" data-a="share">Update courses</button></div>
       <p class="note" id="shareMsg">${lastShare ? `Last updated ${fmtDate(lastShare)}.` : ''}${!COURSE_SERVER && !shareServer ? ' The course server isn\'t set up yet.' : ''}</p>
       <details class="quick-card">
@@ -222,7 +222,7 @@ async function settingsView(root) {
         const results = await share.uploadAll((t) => { msg.textContent = t; });
         const done = results.filter((x) => x.counts), failed = results.filter((x) => x.error);
         const lines = [
-          ...done.map((x) => `${x.course.name}: ${x.counts.greens}/${x.counts.holes} greens, ${x.counts.tees}/${x.counts.holes} tees set on the server.`),
+          ...done.map((x) => `${x.course.name}: ${x.counts.greens}/${x.counts.holes} greens, ${x.counts.tees}/${x.counts.holes} tees, ${x.counts.pars}/${x.counts.holes} pars${x.counts.rating ? `, rating ${x.counts.rating}` : ''}${x.counts.slope ? ` / slope ${x.counts.slope}` : ''} on the server.`),
           ...failed.map((x) => `${x.course.name}: ${x.error}`),
         ];
         msg.innerHTML = lines.length ? lines.map((l) => `<span class="share-line">${esc(l)}</span>`).join('') : 'No greens or tees placed on any course yet.';

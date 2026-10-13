@@ -1,0 +1,12 @@
+server: https://rolls.tail2ff631.ts.net:8443
+--- health
+HTTP/2 200 
+access-control-allow-origin: https://trentmac1.github.io
+{"ok":true,"courses":0}
+--- preflight
+HTTP/2 204 
+access-control-allow-headers: Content-Type
+access-control-allow-methods: GET, POST, OPTIONS
+access-control-allow-origin: https://trentmac1.github.io
+--- list
+{"courses":[]}

@@ -1,6 +1,8 @@
 // IndexedDB storage. Everything stays on the phone.
 const DB_NAME = 'golftracker';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+// Stores in a backup. The tracker's capture log (training data, a few MB) has
+// its own export on the Training data screen instead.
 export const STORES = ['courses', 'rounds', 'shots', 'settings'];
 
 let dbp = null;
@@ -21,8 +23,16 @@ function open() {
         s.createIndex('roundId', 'roundId');
       }
       if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('captures')) {
+        const s = db.createObjectStore('captures', { keyPath: 'id' });   // `${logId}-${seq}`
+        s.createIndex('logId', 'logId');
+      }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // Let a newer version of the app (another tab) upgrade the database.
+      req.result.onversionchange = () => { req.result.close(); dbp = null; };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
   return dbp;
@@ -55,6 +65,7 @@ export const byIndex = (store, index, key) =>
   tx(store, 'readonly', (t) => req2p(t.objectStore(store).index(index).getAll(key)));
 
 export const shotsForRound = (roundId) => byIndex('shots', 'roundId', roundId);
+export const capturesForLog = (logId) => byIndex('captures', 'logId', logId);
 
 export async function deleteRound(roundId) {
   const shots = await shotsForRound(roundId);

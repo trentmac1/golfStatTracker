@@ -551,3 +551,26 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .check-list li.good { border-left: 5px solid var(--turf); }
 .check-list li.bad { border-left: 5px solid var(--red); }
 .share-line { display: block; }
+
+/* Training data (capture) */
+.capture button.tile { text-align: left; font: inherit; color: inherit; cursor: pointer; width: 100%; }
+.capture button.tile:active { background: #eef2ea; }
+.trigger-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 8px 8px 14px; }
+.trigger-row span { flex: 1; }
+.trigger-row b { font: 700 20px/1 var(--num); margin-left: 6px; }
+.trigger-row .btn { min-width: 52px; min-height: 48px; padding: 0; font-size: 26px; }
+.capture-session { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); margin-top: 8px; }
+.capture-session summary { padding: 12px 14px; cursor: pointer; list-style: none; display: grid; gap: 2px; }
+.capture-session summary::-webkit-details-marker { display: none; }
+.capture-session summary small { color: var(--muted); }
+.swing-list { list-style: none; margin: 0; padding: 0 10px 10px; display: grid; gap: 8px; }
+.swing-row { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.swing-row.real { border-left: 5px solid var(--turf); }
+.swing-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 14px; }
+.swing-meta .tag { margin-left: auto; color: var(--muted); }
+.swing-row.real .swing-meta .tag { color: var(--turf); font-weight: 700; }
+.swing-spark { display: block; width: 100%; height: 64px; margin-top: 6px; }
+.swing-spark .gyro { fill: none; stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.swing-spark .env { stroke: #d08a1e; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.swing-spark .peak { stroke: var(--line); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.how-list { padding-left: 22px; display: grid; gap: 6px; }

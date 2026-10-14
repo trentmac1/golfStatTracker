@@ -57,8 +57,11 @@ export async function trackerView(root) {
         <ul class="check-list">
           <li class="${s.busyPins.includes(BUTTON_PIN) ? 'bad' : 'good'}">Button pin D${BUTTON_PIN}: ${s.busyPins.includes(BUTTON_PIN) ? 'something on the boards drives it. Don\'t wire the button there; tell Claude which pins are busy.' : 'free to use'}</li>
           <li>${busyNames.length ? `Pins in use by the boards: ${busyNames.join(', ')}` : 'No other pins in use by the boards'}</li>
-          <li>Firmware ${esc(s.firmware)} · protocol ${s.proto}</li>
+          <li>Firmware ${esc(s.firmware)} · protocol ${s.proto}${t.state === 'connected' && !t.hasCapture ? ' · no capture mode (update to 0.2.0)' : ''}</li>
         </ul>
+        <h2>Training data</h2>
+        <p class="note">${t.capture ? `${t.capture.swings} swing${t.capture.swings === 1 ? '' : 's'} and ${t.capture.labels} label${t.capture.labels === 1 ? '' : 's'} on the tracker.` : 'Capture mode saves every swing during a round, for tuning shot detection.'}</p>
+        <div class="btn-col"><a class="btn primary" href="#/capture">Training data</a></div>
         ${t.state === 'connected' ? `<div class="btn-col">
           <button class="btn ghost" data-a="identify">Flash the tracker's lights</button>
           <button class="btn ghost" data-a="round">${s.roundActive ? 'End round on tracker' : 'Start round on tracker'}</button>

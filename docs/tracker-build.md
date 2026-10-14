@@ -74,6 +74,8 @@ The XIAO has two pads on the **back**, marked **BAT+** and **BAT−**.
 | two flashes | round active (from the app or a 2 s button hold) |
 | then a short blue flash | phone connected |
 | fast white blinking | "Flash the tracker's lights" from the app |
+| short magenta flash | a swing was saved (capture mode, during a round) |
+| short white blink | button press counted (and labelled, during a round) |
 
 The separate charge LED by the USB socket is wired to the charger, not the firmware.
 
@@ -85,6 +87,7 @@ The separate charge LED by the USB socket is wired to the charger, not the firmw
 | green | Bluetooth | open `INFO_UF2.TXT` on the XIAO-SENSE drive (double-tap reset): it should say `SoftDevice: S140 7.3.0` |
 | blue | motion sensor | send me the serial log |
 | yellow | microphone | send me the serial log |
+| magenta | flash storage (capture log) | send me the serial log |
 
 ## Optional: the serial log
 
@@ -105,3 +108,38 @@ Phase 2 is done when the app shows live battery, GPS fix and satellite count fro
 9. [ ] Battery life: leave it running, unplugged, with the GPS fixed (the Tracker screen can stay closed). How many hours until it dies? This gives the baseline before power saving.
 
 Anything odd (no data from the GPS, IMU not found, the mic not working, Bluefy not finding the tracker): send the Tracker screen or the serial log.
+
+## Phase 3: collecting training data
+
+Firmware 0.2.0 adds capture mode. While a round is on, the tracker saves every swing candidate to its 2 MB flash: 2 s of motion data (208 samples a second, 1.5 s before the peak rotation and 0.5 s after) and the microphone's level over the same 2 s. A short button press after a real shot saves a label. The app syncs the log over Bluetooth and exports it as JSON for the Phase 4 notebook. Format: [ble-protocol.md](ble-protocol.md), "Capture log".
+
+### Update the firmware
+
+Same as step 1: download **golf-tracker.uf2** from the firmware release, double-tap reset, drag it onto XIAO-SENSE. The Tracker screen should show firmware 0.2.0. The first start-up after updating sets up a new, empty log.
+
+### A session
+
+1. Tracker in your **front trouser pocket**, antenna side towards your body's outside, the same way every session.
+2. **Start a round**: hold the button 2 s (the LED double-flashes every 2 s), or tap Round on the app's **Training data** screen.
+3. Hit balls as normal. A short **magenta** flash means a swing was saved. Practice swings, waggles and the odd walk will be saved too. That's fine: the detector learns what to ignore from them.
+4. After each **real shot**, one short press of the button (white blink), within about 15 s. Nothing for practice swings. If you forget, press anyway: a press up to 20 s after the swing still counts. A press with no swing before it is recorded as a shot the trigger missed.
+5. **End the round** (hold 2 s).
+6. In Bluefy: **Backup → Training data → Sync**, then **Export training data (JSON)** and save it to Files. Then **Clear the tracker's storage** (it only clears once everything is synced; the phone keeps its copy).
+
+The tracker holds about 290 swings, so sync after each session. If it fills up, swings stop being saved (the app shows "full") until it's cleared.
+
+**Swing trigger.** A swing is saved when the rotation reaches 150 °/s. The app shows each swing's peak. If chips or short pitches aren't being saved, lower it in steps of 10; if walking fills the log, raise it. It resets to 150 when the tracker restarts.
+
+### Phase 3 checklist
+
+Phase 3 is done after at least **2 range sessions and 2 rounds** of labelled data. First, a quick check at home or the range:
+
+1. [ ] Firmware 0.2.0 on the Tracker screen, and Training data shows the tracker's storage (about 0% used).
+2. [ ] Round on: 10 full practice swings give 10 magenta flashes, and the app shows 10 swings saved.
+3. [ ] A few chips: are they saved? Note the trigger if you had to lower it.
+4. [ ] Button presses after swings: Sync, open the session, and the right swings say **Shot**.
+5. [ ] Hitting real balls: swings show "impact +x ms" near 0, practice swings show "no impact heard". (If every swing says no impact, the pocket may be muffling the mic; tell me.)
+6. [ ] Export the JSON and check it saved to Files. Then clear the tracker.
+7. [ ] Battery after a 2-hour range session: ___ %.
+
+Then the sessions themselves: send me each exported JSON file (or tell me where they are) with a line on what you did: range or course, roughly how many balls, clubs used, anything odd.

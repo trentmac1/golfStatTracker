@@ -7,6 +7,7 @@ import { holeView } from './views/hole.js';
 import { cardView } from './views/card.js';
 import { reviewView } from './views/review.js';
 import { trackerView } from './views/tracker.js';
+import { captureView } from './views/capture.js';
 import * as share from './share.js';
 import { COURSE_SERVER } from './config.js';
 import { statsView } from './views/stats.js';
@@ -191,8 +192,8 @@ async function settingsView(root) {
         <p class="note">Leave empty to use the app's own server${COURSE_SERVER ? ` (${esc(COURSE_SERVER)})` : ''}.</p>
       </details>
       <h2>Tracker</h2>
-      <p class="note">Connect the shot tracker over Bluetooth (in Bluefy on iPhone) to check its battery, GPS and sensors.</p>
-      <div class="btn-col"><a class="btn ghost" href="#/tracker">Open tracker</a></div>
+      <p class="note">Connect the shot tracker over Bluetooth (in Bluefy on iPhone) to check its battery, GPS and sensors, and to sync and export its training data.</p>
+      <div class="btn-col"><a class="btn ghost" href="#/tracker">Open tracker</a><a class="btn ghost" href="#/capture">Training data</a></div>
       <h2>Scorecard lookup</h2>
       <p class="note">Paste your GolfCourseAPI key to look up pars, hole lengths, rating and slope on a course's screen (35 free lookups a day). The key stays on this phone and isn't included in backups.</p>
       <div class="find-form">
@@ -278,6 +279,7 @@ const routes = [
   [/^#\/course\/([^/]+)\/map\/(\d+)$/, courseMapView, (m) => ({ courseId: m[1], hole: Number(m[2]) }), null],
   [/^#\/settings$/, settingsView, () => ({}), 'settings'],
   [/^#\/tracker$/, trackerView, () => ({}), 'settings'],
+  [/^#\/capture$/, captureView, () => ({}), 'settings'],
 ];
 
 let current = null;

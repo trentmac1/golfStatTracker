@@ -20,6 +20,8 @@ jobs:
         with:
           path: ~/.platformio
           key: pio-${{ hashFiles('firmware/platformio.ini') }}
+      - name: Host tests (capture log and swing capture)
+        run: sh firmware/test/host/run.sh
       - name: Build
         id: build
         run: |

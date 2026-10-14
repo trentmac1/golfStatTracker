@@ -99,9 +99,17 @@ bool store::eraseAll(uint32_t unixNow) {
 
 bool store::begin(uint32_t unixNow) {
   good = flash.begin(&CHIP, 1);
+  if (!good) {
+    // In case something left the chip in deep power-down: release it (0xAB)
+    // and try once more.
+    transport.runCommand(0xAB);
+    delay(1);
+    good = flash.begin(&CHIP, 1);
+  }
   if (!good) return false;
 
   // Walk the headers to the end of the log.
+  seqNext = 1; nRecords = 0; nSwings = 0; nLabels = 0; endA = 0;
   Header h;
   uint32_t a = 0;
   bool started = header(0, &h) && h.kind == K_LOG_START && h.len == 20;

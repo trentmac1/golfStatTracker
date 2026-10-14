@@ -4,15 +4,39 @@
 #include <PDM.h>
 
 // ===================== IMU =====================
+// Registers from ST's LSM6DS3TR-C driver (STMicroelectronics/lsm6ds3tr-c-pid,
+// lsm6ds3tr-c_reg.h): FIFO_CTRL3 0x08 (dec_fifo_xl bits 0-2, dec_fifo_gyro
+// bits 3-5, 1 = no decimation); FIFO_CTRL5 0x0A (fifo_mode bits 0-2, 6 =
+// continuous; odr_fifo bits 3-6, 5 = 208 Hz); FIFO_STATUS1/2 0x3A/0x3B
+// (diff_fifo 11 bits = unread 16-bit words, bit 4 of STATUS2 empty, bit 6
+// overrun); FIFO_STATUS3/4 0x3C/0x3D (fifo_pattern 10 bits = which word is
+// next); FIFO_DATA_OUT 0x3E/0x3F. ODR code 5 = 208 Hz for CTRL1_XL/CTRL2_G.
 namespace {
   const uint8_t IMU_ADDR = 0x6A;
-  const uint8_t WHO_AM_I = 0x0F, CTRL1_XL = 0x10, CTRL2_G = 0x11, CTRL3_C = 0x12,
-                STATUS_REG = 0x1E, OUTX_L_G = 0x22;
-  const float GYRO_DPS_PER_LSB = 0.070f;     // ±2000 dps
-  const float ACC_G_PER_LSB = 0.000488f;     // ±16 g
+  const uint8_t WHO_AM_I = 0x0F, FIFO_CTRL3 = 0x08, FIFO_CTRL5 = 0x0A,
+                CTRL1_XL = 0x10, CTRL2_G = 0x11, CTRL3_C = 0x12,
+                FIFO_STATUS1 = 0x3A, FIFO_STATUS3 = 0x3C, FIFO_DATA_OUT_L = 0x3E;
+  const float NOMINAL_HZ = 208.0f;
 
   bool imuOk = false;
   float peakGyro = 0, accelG = 0;
+  imu::Sink sink = nullptr;
+  uint32_t total = 0, nOverrun = 0, nRealign = 0;
+  // Timing: the newest sample read so far and when it was taken.
+  uint32_t newestIndex = 0;
+  float newestMs = 0, periodMs = 1000.0f / NOMINAL_HZ;
+  uint32_t rateT0 = 0, rateC0 = 0;
+  float measuredHz = NOMINAL_HZ;
+  // Burst reads of FIFO_DATA_OUT should wrap back to 0x3E (ST's driver reads
+  // many bytes at once). Checked on the first reads; if not, read 2 bytes at
+  // a time.
+  bool burstOk = true;
+  uint8_t burstChecks = 0;
+  // Which half of each 6-word set is gyro is checked against gravity at
+  // start-up (accel ≈ 1 g at rest), rather than assumed.
+  int8_t order = -1;            // -1 deciding, 0 gyro first, 1 accel first
+  float sumFirst = 0, sumSecond = 0;
+  uint16_t nOrder = 0, orderTries = 0;
 
   bool imuWrite(uint8_t reg, uint8_t v) {
     Wire1.beginTransmission(IMU_ADDR);
@@ -26,6 +50,44 @@ namespace {
     if (Wire1.requestFrom(IMU_ADDR, n) != n) return false;
     for (uint8_t i = 0; i < n; i++) out[i] = Wire1.read();
     return true;
+  }
+  bool readPattern(uint16_t* p) {
+    uint8_t b[2];
+    if (!imuRead(FIFO_STATUS3, b, 2)) return false;
+    *p = b[0] | ((b[1] & 0x03) << 8);
+    return true;
+  }
+  float mag3(const int16_t* v, float scale) {
+    float x = v[0] * scale, y = v[1] * scale, z = v[2] * scale;
+    return sqrtf(x * x + y * y + z * z);
+  }
+
+  void handleSample(const uint8_t* b) {
+    int16_t w[6];
+    for (int i = 0; i < 6; i++) w[i] = (int16_t)(b[2 * i] | (b[2 * i + 1] << 8));
+    if (order < 0) {
+      // Half a second of samples: whichever half reads near 1 g is the accel.
+      sumFirst += mag3(w, imu::ACC_G_PER_LSB);
+      sumSecond += mag3(w + 3, imu::ACC_G_PER_LSB);
+      if (++nOrder >= 104) {
+        float a = sumFirst / nOrder, c = sumSecond / nOrder;
+        if (c > 0.6f && c < 1.6f) order = 0;
+        else if (a > 0.6f && a < 1.6f) order = 1;
+        else if (++orderTries >= 10) order = 0;      // moving the whole time: use the datasheet order
+        sumFirst = sumSecond = 0; nOrder = 0;
+        if (order >= 0 && Serial) Serial.printf("imu: FIFO order %s\n", order ? "accel first (unexpected)" : "gyro first");
+      }
+      return;
+    }
+    int16_t v[6];
+    const int16_t* g = order ? w + 3 : w;
+    const int16_t* a = order ? w : w + 3;
+    for (int i = 0; i < 3; i++) { v[i] = g[i]; v[3 + i] = a[i]; }
+    float gm = mag3(v, imu::GYRO_DPS_PER_LSB);
+    if (gm > peakGyro) peakGyro = gm;
+    accelG = mag3(v + 3, imu::ACC_G_PER_LSB);
+    uint32_t idx = total++;
+    if (sink) sink(v, idx);
   }
 }
 
@@ -45,29 +107,79 @@ bool imu::begin() {
   uint8_t id = 0;
   if (!imuRead(WHO_AM_I, &id, 1) || id != 0x6A) { imuOk = false; return false; }
   imuOk = imuWrite(CTRL3_C, 0x44)        // block data update, auto-increment
-       && imuWrite(CTRL1_XL, 0x44)       // accel 104 Hz, ±16 g
-       && imuWrite(CTRL2_G, 0x4C);       // gyro 104 Hz, ±2000 dps
+       && imuWrite(CTRL1_XL, 0x54)       // accel 208 Hz, ±16 g
+       && imuWrite(CTRL2_G, 0x5C)        // gyro 208 Hz, ±2000 dps
+       && imuWrite(FIFO_CTRL5, 0x00)     // bypass: clears the FIFO
+       && imuWrite(FIFO_CTRL3, 0x09)     // gyro and accel into the FIFO, no decimation
+       && imuWrite(FIFO_CTRL5, (5 << 3) | 6);  // FIFO at 208 Hz, continuous
+  rateT0 = millis(); rateC0 = 0;
   return imuOk;
 }
 
+void imu::setSink(Sink s) { sink = s; }
+
 void imu::poll() {
   if (!imuOk) return;
-  uint8_t st;
-  if (!imuRead(STATUS_REG, &st, 1) || !(st & 0x02)) return;  // GDA: new gyro sample
-  uint8_t b[12];
-  if (!imuRead(OUTX_L_G, b, 12)) return;
-  int16_t v[6];
-  for (int i = 0; i < 6; i++) v[i] = (int16_t)(b[2 * i] | (b[2 * i + 1] << 8));
-  float gx = v[0] * GYRO_DPS_PER_LSB, gy = v[1] * GYRO_DPS_PER_LSB, gz = v[2] * GYRO_DPS_PER_LSB;
-  float ax = v[3] * ACC_G_PER_LSB, ay = v[4] * ACC_G_PER_LSB, az = v[5] * ACC_G_PER_LSB;
-  float g = sqrtf(gx * gx + gy * gy + gz * gz);
-  if (g > peakGyro) peakGyro = g;
-  accelG = sqrtf(ax * ax + ay * ay + az * az);
+  uint8_t st[4];
+  if (!imuRead(FIFO_STATUS1, st, 4)) return;
+  uint32_t now = millis();
+  uint16_t words = st[0] | ((st[1] & 0x07) << 8);
+  if (st[1] & 0x40) nOverrun++;
+  if (st[1] & 0x10 || words == 0) return;            // empty
+  uint16_t pattern = st[2] | ((st[3] & 0x03) << 8);
+  if (pattern >= 6) pattern = 0;                      // only gyro + accel are in the FIFO
+  if (pattern) {                                      // start on a whole sample
+    nRealign++;
+    uint8_t d[2];
+    while (pattern && words) {
+      if (!imuRead(FIFO_DATA_OUT_L, d, 2)) return;
+      words--; pattern = (pattern + 1) % 6;
+    }
+  }
+  uint16_t n = words / 6;
+  if (!n) return;
+  if (n > 120) n = 120;                               // the rest next time
+  // The newest unread sample was taken about now; earlier ones a period apart.
+  uint16_t left = words / 6 - n;                      // samples still in the FIFO after this read
+  for (uint16_t i = 0; i < n; ) {
+    uint8_t b[24];
+    uint16_t k = (n - i >= 2) ? 2 : 1;
+    if (burstOk) {
+      if (!imuRead(FIFO_DATA_OUT_L, b, 12 * k)) return;
+      if (burstChecks < 20) {                         // confirm the address wrapped
+        burstChecks++;
+        uint16_t p;
+        if (readPattern(&p) && p != 0) {
+          burstOk = false; nRealign++;
+          if (Serial) Serial.println("imu: FIFO burst reads don't wrap; reading 2 bytes at a time");
+          return;                                     // this chunk is misaligned: drop it, realign next poll
+        }
+      }
+    } else {
+      for (uint8_t j = 0; j < 6 * k; j++) if (!imuRead(FIFO_DATA_OUT_L, b + 2 * j, 2)) return;
+    }
+    for (uint16_t j = 0; j < k; j++) handleSample(b + 12 * j);
+    i += k;
+  }
+  newestIndex = total ? total - 1 : 0;
+  newestMs = now - left * periodMs;
+  if (now - rateT0 >= 10000) {
+    if (total > rateC0) {
+      measuredHz = (total - rateC0) * 1000.0f / (now - rateT0);
+      if (measuredHz > 150 && measuredHz < 260) periodMs = 1000.0f / measuredHz;
+    }
+    rateT0 = now; rateC0 = total;
+  }
 }
 
 bool imu::ok() { return imuOk; }
 float imu::takePeakGyro() { float p = peakGyro; peakGyro = 0; return p; }
 float imu::lastAccelG() { return accelG; }
+uint32_t imu::count() { return total; }
+float imu::sampleMs(uint32_t index) { return newestMs - (float)(int32_t)(newestIndex - index) * periodMs; }
+float imu::rateHz() { return measuredHz; }
+uint32_t imu::overruns() { return nOverrun; }
+uint32_t imu::realigns() { return nRealign; }
 
 // ===================== Microphone =====================
 namespace {
@@ -75,17 +187,35 @@ namespace {
   volatile uint16_t micPeak = 0;
   volatile uint32_t micBlocks = 0;
   bool micOk = false;
+  // Envelope: first-order high-pass, y = a(y + x - x_prev) with a = 143/256
+  // (cut-off about 2 kHz at 16 kHz), then the peak |y| of each 16 samples.
+  uint16_t env[mic::ENV_RING];
+  volatile uint32_t envN = 0, envMs = 0;
+  int32_t hpY = 0, hpX = 0;
+  uint16_t envAcc = 0;
+  uint8_t envSub = 0;
+  uint32_t envT0 = 0, envC0 = 0;
+  float envHz = 1000.0f;
 
   void onPdm() {
     int n = PDM.available();
     if (n > (int)sizeof(pdmBuf)) n = sizeof(pdmBuf);
     PDM.read(pdmBuf, n);
     uint16_t p = micPeak;
+    uint32_t c = envN;
     for (int i = 0; i < n / 2; i++) {
       int32_t s = pdmBuf[i];
       uint16_t a = (uint16_t)(s < 0 ? -s : s);
       if (a > p) p = a;
+      int32_t y = ((hpY + s - hpX) * 143) >> 8;
+      hpX = s; hpY = y;
+      uint32_t ay = (uint32_t)(y < 0 ? -y : y);
+      if (ay > 65535) ay = 65535;
+      if (ay > envAcc) envAcc = (uint16_t)ay;
+      if (++envSub == 16) { env[c % mic::ENV_RING] = envAcc; c++; envAcc = 0; envSub = 0; }
     }
+    envN = c;
+    envMs = millis();
     micPeak = p;
     micBlocks++;
   }
@@ -94,10 +224,32 @@ namespace {
 bool mic::begin() {
   PDM.onReceive(onPdm);
   micOk = PDM.begin(1, 16000) == 1;
+  envT0 = millis();
   return micOk;
 }
 bool mic::ok() { return micOk && micBlocks > 0; }
-uint16_t mic::takePeak() { noInterrupts(); uint16_t p = micPeak; micPeak = 0; interrupts(); return p; }
+uint16_t mic::takePeak() {
+  noInterrupts(); uint16_t p = micPeak; micPeak = 0; interrupts();
+  // Measure the real envelope rate every 10 s (the PDM clock isn't exactly 16 kHz).
+  uint32_t now = millis();
+  if (now - envT0 >= 10000) {
+    uint32_t c = envCount();
+    if (c > envC0) {
+      float hz = (c - envC0) * 1000.0f / (now - envT0);
+      if (hz > 800 && hz < 1200) envHz = hz;
+    }
+    envT0 = now; envC0 = c;
+  }
+  return p;
+}
+uint32_t mic::envCount() { noInterrupts(); uint32_t c = envN; interrupts(); return c; }
+uint32_t mic::envLastMs() { noInterrupts(); uint32_t m = envMs; interrupts(); return m; }
+uint16_t mic::envAt(uint32_t index) {
+  uint32_t c = envCount();
+  if (index >= c || c - index > ENV_RING - 32) return 0;   // keep clear of the slot being written
+  return env[index % ENV_RING];
+}
+float mic::envRateHz() { return envHz; }
 
 // ===================== Battery =====================
 namespace {

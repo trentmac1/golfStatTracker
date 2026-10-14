@@ -8,25 +8,39 @@
 static const uint8_t UUID_SERVICE[16] = GT_UUID(0x01);
 static const uint8_t UUID_STATUS[16]  = GT_UUID(0x02);
 static const uint8_t UUID_CONTROL[16] = GT_UUID(0x03);
+static const uint8_t UUID_DATA[16]    = GT_UUID(0x04);
+static const uint8_t UUID_ACK[16]     = GT_UUID(0x05);
 static const uint8_t UUID_LIVE[16]    = GT_UUID(0x06);
+static const uint8_t UUID_CAPTURE[16] = GT_UUID(0x07);
 
 static BLEService svc(UUID_SERVICE);
 static BLECharacteristic chrStatus(UUID_STATUS);
 static BLECharacteristic chrControl(UUID_CONTROL);
 static BLECharacteristic chrLive(UUID_LIVE);
+static BLECharacteristic chrData(UUID_DATA);
+static BLECharacteristic chrAck(UUID_ACK);
+static BLECharacteristic chrCapture(UUID_CAPTURE);
 static BLEDis dis;
 static ControlHandler handler = nullptr;
+static AckHandler ackHandler = nullptr;
 static volatile bool isConnected = false;
+static volatile uint16_t connHandle = BLE_CONN_HANDLE_INVALID;
 
-static void onConnect(uint16_t) { isConnected = true; }
-static void onDisconnect(uint16_t, uint8_t) { isConnected = false; }
+static void onConnect(uint16_t h) { isConnected = true; connHandle = h; }
+static void onDisconnect(uint16_t, uint8_t) { isConnected = false; connHandle = BLE_CONN_HANDLE_INVALID; }
 static void onWrite(uint16_t, BLECharacteristic*, uint8_t* data, uint16_t len) {
   if (handler && len) handler(data, len);
 }
+static void onAckWrite(uint16_t, BLECharacteristic*, uint8_t* data, uint16_t len) {
+  if (ackHandler && len >= 2) ackHandler(data[0] | (data[1] << 8));
+}
 
-void blelink::begin(ControlHandler onControl) {
+void blelink::begin(ControlHandler onControl, AckHandler onAck) {
   handler = onControl;
+  ackHandler = onAck;
   Bluefruit.autoConnLed(false);          // we drive the LEDs ourselves
+  // Bigger MTU and more queued notifications, for syncing the capture log.
+  Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
   Bluefruit.begin();
   Bluefruit.setTxPower(4);
   Bluefruit.setName("Golf Tracker");
@@ -57,6 +71,22 @@ void blelink::begin(ControlHandler onControl) {
   chrControl.setWriteCallback(onWrite);
   chrControl.begin();
 
+  chrData.setProperties(CHR_PROPS_NOTIFY);
+  chrData.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  chrData.setMaxLen(244);
+  chrData.begin();
+
+  chrAck.setProperties(CHR_PROPS_WRITE | CHR_PROPS_WRITE_WO_RESP);
+  chrAck.setPermission(SECMODE_NO_ACCESS, SECMODE_OPEN);
+  chrAck.setMaxLen(4);
+  chrAck.setWriteCallback(onAckWrite);
+  chrAck.begin();
+
+  chrCapture.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+  chrCapture.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  chrCapture.setFixedLen(sizeof(CapturePacket));
+  chrCapture.begin();
+
   // The 128-bit service UUID fills most of the 31-byte advert, so the name
   // goes in the scan response.
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
@@ -76,4 +106,23 @@ void blelink::publish(const StatusPacket& s, const LivePacket& l) {
   if (!isConnected) return;
   if (chrStatus.notifyEnabled()) chrStatus.notify(&s, sizeof(s));
   if (chrLive.notifyEnabled()) chrLive.notify(&l, sizeof(l));
+}
+
+void blelink::publishCapture(const CapturePacket& c) {
+  chrCapture.write(&c, sizeof(c));
+  if (isConnected && chrCapture.notifyEnabled()) chrCapture.notify(&c, sizeof(c));
+}
+
+bool blelink::dataSubscribed() { return isConnected && chrData.notifyEnabled(); }
+
+uint16_t blelink::dataPayload() {
+  BLEConnection* c = isConnected ? Bluefruit.Connection(connHandle) : nullptr;
+  uint16_t mtu = c ? c->getMtu() : 23;
+  uint16_t n = mtu > 3 ? mtu - 3 : 20;
+  return n > 244 ? 244 : n;
+}
+
+bool blelink::sendData(const uint8_t* d, uint16_t len) {
+  if (!dataSubscribed()) return false;
+  return chrData.notify(d, len);
 }

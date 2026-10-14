@@ -1,12 +1,17 @@
-// Golf tracker, Phase 2 bring-up: read the IMU, microphone, L76K and battery,
-// and publish them over BLE so the web app (in Bluefy) can show them.
+// Golf tracker. Phase 2 bring-up (IMU, microphone, L76K, battery over BLE)
+// plus Phase 3 capture mode: while a round is on, every swing candidate is
+// saved to flash as a 2 s snippet, short button presses label real shots, and
+// the app syncs the log over BLE.
 //
 // Serial monitor (USB, 115200): a status line every second.
-//   n  toggle raw NMEA echo      p  re-run the pin check      h  help
+//   n  toggle raw NMEA echo   p  re-run the pin check   c  capture on/off
+//   l  capture log summary    h  help
 #include <Arduino.h>
 #include "config.h"
 #include "sensors.h"
 #include "link.h"
+#include "store.h"
+#include "capture.h"
 
 static bool roundActive = false;
 static uint8_t buttonPresses = 0;
@@ -14,7 +19,16 @@ static uint16_t busyPins = 0;
 static bool echoNmea = false;
 static uint32_t phoneUnix = 0, phoneUnixAtMs = 0;  // time set by the app
 static uint32_t identifyUntil = 0;
-static uint32_t flashUntil = 0;       // short solid white: button feedback
+static uint32_t flashUntil = 0;       // short solid flash: button / swing feedback
+static bool flashR = true, flashG = true, flashB = true;
+
+// Requests from the app arrive on the Bluetooth task; the loop acts on them.
+static volatile uint8_t roundRequest = 0;       // 1 start, 2 end
+static volatile int32_t syncRequest = -1;       // seq to sync from
+static volatile bool stopSyncRequest = false;
+static volatile bool eraseRequest = false;
+static volatile uint32_t eraseLogId = 0;
+static volatile uint16_t lastAck = 0;
 
 // ---------- time ----------
 static uint32_t nowUnix() {
@@ -34,9 +48,19 @@ static void leds(bool r, bool g, bool b) {
 // Every 2 s: a short flash, green with a GPS fix, yellow while the GPS is
 // talking but has no fix, red if nothing is coming from the GPS. Two flashes
 // while a round is active. Then a blue flash if the phone is connected.
+static void flash(uint16_t ms, bool r, bool g, bool b) {
+  flashUntil = millis() + ms; flashR = r; flashG = g; flashB = b;
+}
+
+static void setRound(bool on) {
+  if (on == roundActive) return;
+  roundActive = on;
+  capture::setSession(on);
+}
+
 static void updateLeds() {
   uint32_t now = millis();
-  if (now < flashUntil) { leds(true, true, true); return; }
+  if (now < flashUntil) { leds(flashR, flashG, flashB); return; }
   if (now < identifyUntil) {                 // "find my tracker": fast white blink
     bool on = (now / 125) % 2;
     leds(on, on, on);
@@ -54,7 +78,8 @@ static void updateLeds() {
 }
 
 // ---------- button ----------
-// Short press: counted (labels shots in Phase 3). Hold 2 s: start/end round.
+// Short press: counted, and labels the last swing while a round is on.
+// Hold 2 s: start/end round.
 static void updateButton() {
   static bool down = false, held = false;
   static uint32_t since = 0;
@@ -68,22 +93,30 @@ static void updateButton() {
   if (pressed && !down) { down = true; held = false; since = now; }
   if (pressed && down && !held && now - since > 2000) {
     held = true;
-    roundActive = !roundActive;
-    flashUntil = now + 600;
+    setRound(!roundActive);
+    flash(600, true, true, true);
   }
   if (!pressed && down) {
     down = false;
-    if (!held) { buttonPresses++; flashUntil = now + 120; }
+    if (!held) { buttonPresses++; flash(120, true, true, true); capture::buttonPress(); }
   }
 }
 
 static bool buttonDown() { return digitalRead(BUTTON_PIN) == LOW; }
 
 // ---------- control from the app ----------
+static uint16_t u16(const uint8_t* p) { return p[0] | (p[1] << 8); }
+static uint32_t u32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
+
 static void onControl(const uint8_t* d, uint16_t len) {
   switch (d[0]) {
-    case OP_START_ROUND: roundActive = true; break;
-    case OP_END_ROUND: roundActive = false; break;
+    case OP_START_ROUND: roundRequest = 1; break;
+    case OP_END_ROUND: roundRequest = 2; break;
+    case OP_SET_CAPTURE: if (len >= 2) capture::setEnabled(d[1] != 0); break;
+    case OP_SYNC_FROM: syncRequest = len >= 3 ? u16(d + 1) : 0; break;
+    case OP_STOP_SYNC: stopSyncRequest = true; break;
+    case OP_ERASE_LOG: if (len >= 5) { eraseLogId = u32(d + 1); eraseRequest = true; } break;
+    case OP_SET_TRIGGER: if (len >= 3) capture::setTrigger(u16(d + 1)); break;
     case OP_SET_TIME:
       if (len >= 5) {
         phoneUnix = d[1] | (d[2] << 8) | (d[3] << 16) | ((uint32_t)d[4] << 24);
@@ -92,6 +125,90 @@ static void onControl(const uint8_t* d, uint16_t len) {
       break;
     case OP_IDENTIFY: identifyUntil = millis() + 3000; break;
   }
+}
+
+static void onAck(uint16_t seq) { lastAck = seq; }
+
+// ---------- sync ----------
+// Streams log records from a seq onwards as Data notifications:
+// [seq u16][offset u16][record bytes], then a single 0xFF byte at the end.
+static struct {
+  bool active = false, haveHeader = false;
+  uint32_t addr = 0, end = 0;
+  uint16_t off = 0;
+  store::Header h;
+} syncState;
+
+static void syncPoll() {
+  if (stopSyncRequest) { stopSyncRequest = false; syncState.active = false; }
+  if (syncRequest >= 0) {
+    uint16_t from = (uint16_t)syncRequest;
+    syncRequest = -1;
+    syncState.active = true; syncState.haveHeader = false;
+    syncState.addr = store::findSeq(from);
+    syncState.end = store::endAddr();
+  }
+  if (!syncState.active) return;
+  if (!blelink::connected()) { syncState.active = false; return; }
+  if (!blelink::dataSubscribed()) return;
+  static uint8_t pkt[248] __attribute__((aligned(4)));
+  uint16_t dataMax = (blelink::dataPayload() - 4) & ~3u;
+  for (int n = 0; n < 8; n++) {
+    if (!syncState.haveHeader) {
+      bool more = false;
+      while (syncState.addr < syncState.end && store::header(syncState.addr, &syncState.h)) {
+        if (syncState.h.kind != store::K_PAD) { more = true; break; }
+        syncState.addr += syncState.h.len;
+      }
+      if (!more) {
+        uint8_t endMark = 0xFF;
+        if (blelink::sendData(&endMark, 1)) syncState.active = false;
+        return;
+      }
+      syncState.haveHeader = true; syncState.off = 0;
+    }
+    uint32_t rest = syncState.h.len - syncState.off;
+    uint16_t len = rest < dataMax ? rest : dataMax;
+    pkt[0] = syncState.h.seq; pkt[1] = syncState.h.seq >> 8;
+    pkt[2] = syncState.off; pkt[3] = syncState.off >> 8;
+    if (!store::read(syncState.addr + syncState.off, pkt + 4, len)) { syncState.active = false; return; }
+    if (!blelink::sendData(pkt, 4 + len)) return;        // queue full: carry on next loop
+    syncState.off += len;
+    if (syncState.off >= syncState.h.len) { syncState.addr += syncState.h.len; syncState.haveHeader = false; }
+  }
+}
+
+static void handleRequests() {
+  if (roundRequest) { setRound(roundRequest == 1); roundRequest = 0; }
+  if (eraseRequest) {
+    eraseRequest = false;
+    // Only the log the app has seen: its id must match.
+    if (eraseLogId == store::logId()) {
+      syncState.active = false;
+      bool was = roundActive;
+      if (was) setRound(false);
+      store::eraseAll(nowUnix());
+      if (was) setRound(true);           // a round in progress carries on in the new log
+      Serial.println("capture log erased");
+    }
+  }
+}
+
+static CapturePacket capturePacket() {
+  CapturePacket c = {};
+  c.version = 1;
+  c.flags = (capture::enabled() ? C_ENABLED : 0) | (roundActive ? C_SESSION : 0)
+          | (capture::full() ? C_FULL : 0) | (syncState.active ? C_SYNCING : 0) | (store::ok() ? C_FLASH_OK : 0);
+  c.triggerDps = capture::trigger();
+  c.logId = store::logId();
+  c.nextSeq = store::nextSeq();
+  c.swings = store::swings();
+  c.labels = store::labels();
+  c.usedKb = (store::used() + 1023) / 1024;
+  c.totalKb = store::total() / 1024;
+  uint32_t ov = imu::overruns();
+  c.imuOverruns = ov > 65535 ? 65535 : ov;
+  return c;
 }
 
 // ---------- serial ----------
@@ -120,7 +237,15 @@ static void handleSerial() {
     char c = Serial.read();
     if (c == 'n') { echoNmea = !echoNmea; Serial.println(echoNmea ? "NMEA echo on" : "NMEA echo off"); }
     else if (c == 'p') { busyPins = probePins(); pinMode(BUTTON_PIN, INPUT_PULLUP); printBusy(); }
-    else if (c == 'h' || c == '?') Serial.println("n: NMEA echo   p: pin check   h: help");
+    else if (c == 'c') { capture::setEnabled(!capture::enabled()); Serial.println(capture::enabled() ? "capture on" : "capture off"); }
+    else if (c == 'l') {
+      Serial.printf("capture log %08lx: %u swings, %u labels, next seq %u, %lu of %lu KB, trigger %u dps, last ack %u\n",
+        (unsigned long)store::logId(), store::swings(), store::labels(), store::nextSeq(),
+        (unsigned long)(store::used() / 1024), (unsigned long)(store::total() / 1024), capture::trigger(), lastAck);
+      Serial.printf("imu %.1f Hz, %lu overruns, %lu realigns; mic envelope %.1f Hz\n",
+        imu::rateHz(), (unsigned long)imu::overruns(), (unsigned long)imu::realigns(), mic::envRateHz());
+    }
+    else if (c == 'h' || c == '?') Serial.println("n: NMEA echo   p: pin check   c: capture on/off   l: capture log   h: help");
   }
 }
 
@@ -150,7 +275,7 @@ void setup() {
 
   // Bluetooth before the sensors, so the phone can connect even if one fails.
   stage(false, true, false, "Bluetooth");
-  blelink::begin(onControl);
+  blelink::begin(onControl, onAck);
 
   stage(false, false, true, "motion sensor");
   bool imuOk = imu::begin();
@@ -158,17 +283,30 @@ void setup() {
   stage(true, true, false, "microphone");
   bool micOk = mic::begin();            // after BLE: PDM asks the SoftDevice for the HF clock
 
+  stage(true, false, true, "flash storage");
+  bool flashOk = store::begin(nowUnix());
+  capture::begin(nowUnix);
+
   Serial.printf("\nGolf tracker firmware %d.%d.%d (protocol %d)\n", FW_MAJOR, FW_MINOR, FW_PATCH, PROTOCOL_VERSION);
-  Serial.printf("IMU %s, mic %s\n", imuOk ? "ok" : "NOT FOUND", micOk ? "ok" : "FAILED");
+  Serial.printf("IMU %s, mic %s, flash %s\n", imuOk ? "ok" : "NOT FOUND", micOk ? "ok" : "FAILED", flashOk ? "ok" : "FAILED");
+  if (flashOk) Serial.printf("capture log %08lx: %u swings, %u labels, %lu KB used\n",
+    (unsigned long)store::logId(), store::swings(), store::labels(), (unsigned long)(store::used() / 1024));
   printBusy();
   Serial.println("Type h for commands.");
   leds(false, false, false);
 }
 
 void loop() {
-  static uint32_t lastSecond = 0, lastBattery = 0;
+  static uint32_t lastSecond = 0, lastBattery = 0, lastSaved = 0;
   imu::poll();
   gnss::poll(echoNmea ? &Serial : nullptr);
+  handleRequests();
+  capture::poll();
+  syncPoll();
+  if (capture::lastSavedMs() != lastSaved) {      // a swing was saved: short magenta flash
+    lastSaved = capture::lastSavedMs();
+    flash(150, true, false, true);
+  }
   updateButton();
   updateLeds();
   handleSerial();
@@ -193,7 +331,7 @@ void loop() {
     s.sats = f.sats;
     s.buttonPresses = buttonPresses;
     s.hdop100 = f.hdop100;
-    s.recordCount = 0;                  // shot records arrive in Phase 5
+    s.recordCount = store::swings();    // Phase 3: swing snippets in the capture log
     s.fw[0] = FW_MAJOR; s.fw[1] = FW_MINOR; s.fw[2] = FW_PATCH;
     s.micLevel = micPeak >> 7;          // 0-255
     s.gyroPeak = gyro > 65535 ? 65535 : (uint16_t)gyro;
@@ -204,6 +342,7 @@ void loop() {
     if (f.quality > 0) { l.lat_e7 = f.lat_e7; l.lon_e7 = f.lon_e7; l.alt_dm = f.alt_dm; l.speed_cms = f.speed_cms; }
 
     blelink::publish(s, l);
+    blelink::publishCapture(capturePacket());
     if (Serial && !echoNmea) printStatus(gyro, micPeak);
   }
   delay(2);                             // let the CPU idle between polls (IMU is 104 Hz)

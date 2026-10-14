@@ -2,19 +2,39 @@
 #include <Arduino.h>
 
 // ---- IMU (LSM6DS3TR-C on Wire1) ----
+// 208 Hz, ±16 g, ±2000 dps, streamed through the IMU's own 4 KB FIFO (about
+// 1.6 s of samples), so a slow flash write or Bluetooth send doesn't lose any.
+// Raw sample order handed to the sink: gx, gy, gz, ax, ay, az.
 namespace imu {
-  bool begin();                 // powers the IMU, checks WHO_AM_I, 104 Hz, ±16 g, ±2000 dps
-  void poll();                  // call often; reads new samples
+  const float GYRO_DPS_PER_LSB = 0.070f;     // ±2000 dps
+  const float ACC_G_PER_LSB = 0.000488f;     // ±16 g
+  typedef void (*Sink)(const int16_t raw[6], uint32_t index);
+  bool begin();                 // powers the IMU, checks WHO_AM_I, starts the FIFO
+  void setSink(Sink s);         // called for every sample, in order
+  void poll();                  // call at least every second; drains the FIFO
   bool ok();
   float takePeakGyro();         // peak |gyro| (deg/s) since the last call
   float lastAccelG();           // |accel| of the latest sample, in g
+  uint32_t count();             // samples read since start-up
+  float sampleMs(uint32_t index); // estimated millis() when sample `index` was taken
+  float rateHz();               // measured output rate (nominally 208)
+  uint32_t overruns();          // times the FIFO filled before it was read
+  uint32_t realigns();          // times the read had to skip to a sample boundary
 }
 
 // ---- PDM microphone ----
+// 16 kHz mono. Besides the peak level, keeps a high-passed (about 2 kHz)
+// envelope: the peak |sample| of every 16 samples, so about 1000 values a
+// second, in a ring of the last 2.5 s.
 namespace mic {
-  bool begin();                 // 16 kHz mono
+  bool begin();
   bool ok();
   uint16_t takePeak();          // peak |sample| since the last call (0-32767)
+  uint32_t envCount();          // envelope values produced since start-up
+  uint32_t envLastMs();         // millis() at the newest envelope value
+  uint16_t envAt(uint32_t index); // 0 if no longer in the ring
+  float envRateHz();            // measured envelope rate (about 1000)
+  const uint32_t ENV_RING = 2560;
 }
 
 // ---- Battery ----

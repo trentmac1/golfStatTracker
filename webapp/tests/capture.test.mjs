@@ -112,6 +112,7 @@ test('a press that makes its own snippet labels the shot before it', () => {
   assert.deepEqual([...s.labelledSeqs.keys()], [2, 5]);
   assert.equal(s.labelledSeqs.get(2), 2000);
   assert.equal(s.real, 2); assert.equal(s.missed, 0);
+  assert.deepEqual([...s.pressSeqs], [3]);
 });
 
 test('capture packet and the new control ops', () => {

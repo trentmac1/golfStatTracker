@@ -219,14 +219,19 @@ export function encodeSwing(seq, ctx, { peak = 900, trigger = 150, impactMs = 20
 }
 
 // ---------- sessions ----------
-// Which swing a button press labels: the latest one whose peak was 0.75–20 s
-// before the press. Reaching into the pocket for the button often makes a
-// snippet of its own (sharp, with the button's click), peaking about 0.1 s
-// before the press, so anything that close is the press, not the shot. The
-// tracker's own ref_seq simply takes the latest snippet; it's kept in the
-// export but not used. Times are the tracker's clock (device_ms), which only
-// goes back if it restarted, and then nothing from before qualifies.
-export const LABEL_MIN_MS = 750, LABEL_MAX_MS = 20000;
+// Matching button presses to swings, on the tracker's clock (device_ms; it
+// only goes back if the tracker restarted, and then nothing from before
+// qualifies).
+//
+// Reaching into the pocket for the button nearly always saves a snippet of
+// its own: a sharp jolt and the button's click, peaking 0.1–0.15 s before the
+// press. In the 15 and 16 Oct sessions every real shot was 2.0–4.5 s before
+// its press. So a press labels the latest swing whose peak was 1.5–8 s before
+// it, and a swing whose peak is under 0.6 s before a press is the press itself
+// (`button`), never a shot. A press with nothing in that window is a shot the
+// trigger missed. The tracker's own ref_seq (the latest snippet) is kept in
+// the export but not used.
+export const LABEL_MIN_MS = 1500, LABEL_MAX_MS = 8000, PRESS_SNIPPET_MS = 600;
 export function labelTarget(label, swings) {
   let best = null;
   for (const w of swings) {
@@ -235,6 +240,9 @@ export function labelTarget(label, swings) {
     if (gap >= LABEL_MIN_MS && gap <= LABEL_MAX_MS && (!best || w.seq > best.seq)) best = w;
   }
   return best ? best.seq : null;
+}
+export function isPressSnippet(swing, labels) {
+  return labels.some((l) => l.seq > swing.seq && l.deviceMs - swing.deviceMs >= 0 && l.deviceMs - swing.deviceMs < PRESS_SNIPPET_MS);
 }
 
 // rows: stored captures for one log (any order). Returns sessions, each with
@@ -263,6 +271,7 @@ export function sessions(rows) {
       if (l.swingSeq != null && !labelled.has(l.swingSeq)) labelled.set(l.swingSeq, l.deviceMs - s.swings.find((w) => w.seq === l.swingSeq).deviceMs);
     }
     s.labelledSeqs = labelled;
+    s.pressSeqs = new Set(s.swings.filter((w) => !labelled.has(w.seq) && isPressSnippet(w, s.labels)).map((w) => w.seq));
     s.real = s.swings.filter((w) => labelled.has(w.seq)).length;
     s.missed = s.labels.filter((l) => l.swingSeq == null).length;
     s.start ??= s.swings[0]?.time ?? s.labels[0]?.time ?? null;
@@ -295,6 +304,7 @@ export function exportJson(rows, { appVersion } = {}) {
             seq: w.seq, time: w.time ? new Date(w.time * 1000).toISOString() : null, device_ms: w.deviceMs,
             lat: w.pos?.lat ?? null, lon: w.pos?.lon ?? null, hdop: w.hdop, sats: w.sats,
             labelled: s.labelledSeqs.has(w.seq), label_gap_ms: s.labelledSeqs.get(w.seq) ?? null,
+            button_press: s.pressSeqs.has(w.seq),
             peak_gyro_dps: d.peakGyro, trigger_dps: d.trigger, flags: d.flags, audio_peak: d.audioPeak,
             imu: { rate_hz: d.imuRateHz, peak_index: d.imuPeakIndex, scale: { gyro_dps: GYRO_DPS_PER_LSB, accel_g: ACC_G_PER_LSB },
               columns: ['gx', 'gy', 'gz', 'ax', 'ay', 'az'], raw: d.imu },
@@ -306,7 +316,7 @@ export function exportJson(rows, { appVersion } = {}) {
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 2, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+  return { app: 'golftracker-capture', version: 3, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
     format: 'docs/ble-protocol.md, Capture log',
-    label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq)`, logs };
+    label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq); a swing peaking under ${PRESS_SNIPPET_MS} ms before a press is the press itself (button_press)`, logs };
 }

@@ -122,13 +122,13 @@ Same as step 1: download **golf-tracker.uf2** from the firmware release, double-
 1. Tracker in your **front trouser pocket**, antenna side towards your body's outside, the same way every session.
 2. **Start a round**: hold the button 2 s (the LED double-flashes every 2 s), or tap Round on the app's **Training data** screen.
 3. Hit balls as normal. A short **magenta** flash means a swing was saved. Practice swings, waggles and the odd walk will be saved too. That's fine: the detector learns what to ignore from them.
-4. After each **real shot**, one short press of the button (white blink), within about 15 s. Nothing for practice swings. If you forget, press anyway: a press up to 20 s after the swing still counts. Reaching for the button often saves a snippet of its own; the app knows (it skips anything less than 0.75 s before the press) and labels the shot before it. A press with no swing before it is recorded as a shot the trigger missed.
+4. After each **real shot**, once the follow-through is done, one short press of the button (white blink), **2–5 s after the shot**. Nothing for practice swings. Reaching for the button saves a snippet of its own; the app tags those "Button press". It labels the latest swing 1.5–8 s before the press, so press neither straight away nor late. A press with no swing in that window is recorded as a shot the trigger missed.
 5. **End the round** (hold 2 s).
 6. In Bluefy: **Backup → Training data → Sync**, then **Export training data (JSON)** and save it to Files. Then **Clear the tracker's storage** (it only clears once everything is synced; the phone keeps its copy).
 
 The tracker holds about 290 swings, so sync after each session. If it fills up, swings stop being saved (the app shows "full") until it's cleared.
 
-**Swing trigger.** A swing is saved when the rotation reaches 150 °/s. The app shows each swing's peak. If chips or short pitches aren't being saved, lower it in steps of 10; if walking fills the log, raise it. It resets to 150 when the tracker restarts.
+**Swing trigger.** A swing is saved when the rotation reaches the trigger (150 °/s after a restart). Full swings from the pocket peak at about 340–1150 °/s and chips at about 200, so use 250 for full swings and 150 for chips and pitches. The app shows each swing's peak. If chips or short pitches aren't being saved, lower it in steps of 10; if walking fills the log, raise it. It resets to 150 when the tracker restarts.
 
 ### Phase 3 checklist
 

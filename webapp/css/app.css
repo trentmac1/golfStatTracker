@@ -566,6 +566,7 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .swing-list { list-style: none; margin: 0; padding: 0 10px 10px; display: grid; gap: 8px; }
 .swing-row { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
 .swing-row.real { border-left: 5px solid var(--turf); }
+.swing-row.press { opacity: .6; }
 .swing-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 14px; }
 .swing-meta .tag { margin-left: auto; color: var(--muted); }
 .swing-row.real .swing-meta .tag { color: var(--turf); font-weight: 700; }

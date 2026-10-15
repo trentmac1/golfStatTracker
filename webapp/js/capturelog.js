@@ -219,6 +219,24 @@ export function encodeSwing(seq, ctx, { peak = 900, trigger = 150, impactMs = 20
 }
 
 // ---------- sessions ----------
+// Which swing a button press labels: the latest one whose peak was 0.75–20 s
+// before the press. Reaching into the pocket for the button often makes a
+// snippet of its own (sharp, with the button's click), peaking about 0.1 s
+// before the press, so anything that close is the press, not the shot. The
+// tracker's own ref_seq simply takes the latest snippet; it's kept in the
+// export but not used. Times are the tracker's clock (device_ms), which only
+// goes back if it restarted, and then nothing from before qualifies.
+export const LABEL_MIN_MS = 750, LABEL_MAX_MS = 20000;
+export function labelTarget(label, swings) {
+  let best = null;
+  for (const w of swings) {
+    if (w.seq > label.seq) continue;
+    const gap = label.deviceMs - w.deviceMs;
+    if (gap >= LABEL_MIN_MS && gap <= LABEL_MAX_MS && (!best || w.seq > best.seq)) best = w;
+  }
+  return best ? best.seq : null;
+}
+
 // rows: stored captures for one log (any order). Returns sessions, each with
 // its swings (labelled or not), labels, and missed shots (labels with no swing).
 export function sessions(rows) {
@@ -240,10 +258,13 @@ export function sessions(rows) {
   }
   for (const s of out) {
     const labelled = new Map();
-    for (const l of s.labels) if (l.refSeq != null && !labelled.has(l.refSeq)) labelled.set(l.refSeq, l.gapMs);
+    for (const l of s.labels) {
+      l.swingSeq = labelTarget(l, s.swings);
+      if (l.swingSeq != null && !labelled.has(l.swingSeq)) labelled.set(l.swingSeq, l.deviceMs - s.swings.find((w) => w.seq === l.swingSeq).deviceMs);
+    }
     s.labelledSeqs = labelled;
     s.real = s.swings.filter((w) => labelled.has(w.seq)).length;
-    s.missed = s.labels.filter((l) => l.refSeq == null).length;
+    s.missed = s.labels.filter((l) => l.swingSeq == null).length;
     s.start ??= s.swings[0]?.time ?? s.labels[0]?.time ?? null;
   }
   return out;
@@ -281,10 +302,11 @@ export function exportJson(rows, { appVersion } = {}) {
           };
         }),
         labels: s.labels.map((l) => ({ seq: l.seq, time: l.time ? new Date(l.time * 1000).toISOString() : null,
-          device_ms: l.deviceMs, ref_seq: l.refSeq, gap_ms: l.gapMs, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
+          device_ms: l.deviceMs, swing_seq: l.swingSeq ?? null, tracker_ref_seq: l.refSeq, tracker_gap_ms: l.gapMs, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 1, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
-    format: 'docs/ble-protocol.md, Capture log', logs };
+  return { app: 'golftracker-capture', version: 2, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+    format: 'docs/ble-protocol.md, Capture log',
+    label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq)`, logs };
 }

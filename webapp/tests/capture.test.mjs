@@ -94,8 +94,24 @@ test('sessions and the JSON export', () => {
   assert.equal(s0.swings[1].label_gap_ms, 5000);
   assert.equal(s0.swings[0].imu.raw.length, 416);
   assert.equal(s0.swings[0].envelope.sqrt_level.length, 2000);
-  assert.equal(s0.labels[1].ref_seq, null);
+  assert.equal(s0.labels[1].swing_seq, null);
+  assert.equal(s0.labels[0].swing_seq, 3);
   assert.ok(JSON.stringify(out).length < 40000 * 3);
+});
+
+test('a press that makes its own snippet labels the shot before it', () => {
+  // As in Trent's 15 Oct session: shot peaks at 0 s, reaching for the button
+  // makes a snippet peaking 1.9 s later, the press follows 0.1 s after that.
+  const ctx = (ms) => ({ time: 1790000000 + Math.floor(ms / 1000), deviceMs: 100000 + ms });
+  const bytes = [
+    encodeSession(1, true, ctx(0)), encodeSwing(2, ctx(0)), encodeSwing(3, ctx(1900)), encodeLabel(4, ctx(2000), 3, 100),
+    encodeSwing(5, ctx(30000)), encodeLabel(6, ctx(33000), 5, 3000),
+  ];
+  const rows = bytes.map((b) => ({ ...decodeRecord(b), bytes: b, logId: 1 }));
+  const [s] = sessions(rows);
+  assert.deepEqual([...s.labelledSeqs.keys()], [2, 5]);
+  assert.equal(s.labelledSeqs.get(2), 2000);
+  assert.equal(s.real, 2); assert.equal(s.missed, 0);
 });
 
 test('capture packet and the new control ops', () => {

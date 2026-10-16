@@ -7,6 +7,9 @@ namespace {
   bool isEnabled = true;          // Phase 3 build: capture is on by default
   bool session = false;
   uint16_t triggerDps = 150;
+  uint16_t gateLevel = 0;
+  uint16_t nGated = 0;
+  volatile bool settingsChanged = false;
 
   // Last 512 IMU samples (about 2.5 s).
   const uint16_t RING = 512;
@@ -108,15 +111,21 @@ namespace {
     float startBack = (envMs - (peakMs + capture::ENV_START_MS)) * rate / 1000.0f;   // values before the newest
     int32_t i0 = (int32_t)envN - 1 - (int32_t)lroundf(startBack);
     int16_t envStartMs = (int16_t)lroundf((envMs - ((int32_t)envN - 1 - i0) * 1000.0f / rate) - peakMs);
-    uint16_t audioPeak = 0;
+    uint16_t audioPeak = 0, impact = 0;
     for (uint16_t j = 0; j < capture::ENV_COUNT; j++) {
       int32_t idx = i0 + j;
       uint16_t v = 0;
       if (idx < 0 || (uint32_t)idx >= envN) flags |= 2;
       else v = mic::envAt(idx);
       if (v > audioPeak) audioPeak = v;
+      float tRel = envStartMs + j * 1000.0f / rate;
+      if (tRel >= capture::IMPACT_FROM && tRel <= capture::IMPACT_TO && v > impact) impact = v;
       *p++ = isqrt16(v);
     }
+
+    cooldownUntil = peakIdx + 208;    // 1 s after the peak
+    cand.active = false;
+    if (gateLevel && impact < gateLevel) { if (nGated < 65535) nGated++; return; }   // no impact heard: not saved
 
     context(body, (uint32_t)peakMs);
     uint8_t* s = body + CTX;
@@ -129,15 +138,13 @@ namespace {
     put16(s + 12, (uint16_t)envStartMs);
     put16(s + 14, (uint16_t)lroundf(rate * 10));
     s[16] = flags;
-    s[17] = 0;
+    s[17] = isqrt16(impact);          // loudest moment near the peak, companded like the envelope
     put16(s + 18, audioPeak);
 
     uint16_t seq;
     if (store::append(store::K_SWING, body, BODY, &seq)) {
       haveLast = true; lastSeq = seq; lastPeakMs = (uint32_t)peakMs; lastSavedAt = millis();
     }
-    cooldownUntil = peakIdx + 208;    // 1 s after the peak
-    cand.active = false;
   }
 }
 
@@ -176,7 +183,7 @@ void capture::setSession(bool active) {
   uint8_t b[CTX + 4];
   context(b, millis());
   put16(b + CTX, triggerDps);
-  put16(b + CTX + 2, 0);
+  put16(b + CTX + 2, gateLevel);
   store::append(active ? store::K_SESSION_START : store::K_SESSION_END, b, sizeof(b));
   if (active) { haveLast = false; cooldownUntil = imu::count() + 208; }
 }
@@ -188,8 +195,12 @@ void capture::buttonPress() {
 }
 
 bool capture::enabled() { return isEnabled; }
-void capture::setEnabled(bool on) { isEnabled = on; if (!on) cand.active = false; }
+void capture::setEnabled(bool on) { if (on != isEnabled) settingsChanged = true; isEnabled = on; if (!on) cand.active = false; }
 uint16_t capture::trigger() { return triggerDps; }
-void capture::setTrigger(uint16_t dps) { if (dps >= 30 && dps <= 2000) triggerDps = dps; }
+void capture::setTrigger(uint16_t dps) { if (dps >= 30 && dps <= 2000 && dps != triggerDps) { triggerDps = dps; settingsChanged = true; } }
+uint16_t capture::soundGate() { return gateLevel; }
+void capture::setSoundGate(uint16_t level) { if (level != gateLevel) { gateLevel = level; settingsChanged = true; } }
+uint16_t capture::gatedOut() { return nGated; }
+bool capture::takeSettingsChanged() { bool c = settingsChanged; settingsChanged = false; return c; }
 bool capture::full() { return !store::hasRoom(BODY); }
 uint32_t capture::lastSavedMs() { return lastSavedAt; }

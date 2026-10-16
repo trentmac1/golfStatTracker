@@ -63,10 +63,13 @@ Fits in one default-MTU notification.
 | 0x11 | erase log | uint32 log_id | Phase 3; only if log_id matches the tracker's current log |
 | 0x12 | stop sync | – | Phase 3 |
 | 0x20 | set trigger | uint16 deg/s | Phase 3; gyro magnitude that starts a swing candidate, 30–2000, default 150. Phase 5 may add fields |
+| 0x21 | set sound gate | uint16 level | Firmware 0.3.0; 0 off (range mode). Otherwise a candidate is saved only if the envelope (0–65535) reaches this level within −400…+250 ms of the peak rotation (round mode, 1000) |
+
+Trigger, sound gate and capture on/off are kept on the tracker's internal flash across restarts (firmware 0.3.0).
 
 Unknown ops are ignored, so an older tracker doesn't break a newer app.
 
-## Capture (20 bytes) — Phase 3
+## Capture (24 bytes; 20 before firmware 0.3.0) — Phase 3
 
 | Offset | Field | Type | Notes |
 |---|---|---|---|
@@ -80,6 +83,8 @@ Unknown ops are ignored, so an older tracker doesn't break a newer app.
 | 14 | used_kb | uint16 | |
 | 16 | total_kb | uint16 | 2048 |
 | 18 | imu_overruns | uint16 | times the IMU FIFO filled before it was read (should stay 0) |
+| 20 | sound_gate | uint16 | 0 off; firmware 0.3.0 |
+| 22 | gated_out | uint16 | candidates dropped by the sound gate since start-up |
 
 ## Capture log — Phase 3
 
@@ -108,7 +113,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 18 | sats | uint8 | |
 | 19 | flags | uint8 | bit0 GPS fix, bit1 GPS time known, bit2 battery under 15%, bit3 session active |
 
-**Session start / end** (kinds 2, 3; 32 bytes): context, trigger uint16, reserved uint16.
+**Session start / end** (kinds 2, 3; 32 bytes): context, trigger uint16, sound_gate uint16 (0 before firmware 0.3.0).
 
 **Label** (kind 5, 32 bytes), one per short button press during a session: context (time of the press), ref_seq uint16 (the swing saved before the press, if its peak was at most 20 s earlier; 0xFFFF none), gap_ms uint16 (that swing's peak to the press; 0xFFFF none). A label with no ref is a shot the trigger missed.
 
@@ -126,7 +131,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 32 | env_start_ms | int16 | time of the first envelope value relative to the peak (about −1500) |
 | 34 | env_rate | uint16 | measured, Hz × 10 (about 10000) |
 | 36 | flags | uint8 | bit0 IMU FIFO overrun in the window, bit1 some audio missing (zeros), bit2 some IMU samples missing (zeros) |
-| 37 | reserved | uint8 | |
+| 37 | impact | uint8 | √ of the loudest envelope value within −400…+250 ms of the peak (firmware 0.3.0; 0 before) |
 | 38 | audio_peak | uint16 | highest envelope value in the window, before companding |
 | 40 | imu | int16 × 6 × imu_count | gx, gy, gz (× 0.070 deg/s), ax, ay, az (× 0.000488 g), in sensor axes |
 | 5032 | envelope | uint8 × env_count | √ of the high-passed (about 2 kHz) peak level per 16 microphone samples; square it to get back to 0–65535 |

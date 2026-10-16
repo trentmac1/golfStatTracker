@@ -18,6 +18,15 @@ namespace capture {
   void setEnabled(bool on);
   uint16_t trigger();              // deg/s that starts a candidate
   void setTrigger(uint16_t dps);
+  // Round mode: keep a candidate only if the microphone heard an impact near
+  // the peak rotation (envelope level, 0-65535, within IMPACT_FROM..IMPACT_TO
+  // ms of it). 0 = off: keep every candidate (range mode).
+  uint16_t soundGate();
+  void setSoundGate(uint16_t level);
+  uint16_t gatedOut();             // candidates dropped by the gate since start-up
+  bool takeSettingsChanged();      // true once after trigger, gate or enabled changes
+  const int16_t IMPACT_FROM = -400, IMPACT_TO = 250;
+  const uint16_t ROUND_GATE = 1000, ROUND_TRIGGER = 250;
   bool full();                     // log has no room for another snippet
   uint32_t lastSavedMs();          // millis() of the last snippet written, 0 if none
 

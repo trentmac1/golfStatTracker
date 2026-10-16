@@ -108,5 +108,23 @@ int main() {
     fclose(f);
     printf("wrote %s\n", out);
   }
+  // Impact byte: sqrt of the loudest level near the peak.
+  CHECK(b[37] == 200);
+
+  // Sound gate (round mode): a swing with an impact is kept, one without isn't.
+  capture::setSoundGate(capture::ROUND_GATE);
+  CHECK(capture::takeSettingsChanged());
+  capture::setSession(true);
+  uint16_t before = store::swings();
+  swingPeakMs = 46000; impactMs = 46030; run(48000);      // shot: kept
+  swingPeakMs = 52000; impactMs = -1;    run(54000);      // walking-like rotation, silent: dropped
+  swingPeakMs = 58000; impactMs = 57500; run(60000);      // sound 500 ms before the peak: outside the window, dropped
+  capture::setSession(false);
+  printf("gate: %u kept, %u dropped\n", store::swings() - before, capture::gatedOut());
+  CHECK(store::swings() == before + 1);
+  CHECK(capture::gatedOut() == 2);
+  auto rs2 = records();
+  const uint8_t* sess = rs2[rs2.size() - 3].data();      // session start before the kept swing
+  CHECK(sess[0] == 2 && u16(sess + 8 + 22) == capture::ROUND_GATE);
   printf("capture tests passed\n");
 }

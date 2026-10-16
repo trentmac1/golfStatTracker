@@ -54,6 +54,7 @@ export function decodeRecord(bytes, { full = false } = {}) {
   const x = b + CTX;
   if (kind === KIND.sessionStart || kind === KIND.sessionEnd) {
     r.trigger = dv.getUint16(x, true);
+    r.soundGate = dv.getUint16(x + 2, true);       // 0 = off (and before firmware 0.3.0)
   } else if (kind === KIND.label) {
     const ref = dv.getUint16(x, true), gap = dv.getUint16(x + 2, true);
     r.refSeq = ref === 0xffff ? null : ref;
@@ -70,6 +71,8 @@ export function decodeRecord(bytes, { full = false } = {}) {
     const f = dv.getUint8(x + 16);
     r.flags = { imuOverrun: !!(f & 1), audioMissing: !!(f & 2), imuMissing: !!(f & 4) };
     r.audioPeak = dv.getUint16(x + 18, true);
+    const imp = dv.getUint8(x + 17);               // firmware 0.3.0+: √ of the loudest level near the peak
+    r.impactLevel = imp ? imp * imp : null;
     const imuAt = x + 20, envAt = imuAt + r.imuCount * 12;
     if (envAt + r.envCount > bytes.length) { r.crcOk = false; r.error = 'Swing record is cut short'; return r; }
     if (full) {
@@ -175,10 +178,11 @@ export function encodeLogStart(seq, logId, created = 0) {
   return finish(KIND.logStart, seq, b);
 }
 
-export function encodeSession(seq, start, ctx, trigger = 150) {
+export function encodeSession(seq, start, ctx, trigger = 150, soundGate = 0) {
   const b = new Uint8Array(CTX + 4);
   b.set(ctxBytes(ctx));
   new DataView(b.buffer).setUint16(CTX, trigger, true);
+  new DataView(b.buffer).setUint16(CTX + 2, soundGate, true);
   return finish(start ? KIND.sessionStart : KIND.sessionEnd, seq, b);
 }
 
@@ -215,6 +219,7 @@ export function encodeSwing(seq, ctx, { peak = 900, trigger = 150, impactMs = 20
     b[e0 + j] = Math.min(255, Math.floor(Math.sqrt(v)));
   }
   dv.setUint16(x + 18, audioPeak, true);
+  dv.setUint8(x + 17, loud ? 200 : 11);
   return finish(KIND.swing, seq, b);
 }
 
@@ -252,7 +257,7 @@ export function sessions(rows) {
   const out = [];
   let cur = null;
   const open = (r) => {
-    cur = { logId: r.logId, startSeq: r.seq, start: r.time ?? null, end: null, trigger: r.trigger ?? null,
+    cur = { logId: r.logId, startSeq: r.seq, start: r.time ?? null, end: null, trigger: r.trigger ?? null, soundGate: r.soundGate ?? 0,
       swings: [], labels: [], ended: false };
     out.push(cur);
   };
@@ -298,6 +303,7 @@ export function exportJson(rows, { appVersion } = {}) {
         start: s.start ? new Date(s.start * 1000).toISOString() : null,
         end: s.end ? new Date(s.end * 1000).toISOString() : null,
         trigger_dps: s.trigger,
+        sound_gate: s.soundGate || null,
         swings: s.swings.map((w) => {
           const d = decodeRecord(w.bytes, { full: true });
           return {
@@ -305,7 +311,7 @@ export function exportJson(rows, { appVersion } = {}) {
             lat: w.pos?.lat ?? null, lon: w.pos?.lon ?? null, hdop: w.hdop, sats: w.sats,
             labelled: s.labelledSeqs.has(w.seq), label_gap_ms: s.labelledSeqs.get(w.seq) ?? null,
             button_press: s.pressSeqs.has(w.seq),
-            peak_gyro_dps: d.peakGyro, trigger_dps: d.trigger, flags: d.flags, audio_peak: d.audioPeak,
+            peak_gyro_dps: d.peakGyro, trigger_dps: d.trigger, flags: d.flags, audio_peak: d.audioPeak, impact_level: d.impactLevel,
             imu: { rate_hz: d.imuRateHz, peak_index: d.imuPeakIndex, scale: { gyro_dps: GYRO_DPS_PER_LSB, accel_g: ACC_G_PER_LSB },
               columns: ['gx', 'gy', 'gz', 'ax', 'ay', 'az'], raw: d.imu },
             envelope: { rate_hz: d.envRateHz, start_ms: d.envStartMs, sqrt_level: d.env },

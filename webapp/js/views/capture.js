@@ -7,6 +7,10 @@ import { decodeRecord, sessions, exportJson, swingTraces, impactOffsetMs } from 
 import { APP_VERSION } from '../config.js';
 import { esc, toast, saveFile, confirmSheet } from '../ui.js';
 
+// Round mode defaults, from the 15–16 Oct sessions: trigger 250 and an impact
+// of at least 1000 within -400..+250 ms of the peak kept all 14 full shots and
+// cut walking from about 16 saved swings a minute to under 1.
+const ROUND = { trigger: 250, gate: 1000 };
 const hex = (id) => (id >>> 0).toString(16).padStart(8, '0');
 const timeText = (unix) => (unix ? new Date(unix * 1000).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) : '–');
 const dateText = (unix) => (unix ? new Date(unix * 1000).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Unknown date');
@@ -79,12 +83,25 @@ export async function captureView(root) {
           ${tile(String(c.swings), 'Swings saved', `${c.labels} button label${c.labels === 1 ? '' : 's'}`)}
           ${tile(`${pct}%`, 'Tracker storage', `${c.usedKb} of ${c.totalKb} KB${c.full ? ' · full' : ''}`, c.full ? 'bad' : pct > 80 ? 'warn' : '')}
         </div>
+        ${c.soundGate != null ? `
+        <div class="mode-row" role="group" aria-label="Capture mode">
+          <button class="btn ${c.soundGate ? 'ghost' : 'primary'}" data-a="mode-range">Range</button>
+          <button class="btn ${c.soundGate ? 'primary' : 'ghost'}" data-a="mode-round">Round</button>
+        </div>
+        <p class="note">${c.soundGate
+          ? `<b>Round mode:</b> a swing is saved only if an impact is heard at the strike, so walking doesn't fill the tracker. Chips and putts are usually too quiet: give the button a press after them, and the press is saved with its GPS position.${c.gatedOut ? ` ${c.gatedOut} silent swing${c.gatedOut === 1 ? '' : 's'} skipped since the tracker started.` : ''}`
+          : '<b>Range mode:</b> every swing that reaches the trigger is saved, practice swings and chips included. Use it at the range; it fills the tracker quickly if you walk around.'}</p>` : ''}
         <div class="trigger-row">
           <span>Swing trigger <b>${c.trigger} °/s</b></span>
           <button class="btn ghost small" data-a="trig-down" aria-label="Lower trigger">−</button>
           <button class="btn ghost small" data-a="trig-up" aria-label="Raise trigger">+</button>
         </div>
-        <p class="note">A swing is saved whenever the rotation reaches the trigger. Lower it if chips aren't being saved; raise it if walking fills the log. The app shows each swing's peak below.</p>
+        ${c.soundGate ? `<div class="trigger-row">
+          <span>Impact needed <b>${c.soundGate}</b></span>
+          <button class="btn ghost small" data-a="gate-down" aria-label="Lower impact level">−</button>
+          <button class="btn ghost small" data-a="gate-up" aria-label="Raise impact level">+</button>
+        </div>` : ''}
+        <p class="note">${c.soundGate ? 'Round mode uses 250 °/s and impact 1000. If a full shot isn\'t saved, lower the impact level; if walking still saves swings, raise it.' : 'A swing is saved whenever the rotation reaches the trigger: 250 °/s for full swings, 150 for chips and pitches.'}${c.soundGate == null ? ' Update the tracker to firmware 0.3.0 for round mode.' : ''} Settings stay on the tracker when it restarts${c.soundGate == null ? ' (firmware 0.3.0 and later)' : ''}.</p>
         ${!c.flashOk ? '<p class="note warn-note">The tracker can\'t use its flash storage, so nothing is being saved. Send Claude the serial log.</p>' : ''}
         ${c.imuOverruns ? `<p class="note warn-note">The motion sensor overflowed ${c.imuOverruns} time${c.imuOverruns === 1 ? '' : 's'}; some swings may have gaps (they're flagged in the export).</p>` : ''}
         <h2>Sync</h2>
@@ -142,10 +159,10 @@ export async function captureView(root) {
       <h2>How to collect it</h2>
       <ol class="how-list">
         <li>Tracker in your <b>front trouser pocket</b>, the same way every time.</li>
-        <li>Start a round: hold the button 2 s (two flashes every 2 s while it's on), or tap Round above.</li>
+        <li>Pick <b>Range</b> at the range or <b>Round</b> on the course, then start a round: hold the button 2 s (two flashes every 2 s while it's on), or tap the Round tile above.</li>
         <li>Swing as normal. A short magenta flash means a swing was saved. Practice swings and waggles get saved too; that's what the detector learns to ignore.</li>
         <li>After each <b>real shot</b>, once the follow-through is done, give the button one short press (white blink), 2–5 s after the shot. Don't press for practice swings.</li>
-        <li>End the round (hold 2 s), sync here, export, then clear the tracker. It holds about 290 swings.</li>
+        <li>End the round (hold 2 s), sync here, export, then clear the tracker. It holds about 290 swings; on the course, sync and clear at the turn if it's over half full.</li>
       </ol>
     </section>`;
   };
@@ -172,6 +189,10 @@ export async function captureView(root) {
       else if (a === 'fake') await tracker.connect('fake');
       else if (a === 'round') await tracker.send(c.session ? OP.endRound : OP.startRound);
       else if (a === 'capture') await tracker.send(OP.setCapture, !c.enabled);
+      else if (a === 'mode-round') { await tracker.send(OP.setTrigger, ROUND.trigger); await tracker.send(OP.setSoundGate, ROUND.gate); toast('Round mode: only swings with an impact are saved'); }
+      else if (a === 'mode-range') { await tracker.send(OP.setSoundGate, 0); toast('Range mode: every swing is saved'); }
+      else if (a === 'gate-down') await tracker.send(OP.setSoundGate, Math.max(250, c.soundGate - 250));
+      else if (a === 'gate-up') await tracker.send(OP.setSoundGate, Math.min(20000, c.soundGate + 250));
       else if (a === 'trig-down') await tracker.send(OP.setTrigger, Math.max(30, c.trigger - 10));
       else if (a === 'trig-up') await tracker.send(OP.setTrigger, Math.min(2000, c.trigger + 10));
       else if (a === 'sync') {

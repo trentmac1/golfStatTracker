@@ -17,7 +17,7 @@ export const UUID = {
 
 export const OP = {
   startRound: 0x01, endRound: 0x02, setTime: 0x03, identify: 0x04, setCapture: 0x05,
-  syncFrom: 0x10, eraseLog: 0x11, stopSync: 0x12, setTrigger: 0x20,
+  syncFrom: 0x10, eraseLog: 0x11, stopSync: 0x12, setTrigger: 0x20, setSoundGate: 0x21,
 };
 
 const FLAG = { charging: 0, round: 1, gpsData: 2, gpsFix: 3, imu: 4, mic: 5, time: 6, buttonDown: 7 };
@@ -106,21 +106,25 @@ export function decodeCapture(dv) {
     usedKb: dv.getUint16(14, true),
     totalKb: dv.getUint16(16, true),
     imuOverruns: dv.getUint16(18, true),
+    // Firmware 0.3.0+: round mode's impact-sound gate (null = not supported).
+    soundGate: dv.byteLength >= 24 ? dv.getUint16(20, true) : null,
+    gatedOut: dv.byteLength >= 24 ? dv.getUint16(22, true) : 0,
   };
 }
 
 export function encodeCapture(c) {
-  const dv = new DataView(new ArrayBuffer(20));
+  const dv = new DataView(new ArrayBuffer(c.soundGate == null ? 20 : 24));
   dv.setUint8(0, 1);
   dv.setUint8(1, (c.enabled ? 1 : 0) | (c.session ? 2 : 0) | (c.full ? 4 : 0) | (c.syncing ? 8 : 0) | (c.flashOk ? 16 : 0));
   dv.setUint16(2, c.trigger, true); dv.setUint32(4, c.logId >>> 0, true); dv.setUint16(8, c.nextSeq, true);
   dv.setUint16(10, c.swings, true); dv.setUint16(12, c.labels, true); dv.setUint16(14, c.usedKb, true);
   dv.setUint16(16, c.totalKb, true); dv.setUint16(18, c.imuOverruns ?? 0, true);
+  if (c.soundGate != null) { dv.setUint16(20, c.soundGate, true); dv.setUint16(22, c.gatedOut ?? 0, true); }
   return dv;
 }
 
 // Control: op byte, then the op's argument.
-const ARG_BYTES = { [OP.setTime]: 4, [OP.eraseLog]: 4, [OP.syncFrom]: 2, [OP.setTrigger]: 2, [OP.setCapture]: 1 };
+const ARG_BYTES = { [OP.setTime]: 4, [OP.eraseLog]: 4, [OP.syncFrom]: 2, [OP.setTrigger]: 2, [OP.setSoundGate]: 2, [OP.setCapture]: 1 };
 export function encodeControl(op, arg) {
   const n = ARG_BYTES[op] ?? 0;
   const dv = new DataView(new ArrayBuffer(1 + n));
@@ -215,7 +219,8 @@ export class FakeTransport {
     if (!this.log.length) this.newLog();
     this.capture = { enabled: true, session: false, full: false, syncing: false, flashOk: true, trigger: 150,
       logId: this.logId, nextSeq: this.log.length, swings: this.log.filter((r) => r[0] === 4).length,
-      labels: this.log.filter((r) => r[0] === 5).length, usedKb: 1, totalKb: 2048, imuOverruns: 0 };
+      labels: this.log.filter((r) => r[0] === 5).length, usedKb: 1, totalKb: 2048, imuOverruns: 0,
+      soundGate: 0, gatedOut: 0 };
     this.lastSwingSeq = null; this.lastSwingAt = 0;
     this.time = null;
     this.timer = setInterval(() => {
@@ -234,8 +239,11 @@ export class FakeTransport {
       const c = this.capture;
       if (swing && s.roundActive && c.enabled && s.gyroPeak >= c.trigger) {
         const loud = Math.random() > 0.3;   // some practice swings: no impact
+        if (!loud && c.soundGate) { c.gatedOut++; }
+        else {
         const seq = this.append((q) => encodeSwing(q, this.ctx(), { peak: s.gyroPeak, trigger: c.trigger, loud }));
         if (seq != null) { this.lastSwingSeq = seq; this.lastSwingAt = Date.now(); c.swings++; s.records = c.swings; this.loud = loud; }
+        }
       }
       if (Math.floor(t) % 15 === 7) {
         s.buttonPresses = (s.buttonPresses + 1) & 0xff;
@@ -262,7 +270,7 @@ export class FakeTransport {
   setRound(on) {
     if (on === this.s.roundActive) return;
     this.s.roundActive = on;
-    if (this.capture.enabled) this.append((q) => encodeSession(q, on, this.ctx(), this.capture.trigger));
+    if (this.capture.enabled) this.append((q) => encodeSession(q, on, this.ctx(), this.capture.trigger, this.capture.soundGate ?? 0));
   }
 
   async control(bytes) {
@@ -273,6 +281,7 @@ export class FakeTransport {
     else if (op === OP.setTime) this.time = dv.getUint32(1, true);
     else if (op === OP.setCapture) this.capture.enabled = !!bytes[1];
     else if (op === OP.setTrigger) this.capture.trigger = dv.getUint16(1, true);
+    else if (op === OP.setSoundGate) this.capture.soundGate = dv.getUint16(1, true);
     else if (op === OP.eraseLog) {
       if (dv.getUint32(1, true) === this.logId) {
         const was = this.s.roundActive;

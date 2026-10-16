@@ -118,7 +118,11 @@ test('a press that makes its own snippet labels the shot before it', () => {
 test('capture packet and the new control ops', () => {
   const c = { enabled: true, session: true, full: false, syncing: true, flashOk: true, trigger: 150, logId: 0xdeadbeef,
     nextSeq: 42, swings: 30, labels: 10, usedKb: 210, totalKb: 2048, imuOverruns: 0 };
-  assert.deepEqual(decodeCapture(encodeCapture(c)), { version: 1, ...c });
+  assert.deepEqual(decodeCapture(encodeCapture(c)), { version: 1, ...c, soundGate: null, gatedOut: 0 });   // 20-byte (0.2.x) packet
+  const c3 = { ...c, soundGate: 1000, gatedOut: 7 };
+  assert.equal(encodeCapture(c3).byteLength, 24);
+  assert.deepEqual(decodeCapture(encodeCapture(c3)), { version: 1, ...c3 });
+  assert.deepEqual([...encodeControl(OP.setSoundGate, 1000)], [0x21, 0xe8, 0x03]);
   // Hand-built as the firmware's CapturePacket (link.h).
   const b = new Uint8Array([1, 0b10011, 150, 0, 0xef, 0xbe, 0xad, 0xde, 42, 0, 30, 0, 10, 0, 210, 0, 0, 8, 3, 0]);
   const d = decodeCapture(new DataView(b.buffer));
@@ -134,6 +138,10 @@ test('capture packet and the new control ops', () => {
 test('pretend tracker: capture a round, sync it, clear it', async () => {
   await tracker.connect('fake', { tick: 10 });
   assert.equal(tracker.hasCapture, true);
+  await tracker.send(OP.setSoundGate, 1000);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(tracker.capture.soundGate, 1000);
+  await tracker.send(OP.setSoundGate, 0);
   await tracker.send(OP.startRound);
   await new Promise((r) => setTimeout(r, 400));     // ~40 ticks: 3 swings, 2-3 labels
   await tracker.send(OP.endRound);

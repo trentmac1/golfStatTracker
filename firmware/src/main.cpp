@@ -12,6 +12,8 @@
 #include "link.h"
 #include "store.h"
 #include "capture.h"
+#include <InternalFileSystem.h>
+using namespace Adafruit_LittleFS_Namespace;
 
 static bool roundActive = false;
 static uint8_t buttonPresses = 0;
@@ -117,6 +119,7 @@ static void onControl(const uint8_t* d, uint16_t len) {
     case OP_STOP_SYNC: stopSyncRequest = true; break;
     case OP_ERASE_LOG: if (len >= 5) { eraseLogId = u32(d + 1); eraseRequest = true; } break;
     case OP_SET_TRIGGER: if (len >= 3) capture::setTrigger(u16(d + 1)); break;
+    case OP_SET_SOUND_GATE: if (len >= 3) capture::setSoundGate(u16(d + 1)); break;
     case OP_SET_TIME:
       if (len >= 5) {
         phoneUnix = d[1] | (d[2] << 8) | (d[3] << 16) | ((uint32_t)d[4] << 24);
@@ -208,7 +211,38 @@ static CapturePacket capturePacket() {
   c.totalKb = store::total() / 1024;
   uint32_t ov = imu::overruns();
   c.imuOverruns = ov > 65535 ? 65535 : ov;
+  c.soundGate = capture::soundGate();
+  c.gatedOut = capture::gatedOut();
   return c;
+}
+
+// ---------- capture settings, kept across restarts ----------
+// Trigger, sound gate and capture on/off live in a small file on the
+// internal flash, so a restart mid-round keeps round mode.
+static const char* SETTINGS_FILE = "/capture.cfg";
+struct Settings { uint8_t version; uint8_t enabled; uint16_t trigger; uint16_t gate; uint16_t crc; } __attribute__((packed));
+
+static void loadSettings() {
+  if (!InternalFS.begin()) return;
+  File f(InternalFS);
+  if (!f.open(SETTINGS_FILE, FILE_O_READ)) return;
+  Settings st;
+  bool ok = f.read(&st, sizeof(st)) == sizeof(st) && st.version == 1
+         && st.crc == store::crc16((const uint8_t*)&st, sizeof(st) - 2);
+  f.close();
+  if (!ok) return;
+  capture::setEnabled(st.enabled);
+  capture::setTrigger(st.trigger);
+  capture::setSoundGate(st.gate);
+  capture::takeSettingsChanged();
+}
+
+static void saveSettings() {
+  Settings st = { 1, (uint8_t)capture::enabled(), capture::trigger(), capture::soundGate(), 0 };
+  st.crc = store::crc16((const uint8_t*)&st, sizeof(st) - 2);
+  InternalFS.remove(SETTINGS_FILE);
+  File f(InternalFS);
+  if (f.open(SETTINGS_FILE, FILE_O_WRITE)) { f.write((const uint8_t*)&st, sizeof(st)); f.close(); }
 }
 
 // ---------- serial ----------
@@ -239,9 +273,10 @@ static void handleSerial() {
     else if (c == 'p') { busyPins = probePins(); pinMode(BUTTON_PIN, INPUT_PULLUP); printBusy(); }
     else if (c == 'c') { capture::setEnabled(!capture::enabled()); Serial.println(capture::enabled() ? "capture on" : "capture off"); }
     else if (c == 'l') {
-      Serial.printf("capture log %08lx: %u swings, %u labels, next seq %u, %lu of %lu KB, trigger %u dps, last ack %u\n",
+      Serial.printf("capture log %08lx: %u swings, %u labels, next seq %u, %lu of %lu KB, trigger %u dps, sound gate %u (%u dropped), last ack %u\n",
         (unsigned long)store::logId(), store::swings(), store::labels(), store::nextSeq(),
-        (unsigned long)(store::used() / 1024), (unsigned long)(store::total() / 1024), capture::trigger(), lastAck);
+        (unsigned long)(store::used() / 1024), (unsigned long)(store::total() / 1024), capture::trigger(),
+        capture::soundGate(), capture::gatedOut(), lastAck);
       Serial.printf("imu %.1f Hz, %lu overruns, %lu realigns; mic envelope %.1f Hz\n",
         imu::rateHz(), (unsigned long)imu::overruns(), (unsigned long)imu::realigns(), mic::envRateHz());
     }
@@ -286,6 +321,7 @@ void setup() {
   stage(true, false, true, "flash storage");
   bool flashOk = store::begin(nowUnix());
   capture::begin(nowUnix);
+  loadSettings();
 
   Serial.printf("\nGolf tracker firmware %d.%d.%d (protocol %d)\n", FW_MAJOR, FW_MINOR, FW_PATCH, PROTOCOL_VERSION);
   Serial.printf("IMU %s, mic %s, flash %s\n", imuOk ? "ok" : "NOT FOUND", micOk ? "ok" : "FAILED", flashOk ? "ok" : "FAILED");
@@ -303,6 +339,9 @@ void loop() {
   handleRequests();
   capture::poll();
   syncPoll();
+  static uint32_t changedAt = 0;
+  if (capture::takeSettingsChanged()) changedAt = millis() | 1;
+  if (changedAt && millis() - changedAt > 2000) { changedAt = 0; saveSettings(); }   // after the taps stop
   if (capture::lastSavedMs() != lastSaved) {      // a swing was saved: short magenta flash
     lastSaved = capture::lastSavedMs();
     flash(150, true, false, true);

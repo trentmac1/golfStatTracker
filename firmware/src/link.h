@@ -34,7 +34,7 @@ enum StatusFlag : uint8_t {
   F_IMU_OK = 1 << 4, F_MIC_OK = 1 << 5, F_TIME_OK = 1 << 6, F_BUTTON_DOWN = 1 << 7,
 };
 
-struct CapturePacket {         // 20 bytes, little-endian
+struct CapturePacket {         // 24 bytes, little-endian (20 before firmware 0.3.0)
   uint8_t version;             // 1
   uint8_t flags;               // CaptureFlag
   uint16_t triggerDps;
@@ -45,8 +45,10 @@ struct CapturePacket {         // 20 bytes, little-endian
   uint16_t usedKb;
   uint16_t totalKb;
   uint16_t imuOverruns;
+  uint16_t soundGate;          // 0 = off
+  uint16_t gatedOut;           // candidates dropped by the gate since start-up
 } __attribute__((packed));
-static_assert(sizeof(CapturePacket) == 20, "capture is 20 bytes");
+static_assert(sizeof(CapturePacket) == 24, "capture is 24 bytes");
 
 enum CaptureFlag : uint8_t {
   C_ENABLED = 1 << 0, C_SESSION = 1 << 1, C_FULL = 1 << 2, C_SYNCING = 1 << 3, C_FLASH_OK = 1 << 4,
@@ -56,7 +58,7 @@ enum ControlOp : uint8_t {
   OP_START_ROUND = 0x01, OP_END_ROUND = 0x02, OP_SET_TIME = 0x03, OP_IDENTIFY = 0x04,
   OP_SET_CAPTURE = 0x05,
   OP_SYNC_FROM = 0x10, OP_ERASE_LOG = 0x11, OP_STOP_SYNC = 0x12,
-  OP_SET_TRIGGER = 0x20,
+  OP_SET_TRIGGER = 0x20, OP_SET_SOUND_GATE = 0x21,
 };
 
 typedef void (*ControlHandler)(const uint8_t* data, uint16_t len);

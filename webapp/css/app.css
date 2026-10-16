@@ -575,3 +575,4 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .swing-spark .env { stroke: #d08a1e; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .swing-spark .peak { stroke: var(--line); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .how-list { padding-left: 22px; display: grid; gap: 6px; }
+.mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }

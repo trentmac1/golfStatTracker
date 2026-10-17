@@ -89,7 +89,7 @@ export async function captureView(root) {
           <button class="btn ${c.soundGate ? 'primary' : 'ghost'}" data-a="mode-round">Round</button>
         </div>
         <p class="note">${c.soundGate
-          ? `<b>Round mode:</b> a swing is saved only if an impact is heard at the strike, so walking doesn't fill the tracker. Chips and putts are usually too quiet: give the button a press after them, and the press is saved with its GPS position.${c.gatedOut ? ` ${c.gatedOut} silent swing${c.gatedOut === 1 ? '' : 's'} skipped since the tracker started.` : ''}`
+          ? `<b>Round mode:</b> a swing is saved only if an impact is heard at the strike and the rotation built up through a downswing, so walking, knocks and reaching for the button don't fill the tracker. Chips and putts are usually too quiet: give the button a press after them, and the press is saved with its GPS position.${c.gatedOut ? ` ${c.gatedOut} silent swing${c.gatedOut === 1 ? '' : 's'} skipped since the tracker started.` : ''}`
           : '<b>Range mode:</b> every swing that reaches the trigger is saved, practice swings and chips included. Use it at the range; it fills the tracker quickly if you walk around.'}</p>` : ''}
         <div class="trigger-row">
           <span>Swing trigger <b>${c.trigger} °/s</b></span>

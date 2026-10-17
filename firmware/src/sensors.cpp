@@ -255,11 +255,13 @@ float mic::envRateHz() { return envHz; }
 namespace {
   uint16_t vbatMv = 0;
 
-  // Resting LiPo voltage to charge left (approximate; under load reads lower).
+  // Charge left from the measured voltage. Trent's own cell on this tracker
+  // (Oct 2026, tracker running): 4.10 V when full, 3.15 V when it stopped.
+  // A standard LiPo discharge shape stretched to those two end points.
   const uint16_t CURVE[][2] = {
-    {4200, 100}, {4100, 90}, {4000, 79}, {3900, 66}, {3800, 50},
-    {3750, 40}, {3700, 30}, {3650, 20}, {3600, 12}, {3500, 5}, {3300, 0},
+    {4100, 100}, {3994, 90}, {3889, 79}, {3783, 66}, {3678, 50}, {3625, 40}, {3572, 30}, {3519, 20}, {3467, 12}, {3361, 5}, {3150, 0},
   };
+
 }
 
 void battery::begin() {

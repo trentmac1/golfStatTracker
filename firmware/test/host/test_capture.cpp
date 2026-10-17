@@ -10,7 +10,7 @@ uint32_t millis(){ return (uint32_t)nowMs; } uint32_t micros(){ return (uint32_t
 
 // ---- mocks ----
 const double IMU_HZ = 207.3, ENV_HZ = 1007.8;   // deliberately not nominal
-double swingPeakMs = -1, impactMs = -1;
+double swingPeakMs = -1, impactMs = -1, widthMs = 60;
 static imu::Sink sinkFn; static uint32_t imuN = 0;
 void imu::setSink(Sink s){ sinkFn = s; }
 uint32_t imu::count(){ return imuN; }
@@ -19,7 +19,7 @@ float imu::rateHz(){ return IMU_HZ; }
 uint32_t imu::overruns(){ return 0; }
 float gyroAt(double t) { // dps; a swing: bump to 900 at swingPeakMs, width ~120 ms
   if (swingPeakMs < 0) return 20;
-  double d = (t - swingPeakMs) / 60.0; return 20 + 880 * exp(-d * d);
+  double d = (t - swingPeakMs) / widthMs; return 20 + 880 * exp(-d * d);
 }
 void pumpImu() { // deliver all samples with time <= now
   while (imuN * 1000.0 / IMU_HZ <= nowMs) {
@@ -119,12 +119,15 @@ int main() {
   swingPeakMs = 46000; impactMs = 46030; run(48000);      // shot: kept
   swingPeakMs = 52000; impactMs = -1;    run(54000);      // walking-like rotation, silent: dropped
   swingPeakMs = 58000; impactMs = 57500; run(60000);      // sound 500 ms before the peak: outside the window, dropped
+  widthMs = 6; swingPeakMs = 64000; impactMs = 64005; run(66000);   // knock: loud but no build-up, dropped
+  widthMs = 60; swingPeakMs = 70000; impactMs = 70020; run(70150);
+  capture::buttonPress(); run(72000);                                // the jolt of a button press: dropped
   capture::setSession(false);
   printf("gate: %u kept, %u dropped\n", store::swings() - before, capture::gatedOut());
   CHECK(store::swings() == before + 1);
-  CHECK(capture::gatedOut() == 2);
+  CHECK(capture::gatedOut() == 4);
   auto rs2 = records();
-  const uint8_t* sess = rs2[rs2.size() - 3].data();      // session start before the kept swing
+  const uint8_t* sess = rs2[rs2.size() - 4].data();      // session start, kept swing, label, session end
   CHECK(sess[0] == 2 && u16(sess + 8 + 22) == capture::ROUND_GATE);
   printf("capture tests passed\n");
 }

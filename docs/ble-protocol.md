@@ -63,7 +63,7 @@ Fits in one default-MTU notification.
 | 0x11 | erase log | uint32 log_id | Phase 3; only if log_id matches the tracker's current log |
 | 0x12 | stop sync | – | Phase 3 |
 | 0x20 | set trigger | uint16 deg/s | Phase 3; gyro magnitude that starts a swing candidate, 30–2000, default 150. Phase 5 may add fields |
-| 0x21 | set sound gate | uint16 level | Firmware 0.3.0; 0 off (range mode). Otherwise a candidate is saved only if the envelope (0–65535) reaches this level within −400…+250 ms of the peak rotation (round mode, 1000) |
+| 0x21 | set sound gate | uint16 level | Firmware 0.3.0; 0 off (range mode). Otherwise (round mode, 1000) a candidate is saved only if the envelope (0–65535) reaches this level within −400…+250 ms of the peak rotation, the mean rotation over the 0.3 s before the peak is at least 110 deg/s (firmware 0.3.1; rules out knocks), and no button press came within 0.6 s of the peak (0.3.1; rules out the jolt of reaching for the button) |
 
 Trigger, sound gate and capture on/off are kept on the tracker's internal flash across restarts (firmware 0.3.0).
 

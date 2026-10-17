@@ -21,6 +21,7 @@ namespace {
     float peak = 0;
     uint32_t overruns = 0;
     uint32_t foundMs = 0;
+    uint32_t pressMs = 0;         // a button press while this candidate was open (0 none)
   } cand;
   uint32_t cooldownUntil = 0;     // sample index
 
@@ -31,7 +32,8 @@ namespace {
   bool labelWaiting = false;      // pressed while a candidate was still being finished
   uint32_t labelWaitingMs = 0;
 
-  const uint32_t LABEL_WINDOW_MS = 20000;   // a press labels the snippet before it, up to 20 s
+  const uint32_t LABEL_WINDOW_MS = 20000;
+  const uint16_t BUILDUP_SAMPLES = 62;        // 0.3 s at 208 Hz   // a press labels the snippet before it, up to 20 s
 
   // Record body: context (20 bytes) + swing fields (20) + IMU + envelope.
   const uint32_t CTX = 20, SWING_FIELDS = 20;
@@ -72,7 +74,7 @@ namespace {
       if (idx <= cand.peakIdx + capture::POST && g > cand.peak) { cand.peak = g; cand.peakIdx = idx; }
     } else if (g >= triggerDps && idx >= cooldownUntil && idx >= capture::PRE) {
       cand.active = true; cand.peak = g; cand.peakIdx = idx;
-      cand.overruns = imu::overruns(); cand.foundMs = millis();
+      cand.overruns = imu::overruns(); cand.foundMs = millis(); cand.pressMs = 0;
     }
   }
 
@@ -125,7 +127,30 @@ namespace {
 
     cooldownUntil = peakIdx + 208;    // 1 s after the peak
     cand.active = false;
-    if (gateLevel && impact < gateLevel) { if (nGated < 65535) nGated++; return; }   // no impact heard: not saved
+    if (gateLevel) {
+      // Round mode keeps a candidate only if it looks like a swing:
+      // - an impact heard near the peak rotation;
+      // - rotation built up over the downswing: the average over the 0.3 s
+      //   before the peak at least BUILDUP_MIN. Knocks and the jolt of
+      //   reaching for the button go from nearly still to the peak in a few
+      //   milliseconds (at most 94 deg/s on this measure in the 15-17 Oct
+      //   data); every full shot had at least 128;
+      // - not the jolt of a button press (a press within 0.6 s of the peak).
+      float build = 0;
+      uint16_t nb = 0;
+      for (uint32_t i = peakIdx >= BUILDUP_SAMPLES ? peakIdx - BUILDUP_SAMPLES : 0; i < peakIdx; i++) {
+        if (count - i > RING) continue;
+        const int16_t* v = ring[i % RING];
+        float gx = v[0] * imu::GYRO_DPS_PER_LSB, gy = v[1] * imu::GYRO_DPS_PER_LSB, gz = v[2] * imu::GYRO_DPS_PER_LSB;
+        build += sqrtf(gx * gx + gy * gy + gz * gz); nb++;
+      }
+      if (nb) build /= nb;
+      bool byButton = cand.pressMs && fabsf((float)cand.pressMs - peakMs) < 600;
+      if (impact < gateLevel || build < capture::BUILDUP_MIN || byButton) {
+        if (nGated < 65535) nGated++;
+        return;                         // not saved
+      }
+    }
 
     context(body, (uint32_t)peakMs);
     uint8_t* s = body + CTX;
@@ -190,7 +215,7 @@ void capture::setSession(bool active) {
 
 void capture::buttonPress() {
   if (!session || !isEnabled) return;
-  if (cand.active) { labelWaiting = true; labelWaitingMs = millis(); return; }
+  if (cand.active) { labelWaiting = true; labelWaitingMs = millis(); cand.pressMs = millis(); return; }
   writeLabel(millis());
 }
 

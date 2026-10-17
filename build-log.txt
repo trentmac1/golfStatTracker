@@ -1,0 +1,328 @@
+********************************************************************************
+If you like PlatformIO, please:
+- star it on GitHub > https://github.com/platformio/platformio-core
+- follow us on LinkedIn to stay up-to-date on the latest project news > https://www.linkedin.com/company/platformio/
+- try PlatformIO IDE for embedded development > https://platformio.org/platformio-ide
+********************************************************************************
+
+Processing xiao_sense (platform: https://github.com/Seeed-Studio/platform-seeedboards.git#024c190fef52da02ebae5c09d47c101e0ff0762a; board: seeed-xiao-afruitnrf52-nrf52840-sense; framework: arduino)
+--------------------------------------------------------------------------------
+Platform Manager: Installing git+https://github.com/Seeed-Studio/platform-seeedboards.git#024c190fef52da02ebae5c09d47c101e0ff0762a
+git version 2.55.0
+Cloning into '/home/runner/.platformio/.cache/tmp/pkg-installing-r2zh6ije'...
+HEAD is now at 024c190 Merge pull request #106 from Seeed-Studio/dev
+Platform Manager: SeeedStudio@1.1.0+sha.024c190 has been installed!
+Tool Manager: Installing https://files.seeedstudio.com/arduino/platformio/esp_install-v5.3.4.zip
+Downloading 0% 10% 20% 30% 40% 50% 60% 70%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Tool Manager: tool-esp_install@5.3.4 has been installed!
+Tool Manager: Installing platformio/toolchain-gccarmnoneeabi @ >=1.60301.0,<1.80000.0
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Tool Manager: toolchain-gccarmnoneeabi@1.70201.0 has been installed!
+Tool Manager: Installing https://files.seeedstudio.com/arduino/platformio/framework-arduinoadafruitnrf52.tar.bz2
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Tool Manager: framework-arduinoadafruitnrf52@1.10101.0 has been installed!
+Tool Manager: Installing platformio/framework-cmsis @ ~2.50700.0
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Tool Manager: framework-cmsis@2.50700.210515 has been installed!
+Tool Manager: Installing platformio/tool-adafruit-nrfutil @ ~1.503.0
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Tool Manager: tool-adafruit-nrfutil@1.503.0 has been installed!
+Tool Manager: Installing platformio/tool-sreccat @ ~1.164.0
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20%
+Tool Manager: tool-sreccat@1.164.0 has been installed!
+Tool Manager: Installing platformio/tool-scons @ ~4.41101.0
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Tool Manager: tool-scons@4.41101.0 has been installed!
+Library Manager: Installing adafruit/Adafruit SPIFlash @ 5.1.1
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Library Manager: Adafruit SPIFlash@5.1.1 has been installed!
+Library Manager: Resolving dependencies...
+Library Manager: Installing Adafruit NeoPixel
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Library Manager: Adafruit NeoPixel@1.15.5 has been installed!
+Library Manager: Installing SdFat - Adafruit Fork
+Downloading 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Unpacking 0% 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
+Library Manager: SdFat - Adafruit Fork@2.3.103 has been installed!
+Verbose mode can be enabled via `-v, --verbose` option
+board id is nrf,will call board_build/nrf/nrf_build.py
+CONFIGURATION: https://docs.platformio.org/page/boards/SeeedStudio/seeed-xiao-afruitnrf52-nrf52840-sense.html
+PLATFORM: Seeed Studio Xiao Series (1.1.0+sha.024c190) > Seeed Studio XIAO nRF52840 Sense
+HARDWARE: NRF52840 64MHz, 232KB RAM, 792KB Flash
+DEBUG: Current (blackmagic) External (blackmagic, cmsis-dap, jlink)
+PACKAGES: 
+ - framework-arduinoadafruitnrf52 @ 1.10101.0 (1.1.1) 
+ - framework-cmsis @ 2.50700.210515 (5.7.0) 
+ - tool-adafruit-nrfutil @ 1.503.0 (5.3) 
+ - tool-esp_install @ 5.3.4 
+ - tool-sreccat @ 1.164.0 (1.64) 
+ - toolchain-gccarmnoneeabi @ 1.70201.0 (7.2.1)
+board id is 52840,will call ../board_build/nrf/nrf_arduino.py
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 16 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- Adafruit SPIFlash @ 5.1.1
+|-- SdFat - Adafruit Fork @ 2.3.103
+|-- Adafruit Bluefruit nRF52 Libraries @ 0.21.0
+|-- Adafruit Internal File System on Bluefruit nRF52 @ 0.11.0
+|-- nRF52840 PDM - Adafruit Fork @ 1.0
+|-- Wire @ 1.0
+Building in release mode
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/Adafruit_TinyUSB_API.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/Adafruit_USBD_CDC.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/Adafruit_USBD_Device.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/hid/Adafruit_USBD_HID.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/midi/Adafruit_USBD_MIDI.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/msc/Adafruit_USBD_MSC.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/ports/esp32/Adafruit_TinyUSB_esp32.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/ports/nrf/Adafruit_TinyUSB_nrf.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/ports/rp2040/Adafruit_TinyUSB_rp2040.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/ports/samd/Adafruit_TinyUSB_samd.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/arduino/webusb/Adafruit_USBD_WebUSB.cpp.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/audio/audio_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/bth/bth_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/cdc/cdc_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/dfu/dfu_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/dfu/dfu_rt_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/hid/hid_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/midi/midi_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/msc/msc_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/net/ecm_rndis_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/net/ncm_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/usbtmc/usbtmc_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/class/vendor/vendor_device.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/common/tusb_fifo.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/device/usbd.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/device/usbd_control.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/portable/espressif/esp32sx/dcd_esp32sx.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/portable/microchip/samd/dcd_samd.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/portable/nordic/nrf5x/dcd_nrf5x.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/portable/nxp/transdimension/dcd_transdimension.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/portable/raspberrypi/rp2040/dcd_rp2040.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/portable/raspberrypi/rp2040/hcd_rp2040.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/portable/raspberrypi/rp2040/rp2040_usb.c.o
+Compiling .pio/build/xiao_sense/lib2c3/Adafruit_TinyUSB_Arduino/tusb.c.o
+Compiling .pio/build/xiao_sense/src/capture.cpp.o
+Compiling .pio/build/xiao_sense/src/link.cpp.o
+Compiling .pio/build/xiao_sense/src/main.cpp.o
+Compiling .pio/build/xiao_sense/src/sensors.cpp.o
+Compiling .pio/build/xiao_sense/src/store.cpp.o
+Compiling .pio/build/xiao_sense/libf4e/SPI/SPI.cpp.o
+Compiling .pio/build/xiao_sense/libf4e/SPI/SPI_nrf52832.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatDbg.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatFile.cpp.o
+Archiving .pio/build/xiao_sense/libf4e/libSPI.a
+Indexing .pio/build/xiao_sense/libf4e/libSPI.a
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatFilePrint.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatFileWrite.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatFormatter.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatName.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatPartition.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/ExFatLib/ExFatVolume.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatDbg.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatFile.cpp.o
+.pio/libdeps/xiao_sense/SdFat - Adafruit Fork/src/ExFatLib/ExFatPartition.cpp: In member function 'bool ExFatPartition::freeChain(Cluster_t)':
+.pio/libdeps/xiao_sense/SdFat - Adafruit Fork/src/ExFatLib/ExFatPartition.cpp:81:13: warning: 'start' may be used uninitialized in this function [-Wmaybe-uninitialized]
+   Cluster_t start = cluster - 2;
+             ^~~~~
+.pio/libdeps/xiao_sense/SdFat - Adafruit Fork/src/ExFatLib/ExFatPartition.cpp:211:13: note: 'start' was declared here
+   Cluster_t start = cluster;
+             ^~~~~
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatFileLFN.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatFilePrint.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatFileSFN.cpp.o
+.pio/libdeps/xiao_sense/SdFat - Adafruit Fork/src/FatLib/FatFile.cpp: In member function 'int FatFile::fgets(char*, int, const char*)':
+.pio/libdeps/xiao_sense/SdFat - Adafruit Fork/src/FatLib/FatFile.cpp:250:14: warning: 'ch' may be used uninitialized in this function [-Wmaybe-uninitialized]
+     str[n++] = ch;
+     ~~~~~~~~~^~~~
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatFormatter.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatName.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatPartition.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FatLib/FatVolume.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FreeStack.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FsLib/FsFile.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FsLib/FsNew.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/FsLib/FsVolume.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/MinimumSerial.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/PioSdio/PioSdioCard.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/SdCardInfo.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/SdSpiCard/SdSpiCard.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/SdSpiCard/SpiDriver/SdSpiChipSelect.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/SdSpiCard/SpiDriver/SdSpiDue.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/SdSpiCard/SpiDriver/SdSpiSTM32Core.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/SdSpiCard/SpiDriver/SdSpiTeensy3.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/SdCard/TeensySdio/TeensySdio.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/FmtNumber.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/FsCache.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/FsDateTime.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/FsName.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/FsStructs.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/FsUtf.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/PrintBasic.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/common/upcase.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/iostream/StdioStream.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/iostream/StreamBaseClass.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/iostream/istream.cpp.o
+Compiling .pio/build/xiao_sense/lib4d1/SdFat - Adafruit Fork/iostream/ostream.cpp.o
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/Adafruit_FlashCache.cpp.o
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/Adafruit_SPIFlash.cpp.o
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/Adafruit_SPIFlashBase.cpp.o
+Archiving .pio/build/xiao_sense/lib4d1/libSdFat - Adafruit Fork.a
+Indexing .pio/build/xiao_sense/lib4d1/libSdFat - Adafruit Fork.a
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/esp32/Adafruit_FlashTransport_ESP32.cpp.o
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/qspi/Adafruit_FlashTransport_QSPI_NRF.cpp.o
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/qspi/Adafruit_FlashTransport_QSPI_SAMD.cpp.o
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/rp2040/Adafruit_FlashTransport_RP2040.cpp.o
+Compiling .pio/build/xiao_sense/libc63/Adafruit SPIFlash/spi/Adafruit_FlashTransport_SPI.cpp.o
+Compiling .pio/build/xiao_sense/lib9af/Adafruit_nRFCrypto/Adafruit_nRFCrypto.cpp.o
+Compiling .pio/build/xiao_sense/lib9af/Adafruit_nRFCrypto/ecc/nRFCrypto_ECC.cpp.o
+Compiling .pio/build/xiao_sense/lib9af/Adafruit_nRFCrypto/ecc/nRFCrypto_ECC_PrivateKey.cpp.o
+Compiling .pio/build/xiao_sense/lib9af/Adafruit_nRFCrypto/ecc/nRFCrypto_ECC_PublicKey.cpp.o
+Compiling .pio/build/xiao_sense/lib9af/Adafruit_nRFCrypto/nRFCrypto_Hash.cpp.o
+Archiving .pio/build/xiao_sense/libc63/libAdafruit SPIFlash.a
+Indexing .pio/build/xiao_sense/libc63/libAdafruit SPIFlash.a
+Compiling .pio/build/xiao_sense/lib9af/Adafruit_nRFCrypto/nRFCrypto_Random.cpp.o
+Compiling .pio/build/xiao_sense/lib060/Adafruit_LittleFS/Adafruit_LittleFS.cpp.o
+Compiling .pio/build/xiao_sense/lib060/Adafruit_LittleFS/Adafruit_LittleFS_File.cpp.o
+Compiling .pio/build/xiao_sense/lib060/Adafruit_LittleFS/littlefs/lfs.c.o
+Archiving .pio/build/xiao_sense/lib9af/libAdafruit_nRFCrypto.a
+Indexing .pio/build/xiao_sense/lib9af/libAdafruit_nRFCrypto.a
+Compiling .pio/build/xiao_sense/lib060/Adafruit_LittleFS/littlefs/lfs_util.c.o
+Compiling .pio/build/xiao_sense/lib8d9/InternalFileSytem/InternalFileSystem.cpp.o
+Compiling .pio/build/xiao_sense/lib8d9/InternalFileSytem/flash/flash_cache.c.o
+Compiling .pio/build/xiao_sense/lib8d9/InternalFileSytem/flash/flash_nrf5x.c.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEAdvertising.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLECentral.cpp.o
+Archiving .pio/build/xiao_sense/lib8d9/libInternalFileSytem.a
+Indexing .pio/build/xiao_sense/lib8d9/libInternalFileSytem.a
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLECharacteristic.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEClientCharacteristic.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEClientService.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEConnection.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEDiscovery.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEGatt.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEPeriph.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEScanner.cpp.o
+Archiving .pio/build/xiao_sense/lib060/libAdafruit_LittleFS.a
+Indexing .pio/build/xiao_sense/lib060/libAdafruit_LittleFS.a
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLESecurity.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEService.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/BLEUuid.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/bluefruit.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/clients/BLEAncs.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/clients/BLEClientBas.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/clients/BLEClientCts.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/clients/BLEClientDis.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/clients/BLEClientHidAdafruit.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/clients/BLEClientUart.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEBas.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEBeacon.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEDfu.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEDis.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEHidAdafruit.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEHidGamepad.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEHidGeneric.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEMidi.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/BLEUart.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/services/EddyStone.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/utility/AdaMsg.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/utility/bonding.cpp.o
+Compiling .pio/build/xiao_sense/lib839/Bluefruit52Lib/utility/bootloader_util.c.o
+Compiling .pio/build/xiao_sense/libe7c/PDM/PDM.cpp.o
+Compiling .pio/build/xiao_sense/libe7c/PDM/utility/PDMDoubleBuffer.cpp.o
+Compiling .pio/build/xiao_sense/lib81e/Wire/Wire_nRF52.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduinoVariant/variant.cpp.o
+Archiving .pio/build/xiao_sense/lib839/libBluefruit52Lib.a
+Indexing .pio/build/xiao_sense/lib839/libBluefruit52Lib.a
+Compiling .pio/build/xiao_sense/FrameworkArduino/HardwarePWM.cpp.o
+Archiving .pio/build/xiao_sense/libFrameworkArduinoVariant.a
+Indexing .pio/build/xiao_sense/libFrameworkArduinoVariant.a
+Compiling .pio/build/xiao_sense/FrameworkArduino/IPAddress.cpp.o
+Archiving .pio/build/xiao_sense/libe7c/libPDM.a
+Indexing .pio/build/xiao_sense/libe7c/libPDM.a
+Compiling .pio/build/xiao_sense/FrameworkArduino/Print.cpp.o
+Archiving .pio/build/xiao_sense/lib81e/libWire.a
+Indexing .pio/build/xiao_sense/lib81e/libWire.a
+Compiling .pio/build/xiao_sense/FrameworkArduino/RingBuffer.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/Stream.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/Tone.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/Uart.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/WInterrupts.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/WMath.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/WString.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/abi.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/avr/dtostrf.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/delay.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/croutine.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/event_groups.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/list.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/portable/MemMang/heap_3.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/queue.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/stream_buffer.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/tasks.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/Source/timers.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/portable/CMSIS/nrf52/port_cmsis.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/portable/CMSIS/nrf52/port_cmsis_systick.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/freertos/portable/GCC/nrf52/port.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/hooks.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/itoa.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/linker/gcc_startup_nrf52.S.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/linker/gcc_startup_nrf52840.S.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/main.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/new.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/drivers/src/nrfx_gpiote.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/drivers/src/nrfx_power.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/drivers/src/nrfx_pwm.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/drivers/src/nrfx_qspi.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/drivers/src/nrfx_spim.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/drivers/src/nrfx_timer.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/mdk/system_nrf52.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/nordic/nrfx/mdk/system_nrf52840.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/pulse.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/pulse_asm.S.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/rtos.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/sysview/Config/SEGGER_SYSVIEW_Config_FreeRTOS.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/sysview/SEGGER/SEGGER_RTT.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/sysview/SEGGER/SEGGER_RTT_ASM_ARMv7M.S.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/sysview/SEGGER/SEGGER_RTT_printf.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/sysview/SEGGER/SEGGER_SYSVIEW.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/sysview/SEGGER_SYSVIEW_FreeRTOS.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/utility/AdaCallback.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/utility/SoftwareTimer.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/utility/adafruit_fifo.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/utility/debug.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/utility/utilities.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/wiring.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/wiring_analog.cpp.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/wiring_analog_nRF52.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/wiring_digital.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/wiring_private.c.o
+Compiling .pio/build/xiao_sense/FrameworkArduino/wiring_shift.c.o
+Archiving .pio/build/xiao_sense/libFrameworkArduino.a
+Indexing .pio/build/xiao_sense/libFrameworkArduino.a
+Linking .pio/build/xiao_sense/firmware.elf
+Building .pio/build/xiao_sense/firmware.hex
+Checking size .pio/build/xiao_sense/firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [==        ]  15.4% (used 36692 bytes from 237568 bytes)
+Flash: [==        ]  18.8% (used 152112 bytes from 811008 bytes)
+Building .pio/build/xiao_sense/firmware.zip
+Zip created at .pio/build/xiao_sense/firmware.zip
+========================= [SUCCESS] Took 39.05 seconds =========================
+/home/runner/.platformio/packages/framework-arduinoadafruitnrf52/tools/uf2conv/uf2conv.py:177: SyntaxWarning: invalid escape sequence '\s'
+  words = re.split('\s+', line)
+Converting to uf2, output size: 304640, start address: 0x27000
+Wrote 304640 bytes to golf-tracker.uf2.
+-rw-r--r-- 1 runner runner 304640 Oct 17 03:00 golf-tracker.uf2
+result: success commit 9d408213e7dc8f14f361e809edbb7e9461b87f89

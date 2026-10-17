@@ -28,6 +28,7 @@ namespace capture {
   const int16_t IMPACT_FROM = -400, IMPACT_TO = 250;
   const uint16_t ROUND_GATE = 1000, ROUND_TRIGGER = 250;
   const float BUILDUP_MIN = 110;   // deg/s, mean rotation over the 0.3 s before the peak (round mode)
+  const float STILL_MAX = 70;      // deg/s, mean rotation 1.5-1.0 s before the peak (round mode: still at address)
   bool full();                     // log has no room for another snippet
   uint32_t lastSavedMs();          // millis() of the last snippet written, 0 if none
 

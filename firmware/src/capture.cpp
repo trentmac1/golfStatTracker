@@ -33,7 +33,8 @@ namespace {
   uint32_t labelWaitingMs = 0;
 
   const uint32_t LABEL_WINDOW_MS = 20000;
-  const uint16_t BUILDUP_SAMPLES = 62;        // 0.3 s at 208 Hz   // a press labels the snippet before it, up to 20 s
+  const uint16_t BUILDUP_SAMPLES = 62;        // 0.3 s at 208 Hz
+  const uint16_t STILL_SAMPLES = 104;         // 0.5 s at 208 Hz, from 1.5 s before the peak   // a press labels the snippet before it, up to 20 s
 
   // Record body: context (20 bytes) + swing fields (20) + IMU + envelope.
   const uint32_t CTX = 20, SWING_FIELDS = 20;
@@ -145,8 +146,24 @@ namespace {
         build += sqrtf(gx * gx + gy * gy + gz * gz); nb++;
       }
       if (nb) build /= nb;
+      // - standing still first: the mean rotation 1.5-1.0 s before the peak
+      //   (address, before the backswing) at most STILL_MAX. In the 15-17 Oct
+      //   data full shots were at most 58 deg/s here; knocks and handling
+      //   that got past the build-up check were mostly 82-360.
+      float still = 0;
+      uint16_t ns = 0;
+      if (peakIdx >= capture::PRE) {
+        uint32_t start = peakIdx - capture::PRE;
+        for (uint32_t i = start; i < start + STILL_SAMPLES; i++) {
+          if (count - i > RING) continue;
+          const int16_t* v = ring[i % RING];
+          float gx = v[0] * imu::GYRO_DPS_PER_LSB, gy = v[1] * imu::GYRO_DPS_PER_LSB, gz = v[2] * imu::GYRO_DPS_PER_LSB;
+          still += sqrtf(gx * gx + gy * gy + gz * gz); ns++;
+        }
+      }
+      if (ns) still /= ns;
       bool byButton = cand.pressMs && fabsf((float)cand.pressMs - peakMs) < 600;
-      if (impact < gateLevel || build < capture::BUILDUP_MIN || byButton) {
+      if (impact < gateLevel || build < capture::BUILDUP_MIN || (ns && still > capture::STILL_MAX) || byButton) {
         if (nGated < 65535) nGated++;
         return;                         // not saved
       }

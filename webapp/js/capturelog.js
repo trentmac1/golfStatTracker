@@ -262,23 +262,51 @@ export function isPressSnippet(swing, labels) {
   return labels.some((l) => l.seq > swing.seq && l.deviceMs - swing.deviceMs >= 0 && l.deviceMs - swing.deviceMs < PRESS_SNIPPET_MS);
 }
 
-// Round mode, same spot: on a course you don't hit two full shots from the
-// same place seconds apart, so when swings are saved within SAME_SPOT_MS and
-// SAME_SPOT_M of each other (time only without GPS) only the one that looks
-// most like a swing is kept: a labelled one first, then the stillest address
-// (rotation 1.5-1.0 s before the peak), then the biggest build-up. The rest
-// are marked `same_spot`. Knock bursts in testing were 1-8 s apart; real
-// shots on a course are much further apart (at the range, 10-11 s happened,
-// hence 8 s rather than more).
-export const SAME_SPOT_MS = 8000, SAME_SPOT_M = 5;
+// ---------- round mode: which saved swings aren't shots ----------
+// The tracker already drops most non-swings (no impact, no build-up, moving
+// before, button jolt). These checks run in the app instead, so nothing is
+// lost and they can be retuned on data already synced. Only in Round-mode
+// sessions. From the 17 Oct round at Pine Rivers (46 saved, 25 shots marked):
+// - thud: the low band (firmware 0.3.3) at least as loud as the click at the
+//   strike. Shots matched to marked shots: 0.11-0.78; the knock-like ones
+//   (sharp jolt, quiet click) 1.0-2.1.
+// - jolt: the tracker jumped by at least JOLT_G per sample at the moment of
+//   the sound: the knock is the sound. Shots in all sessions: at most 3.7;
+//   knocks up to 17.
+// - same spot: practice swings that brush the grass sound like a strike, and
+//   come seconds to a minute before the shot from the same place. Within
+//   SAME_SPOT_MS and SAME_SPOT_M only one is kept: a labelled one, else the
+//   loudest strike. (At the range, real shots are this close: use Range mode
+//   there.)
+export const THUD_RATIO = 1.0, JOLT_G = 8, SAME_SPOT_MS = 60000, SAME_SPOT_M = 10;
 const shapes = new WeakMap();
 export function swingShape(bytes) {
   if (shapes.has(bytes)) return shapes.get(bytes);
   const r = decodeRecord(bytes, { full: true });
+  const hz = r.imuRateHz || 208;
   const g = (r.imu ?? []).map(([x, y, z]) => Math.hypot(x, y, z) * GYRO_DPS_PER_LSB);
   const pk = r.imuPeakIndex ?? 0;
   const mean = (a, b) => { const v = g.slice(Math.max(0, a), Math.max(0, b)); return v.length ? v.reduce((t, x) => t + x, 0) / v.length : 0; };
-  const out = { still: mean(pk - 312, pk - 208), build: mean(pk - 62, pk) };
+  // Loudest moment near the peak, and how hard the tracker jumped then.
+  let jolt = null, loudMs = null;
+  if (r.env && r.imu) {
+    let best = -1, bi = -1;
+    r.env.forEach((v, j) => {
+      const t = r.envStartMs + (j * 1000) / r.envRateHz;
+      if (t >= -400 && t <= 250 && v > best) { best = v; bi = j; }
+    });
+    if (bi >= 0) {
+      loudMs = r.envStartMs + (bi * 1000) / r.envRateHz;
+      const si = pk + Math.round((loudMs * hz) / 1000);
+      jolt = 0;
+      for (let k = Math.max(1, si - 3); k <= Math.min(r.imu.length - 1, si + 3); k++) {
+        const d = [3, 4, 5].map((c) => (r.imu[k][c] - r.imu[k - 1][c]) * ACC_G_PER_LSB);
+        jolt = Math.max(jolt, Math.hypot(...d));
+      }
+    }
+  }
+  const thud = r.impactLevel && r.lowImpact != null ? r.lowImpact / r.impactLevel : null;
+  const out = { still: mean(pk - 312, pk - 208), build: mean(pk - 62, pk), jolt, thud, impact: r.impactLevel ?? r.audioPeak ?? 0 };
   shapes.set(bytes, out);
   return out;
 }
@@ -288,25 +316,30 @@ function metres(a, b) {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
-export function sameSpot(swings, labelled = new Map()) {
-  const list = [...swings].sort((a, b) => a.seq - b.seq);
-  const out = new Set();
-  const better = (a, b) => {   // is a more swing-like than b?
+// Map seq -> reason ('thud' | 'jolt' | 'same spot') for swings that aren't shots.
+export function notShots(swings, labelled = new Map()) {
+  const out = new Map();
+  for (const w of swings) {
+    if (labelled.has(w.seq) || !w.bytes) continue;
+    const sh = swingShape(w.bytes);
+    if (sh.thud != null && sh.thud >= THUD_RATIO) out.set(w.seq, 'thud');
+    else if (sh.jolt != null && sh.jolt >= JOLT_G) out.set(w.seq, 'jolt');
+  }
+  const list = swings.filter((w) => !out.has(w.seq)).sort((a, b) => a.seq - b.seq);
+  const better = (a, b) => {   // is a more likely the shot than b?
     const la = labelled.has(a.seq), lb = labelled.has(b.seq);
     if (la !== lb) return la;
-    if (!a.bytes || !b.bytes) return a.seq < b.seq;
-    const sa = swingShape(a.bytes), sb = swingShape(b.bytes);
-    if (Math.abs(sa.still - sb.still) > 5) return sa.still < sb.still;
-    return sa.build >= sb.build;
+    if (!a.bytes || !b.bytes) return a.seq > b.seq;
+    return swingShape(a.bytes).impact > swingShape(b.bytes).impact;
   };
-  let group = [];
   const close = (a, b) => b.deviceMs - a.deviceMs <= SAME_SPOT_MS && b.deviceMs >= a.deviceMs
     && (!a.pos || !b.pos || metres(a.pos, b.pos) <= SAME_SPOT_M);
+  let group = [];
   const flush = () => {
     if (group.length > 1) {
       let best = group[0];
       for (const w of group) if (better(w, best)) best = w;
-      for (const w of group) if (w !== best) out.add(w.seq);
+      for (const w of group) if (w !== best) out.set(w.seq, 'same spot');
     }
     group = [];
   };
@@ -317,6 +350,7 @@ export function sameSpot(swings, labelled = new Map()) {
   flush();
   return out;
 }
+export const NOT_SHOT_TEXT = { thud: 'a thud, not a strike', jolt: 'a knock', 'same spot': 'same spot as another swing' };
 
 // rows: stored captures for one log (any order). Returns sessions, each with
 // its swings (labelled or not), labels, and missed shots (labels with no swing).
@@ -345,7 +379,7 @@ export function sessions(rows) {
     }
     s.labelledSeqs = labelled;
     s.pressSeqs = new Set(s.swings.filter((w) => !labelled.has(w.seq) && isPressSnippet(w, s.labels)).map((w) => w.seq));
-    s.sameSpotSeqs = s.soundGate ? sameSpot(s.swings.filter((w) => !s.pressSeqs.has(w.seq)), labelled) : new Set();
+    s.notShot = s.soundGate ? notShots(s.swings.filter((w) => !s.pressSeqs.has(w.seq)), labelled) : new Map();
     s.real = s.swings.filter((w) => labelled.has(w.seq)).length;
     s.missed = s.labels.filter((l) => l.swingSeq == null).length;
     s.start ??= s.swings[0]?.time ?? s.labels[0]?.time ?? null;
@@ -385,8 +419,9 @@ export function exportJson(rows, { appVersion } = {}) {
               columns: ['gx', 'gy', 'gz', 'ax', 'ay', 'az'], raw: d.imu },
             envelope: { rate_hz: d.envRateHz, start_ms: d.envStartMs, sqrt_level: d.env },
             low_band: d.low ? { rate_hz: d.lowRateHz, start_ms: d.lowStartMs, impact_level: d.lowImpact, sqrt_level: d.low } : null,
-            same_spot: s.sameSpotSeqs.has(w.seq),
+            not_shot: s.notShot.get(w.seq) ?? null,
             still_dps: Math.round(swingShape(w.bytes).still), buildup_dps: Math.round(swingShape(w.bytes).build),
+            jolt_g: swingShape(w.bytes).jolt, thud_ratio: swingShape(w.bytes).thud,
           };
         }),
         labels: s.labels.map((l) => ({ seq: l.seq, time: l.time ? new Date(l.time * 1000).toISOString() : null,
@@ -394,7 +429,7 @@ export function exportJson(rows, { appVersion } = {}) {
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 4, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+  return { app: 'golftracker-capture', version: 5, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
     format: 'docs/ble-protocol.md, Capture log',
     label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq); a swing peaking under ${PRESS_SNIPPET_MS} ms before a press is the press itself (button_press)`, logs };
 }

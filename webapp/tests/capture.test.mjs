@@ -49,6 +49,14 @@ test('decodes records written by the firmware', () => {
   assert.equal(missed.refSeq, null); assert.equal(missed.gapMs, null);
 });
 
+test('swing shape: thud ratio and jolt from a firmware-written swing', async () => {
+  const { swingShape } = await import('../js/capturelog.js');
+  const sh = swingShape(split(fixture)[2]);
+  assert.ok(Math.abs(sh.thud - 3000 / 40000) < 0.01, `thud ${sh.thud}`);
+  assert.ok(sh.jolt != null && sh.jolt < 1, `jolt ${sh.jolt}`);   // simulated swing: steady 1 g
+  assert.ok(sh.build > 110 && sh.still < 70);
+});
+
 test('a damaged record fails its CRC', () => {
   const swing = split(fixture)[2];
   swing[100] ^= 0x40;
@@ -117,27 +125,27 @@ test('a press that makes its own snippet labels the shot before it', () => {
   assert.deepEqual([...s.pressSeqs], [3]);
 });
 
-test('round mode: swings seconds apart at the same spot keep only the most swing-like', () => {
+test('round mode: swings close together at the same spot keep only the most likely shot', () => {
   const pos = { lat: -27.39, lon: 152.94 };
   const ctx = (ms, p = pos) => ({ time: 1790000000 + Math.floor(ms / 1000), deviceMs: 100000 + ms, pos: p, hdop: 1, sats: 9 });
   const bytes = [
     encodeSession(1, true, ctx(0), 250, 1000),
     encodeSwing(2, ctx(1000)),                                   // real shot
-    encodeSwing(3, ctx(3000)),                                   // knock 2 s later, same spot
-    encodeSwing(4, ctx(30000)),                                  // next shot 27 s later
-    encodeSwing(5, ctx(34000, { lat: -27.391, lon: 152.94 })),   // 4 s later but 110 m away: kept
+    encodeSwing(3, ctx(40000)),                                  // practice swing 39 s later, same spot
+    encodeSwing(4, ctx(130000)),                                 // next shot 90 s later
+    encodeSwing(5, ctx(134000, { lat: -27.391, lon: 152.94 })),  // 4 s later but 110 m away: kept
   ];
   const rows = bytes.map((b) => ({ ...decodeRecord(b), bytes: b, logId: 1 }));
   const [s] = sessions(rows);
   assert.equal(s.soundGate, 1000);
-  assert.equal(s.sameSpotSeqs.size, 1);
-  assert.ok(s.sameSpotSeqs.has(2) || s.sameSpotSeqs.has(3));
+  assert.equal(s.notShot.size, 1);
+  assert.ok(s.notShot.get(2) === 'same spot' || s.notShot.get(3) === 'same spot');
   // Range mode: no same-spot marking.
   bytes[0] = encodeSession(1, true, ctx(0), 250, 0);
   const [r] = sessions(bytes.map((b) => ({ ...decodeRecord(b), bytes: b, logId: 1 })));
-  assert.equal(r.sameSpotSeqs.size, 0);
+  assert.equal(r.notShot.size, 0);
   const out = exportJson(rows);
-  assert.equal(out.logs[0].sessions[0].swings.filter((w) => w.same_spot).length, 1);
+  assert.equal(out.logs[0].sessions[0].swings.filter((w) => w.not_shot).length, 1);
 });
 
 test('capture packet and the new control ops', () => {

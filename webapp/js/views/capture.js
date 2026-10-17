@@ -138,7 +138,7 @@ export async function captureView(root) {
       }).join('') : '';
       return `<details class="capture-session" data-key="${esc(s.key)}" ${open ? 'open' : ''}>
         <summary><span><b>${dateText(s.start)}</b> ${timeText(s.start)}${s.end ? `–${timeText(s.end)}` : s.ended ? '' : ' (still on)'}</span>
-          <small>${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.notShot.size ? `${s.notShot.size} not shots · ` : ''}${s.swings.length - s.real - s.pressSeqs.size - s.notShot.size} ${s.soundGate ? 'full shots' : 'other'}${s.missed ? ` · ${s.missed} missed` : ''}</small></summary>
+          <small>${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.notShot.size ? `${s.notShot.size} not shot${s.notShot.size === 1 ? '' : 's'} · ` : ''}${s.swings.length - s.real - s.pressSeqs.size - s.notShot.size} ${s.soundGate ? (s.swings.length - s.real - s.pressSeqs.size - s.notShot.size === 1 ? 'full shot' : 'full shots') : 'other'}${s.missed ? ` · ${s.missed} missed` : ''}</small></summary>
         ${open ? `<ul class="swing-list">${swingRows || '<li class="note">No swings in this session.</li>'}</ul>
           ${s.missed ? `<p class="note">${s.missed} button press${s.missed === 1 ? '' : 'es'} had no swing 1.5–8 s before: shots the trigger missed.</p>` : ''}` : ''}
       </details>`;

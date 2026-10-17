@@ -36,6 +36,9 @@ uint16_t envVal(uint32_t i) { double t = i * 1000.0 / ENV_HZ; return (impactMs >
 uint32_t mic::envCount(){ return (uint32_t)(nowMs * ENV_HZ / 1000.0); }
 uint32_t mic::envLastMs(){ uint32_t c = mic::envCount(); return c ? (uint32_t)((c - 1) * 1000.0 / ENV_HZ) : 0; }
 uint16_t mic::envAt(uint32_t i){ return envVal(i); }
+// Low band: value k covers envelope values 4k..4k+3; loud (a thud) around the impact.
+uint32_t mic::lowCount(){ return mic::envCount() / 4; }
+uint16_t mic::lowAt(uint32_t k){ double t = (4 * k + 1.5) * 1000.0 / ENV_HZ; return (impactMs >= 0 && fabs(t - impactMs) < 3) ? 3000 : 50; }
 float mic::envRateHz(){ return ENV_HZ; }
 bool mic::ok(){ return true; }
 gnss::Fix fx; const gnss::Fix& gnss::fix(){ return fx; }
@@ -76,8 +79,8 @@ int main() {
   int kinds[6]; for (int i=0;i<6;i++) kinds[i]=rs[i][0];
   CHECK(kinds[0]==1&&kinds[1]==2&&kinds[2]==4&&kinds[3]==5&&kinds[4]==5&&kinds[5]==3);
   const uint8_t* r = rs[2].data(); const uint8_t* b = r + 8;
-  CHECK(u16(r+2) == 7040);
-  CHECK(store::crc16(r+8, 7032) == u16(r+6));
+  CHECK(u16(r+2) == 7548);
+  CHECK(store::crc16(r+8, 7540) == u16(r+6));
   uint32_t devMs = b[4] | b[5]<<8 | b[6]<<16 | (uint32_t)b[7]<<24;
   printf("peak device_ms %u (true 6000), peak_gyro %u\n", devMs, u16(b+20));
   CHECK(devMs >= 5997 && devMs <= 6003);
@@ -109,6 +112,18 @@ int main() {
     fclose(f);
     printf("wrote %s\n", out);
   }
+  // Low band after the envelope: count, start, rate, impact, then values.
+  const uint8_t* lowF = b + 40 + 4992 + 2000;
+  CHECK(u16(lowF) == 500);
+  int16_t lowStart = s16(lowF + 2); double lowRate = u16(lowF + 4) / 10.0;
+  CHECK(u16(lowF + 6) == 3000);
+  int km = 0; for (int k = 0; k < 500; k++) if (lowF[8 + k] > lowF[8 + km]) km = k;
+  double thudRel = lowStart + km * 1000.0 / lowRate;
+  printf("low band: start %d ms, rate %.1f, thud at %+.1f ms (true +20)\n", lowStart, lowRate, thudRel);
+  CHECK(fabs(lowRate - ENV_HZ / 4) < 0.2);
+  CHECK(fabs(thudRel - 20) <= 5);
+  CHECK(lowF[8 + km] == 54);    // floor(sqrt(3000))
+
   // Impact byte: sqrt of the loudest level near the peak.
   CHECK(b[37] == 200);
 

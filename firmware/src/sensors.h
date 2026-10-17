@@ -35,6 +35,13 @@ namespace mic {
   uint16_t envAt(uint32_t index); // 0 if no longer in the ring
   float envRateHz();            // measured envelope rate (about 1000)
   const uint32_t ENV_RING = 2560;
+  // Low band (firmware 0.3.3): the same samples band-passed to about
+  // 50-370 Hz, peak |y| of each 64 samples (4 envelope values), so a ball's
+  // sharp click and a dull thud through fabric can be told apart. Low value
+  // k covers envelope values 4k..4k+3.
+  const uint32_t LOW_RING = 640, LOW_PER = 4;
+  uint32_t lowCount();
+  uint16_t lowAt(uint32_t index); // 0 if no longer in the ring
 }
 
 // ---- Battery ----

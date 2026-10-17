@@ -30,7 +30,9 @@ test('decodes records written by the firmware', () => {
   assert.deepEqual(recs.map((r) => r.seq), [0, 1, 2, 3, 4, 5]);
   const [start, , swing, label, missed] = recs;
   assert.equal(start.firmware, '0.2.0');
-  assert.equal(swing.len, 7040);
+  assert.equal(swing.len, 7548);
+  assert.equal(swing.lowCount, 500); assert.equal(swing.low.length, 500); assert.equal(swing.lowImpact, 3000);
+  assert.ok(Math.abs(swing.lowRateHz - 252) < 0.5 && Math.abs(swing.lowStartMs + 1500) < 3);
   assert.equal(swing.deviceMs, 6000);
   assert.ok(Math.abs(swing.pos.lat + 27.39284) < 1e-6 && Math.abs(swing.pos.lon - 152.947079) < 1e-6);
   assert.equal(swing.sats, 12); assert.equal(swing.hdop, 1.1);
@@ -113,6 +115,29 @@ test('a press that makes its own snippet labels the shot before it', () => {
   assert.equal(s.labelledSeqs.get(2), 2000);
   assert.equal(s.real, 2); assert.equal(s.missed, 0);
   assert.deepEqual([...s.pressSeqs], [3]);
+});
+
+test('round mode: swings seconds apart at the same spot keep only the most swing-like', () => {
+  const pos = { lat: -27.39, lon: 152.94 };
+  const ctx = (ms, p = pos) => ({ time: 1790000000 + Math.floor(ms / 1000), deviceMs: 100000 + ms, pos: p, hdop: 1, sats: 9 });
+  const bytes = [
+    encodeSession(1, true, ctx(0), 250, 1000),
+    encodeSwing(2, ctx(1000)),                                   // real shot
+    encodeSwing(3, ctx(3000)),                                   // knock 2 s later, same spot
+    encodeSwing(4, ctx(30000)),                                  // next shot 27 s later
+    encodeSwing(5, ctx(34000, { lat: -27.391, lon: 152.94 })),   // 4 s later but 110 m away: kept
+  ];
+  const rows = bytes.map((b) => ({ ...decodeRecord(b), bytes: b, logId: 1 }));
+  const [s] = sessions(rows);
+  assert.equal(s.soundGate, 1000);
+  assert.equal(s.sameSpotSeqs.size, 1);
+  assert.ok(s.sameSpotSeqs.has(2) || s.sameSpotSeqs.has(3));
+  // Range mode: no same-spot marking.
+  bytes[0] = encodeSession(1, true, ctx(0), 250, 0);
+  const [r] = sessions(bytes.map((b) => ({ ...decodeRecord(b), bytes: b, logId: 1 })));
+  assert.equal(r.sameSpotSeqs.size, 0);
+  const out = exportJson(rows);
+  assert.equal(out.logs[0].sessions[0].swings.filter((w) => w.same_spot).length, 1);
 });
 
 test('capture packet and the new control ops', () => {

@@ -128,16 +128,17 @@ export async function captureView(root) {
         const { spark, off } = swingBits(w);
         const lab = s.labelledSeqs.has(w.seq);
         const press = s.pressSeqs.has(w.seq);
-        return `<li class="swing-row ${lab ? 'real' : press ? 'press' : ''}">
+        const dup = s.sameSpotSeqs.has(w.seq);
+        return `<li class="swing-row ${lab ? 'real' : press || dup ? 'press' : ''}">
           <div class="swing-meta"><b>${timeText(w.time)}</b><span>${w.peakGyro} °/s</span>
             <span>${off == null ? 'no impact heard' : `impact ${off > 0 ? '+' : ''}${off} ms`}</span>
-            <span class="tag">${lab ? 'Shot' : press ? 'Button press' : 'Not labelled'}</span></div>
+            <span class="tag">${lab ? 'Shot' : press ? 'Button press' : dup ? 'Same spot: not a shot' : 'Not labelled'}</span></div>
           ${spark}
         </li>`;
       }).join('') : '';
       return `<details class="capture-session" data-key="${esc(s.key)}" ${open ? 'open' : ''}>
         <summary><span><b>${dateText(s.start)}</b> ${timeText(s.start)}${s.end ? `–${timeText(s.end)}` : s.ended ? '' : ' (still on)'}</span>
-          <small>${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.swings.length - s.real - s.pressSeqs.size} other${s.missed ? ` · ${s.missed} missed` : ''}</small></summary>
+          <small>${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.sameSpotSeqs.size ? `${s.sameSpotSeqs.size} same spot · ` : ''}${s.swings.length - s.real - s.pressSeqs.size - s.sameSpotSeqs.size} other${s.missed ? ` · ${s.missed} missed` : ''}</small></summary>
         ${open ? `<ul class="swing-list">${swingRows || '<li class="note">No swings in this session.</li>'}</ul>
           ${s.missed ? `<p class="note">${s.missed} button press${s.missed === 1 ? '' : 'es'} had no swing 1.5–8 s before: shots the trigger missed.</p>` : ''}` : ''}
       </details>`;
@@ -162,7 +163,7 @@ export async function captureView(root) {
         <li>Pick <b>Range</b> at the range or <b>Round</b> on the course, then start a round: hold the button 2 s (two flashes every 2 s while it's on), or tap the Round tile above.</li>
         <li>Swing as normal. A short magenta flash means a swing was saved. Practice swings and waggles get saved too; that's what the detector learns to ignore.</li>
         <li>After each <b>real shot</b>, once the follow-through is done, give the button one short press (white blink), 2–5 s after the shot. Don't press for practice swings.</li>
-        <li>End the round (hold 2 s), sync here, export, then clear the tracker. It holds about 290 swings; on the course, sync and clear at the turn if it's over half full.</li>
+        <li>End the round (hold 2 s), sync here, export, then clear the tracker. It holds about 270 swings; on the course, sync and clear at the turn if it's over half full.</li>
       </ol>
     </section>`;
   };

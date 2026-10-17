@@ -36,4 +36,5 @@ namespace capture {
   const uint16_t PRE = 312, POST = 104, COUNT = PRE + POST;   // 1.5 s + 0.5 s at 208 Hz
   const uint16_t ENV_COUNT = 2000;                             // about 2 s
   const int16_t ENV_START_MS = -1500;
+  const uint16_t LOW_COUNT = 500;                              // low band, about 2 s at 250 Hz
 }

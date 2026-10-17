@@ -38,7 +38,8 @@ namespace {
 
   // Record body: context (20 bytes) + swing fields (20) + IMU + envelope.
   const uint32_t CTX = 20, SWING_FIELDS = 20;
-  const uint32_t BODY = CTX + SWING_FIELDS + capture::COUNT * 12 + capture::ENV_COUNT;
+  const uint32_t LOW_FIELDS = 8;   // firmware 0.3.3: low band after the envelope
+  const uint32_t BODY = CTX + SWING_FIELDS + capture::COUNT * 12 + capture::ENV_COUNT + LOW_FIELDS + capture::LOW_COUNT;
   uint8_t body[BODY] __attribute__((aligned(4)));
 
   void put16(uint8_t* p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
@@ -125,6 +126,27 @@ namespace {
       if (tRel >= capture::IMPACT_FROM && tRel <= capture::IMPACT_TO && v > impact) impact = v;
       *p++ = isqrt16(v);
     }
+
+    // Low band (about 50-370 Hz), one value per 4 envelope values, over the
+    // same 2 s. Value k covers envelope values 4k..4k+3; its time is taken as
+    // the middle of those.
+    int32_t k0 = i0 >= 0 ? (i0 + 3) / 4 : -((-i0) / 4);
+    int16_t lowStartMs = (int16_t)lroundf(envStartMs + (4 * k0 + 1.5f - i0) * 1000.0f / rate);
+    uint32_t lowN = mic::lowCount();
+    uint16_t lowImpact = 0;
+    uint8_t* lf = p;
+    p += LOW_FIELDS;
+    for (uint16_t j = 0; j < capture::LOW_COUNT; j++) {
+      int32_t k = k0 + j;
+      uint16_t v = (k < 0 || (uint32_t)k >= lowN) ? 0 : mic::lowAt(k);
+      float tRel = lowStartMs + j * 4000.0f / rate;
+      if (tRel >= capture::IMPACT_FROM && tRel <= capture::IMPACT_TO && v > lowImpact) lowImpact = v;
+      *p++ = isqrt16(v);
+    }
+    put16(lf, capture::LOW_COUNT);
+    put16(lf + 2, (uint16_t)lowStartMs);
+    put16(lf + 4, (uint16_t)lroundf(rate / 4 * 10));   // Hz × 10
+    put16(lf + 6, lowImpact);
 
     cooldownUntil = peakIdx + 208;    // 1 s after the peak
     cand.active = false;

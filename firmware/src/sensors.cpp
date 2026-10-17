@@ -196,6 +196,13 @@ namespace {
   uint8_t envSub = 0;
   uint32_t envT0 = 0, envC0 = 0;
   float envHz = 1000.0f;
+  // Low band: two one-pole low-passes (a = 37/256, about 370 Hz) in Q8, then
+  // a DC blocker (pole 251/256, about 50 Hz); peak |y| per 64 samples.
+  uint16_t low[mic::LOW_RING];
+  volatile uint32_t lowN = 0;
+  int32_t lp1 = 0, lp2 = 0, dcX = 0, dcY = 0;
+  uint16_t lowAcc = 0;
+  uint8_t lowSub = 0;
 
   void onPdm() {
     int n = PDM.available();
@@ -213,6 +220,15 @@ namespace {
       if (ay > 65535) ay = 65535;
       if (ay > envAcc) envAcc = (uint16_t)ay;
       if (++envSub == 16) { env[c % mic::ENV_RING] = envAcc; c++; envAcc = 0; envSub = 0; }
+      lp1 += (((s << 8) - lp1) * 37) >> 8;
+      lp2 += ((lp1 - lp2) * 37) >> 8;
+      int32_t x = lp2 >> 8;
+      int32_t yl = x - dcX + ((dcY * 251) >> 8);
+      dcX = x; dcY = yl;
+      uint32_t al = (uint32_t)(yl < 0 ? -yl : yl);
+      if (al > 65535) al = 65535;
+      if (al > lowAcc) lowAcc = (uint16_t)al;
+      if (++lowSub == 64) { low[lowN % mic::LOW_RING] = lowAcc; lowN++; lowAcc = 0; lowSub = 0; }
     }
     envN = c;
     envMs = millis();
@@ -250,6 +266,12 @@ uint16_t mic::envAt(uint32_t index) {
   return env[index % ENV_RING];
 }
 float mic::envRateHz() { return envHz; }
+uint32_t mic::lowCount() { noInterrupts(); uint32_t c = lowN; interrupts(); return c; }
+uint16_t mic::lowAt(uint32_t index) {
+  uint32_t c = lowCount();
+  if (index >= c || c - index > LOW_RING - 8) return 0;
+  return low[index % LOW_RING];
+}
 
 // ===================== Battery =====================
 namespace {

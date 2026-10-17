@@ -84,6 +84,18 @@ export function decodeRecord(bytes, { full = false } = {}) {
       }
       r.env = Array.from(bytes.subarray(envAt, envAt + r.envCount));
     }
+    // Low band (firmware 0.3.3): count, start, rate, impact, then √ values.
+    const lowAt = envAt + r.envCount;
+    if (lowAt + 8 <= bytes.length) {
+      const n = dv.getUint16(lowAt, true);
+      if (n && lowAt + 8 + n <= bytes.length) {
+        r.lowCount = n;
+        r.lowStartMs = dv.getInt16(lowAt + 2, true);
+        r.lowRateHz = dv.getUint16(lowAt + 4, true) / 10;
+        r.lowImpact = dv.getUint16(lowAt + 6, true);
+        if (full) r.low = Array.from(bytes.subarray(lowAt + 8, lowAt + 8 + n));
+      }
+    }
   }
   return r;
 }
@@ -250,6 +262,62 @@ export function isPressSnippet(swing, labels) {
   return labels.some((l) => l.seq > swing.seq && l.deviceMs - swing.deviceMs >= 0 && l.deviceMs - swing.deviceMs < PRESS_SNIPPET_MS);
 }
 
+// Round mode, same spot: on a course you don't hit two full shots from the
+// same place seconds apart, so when swings are saved within SAME_SPOT_MS and
+// SAME_SPOT_M of each other (time only without GPS) only the one that looks
+// most like a swing is kept: a labelled one first, then the stillest address
+// (rotation 1.5-1.0 s before the peak), then the biggest build-up. The rest
+// are marked `same_spot`. Knock bursts in testing were 1-8 s apart; real
+// shots on a course are much further apart (at the range, 10-11 s happened,
+// hence 8 s rather than more).
+export const SAME_SPOT_MS = 8000, SAME_SPOT_M = 5;
+const shapes = new WeakMap();
+export function swingShape(bytes) {
+  if (shapes.has(bytes)) return shapes.get(bytes);
+  const r = decodeRecord(bytes, { full: true });
+  const g = (r.imu ?? []).map(([x, y, z]) => Math.hypot(x, y, z) * GYRO_DPS_PER_LSB);
+  const pk = r.imuPeakIndex ?? 0;
+  const mean = (a, b) => { const v = g.slice(Math.max(0, a), Math.max(0, b)); return v.length ? v.reduce((t, x) => t + x, 0) / v.length : 0; };
+  const out = { still: mean(pk - 312, pk - 208), build: mean(pk - 62, pk) };
+  shapes.set(bytes, out);
+  return out;
+}
+function metres(a, b) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+export function sameSpot(swings, labelled = new Map()) {
+  const list = [...swings].sort((a, b) => a.seq - b.seq);
+  const out = new Set();
+  const better = (a, b) => {   // is a more swing-like than b?
+    const la = labelled.has(a.seq), lb = labelled.has(b.seq);
+    if (la !== lb) return la;
+    if (!a.bytes || !b.bytes) return a.seq < b.seq;
+    const sa = swingShape(a.bytes), sb = swingShape(b.bytes);
+    if (Math.abs(sa.still - sb.still) > 5) return sa.still < sb.still;
+    return sa.build >= sb.build;
+  };
+  let group = [];
+  const close = (a, b) => b.deviceMs - a.deviceMs <= SAME_SPOT_MS && b.deviceMs >= a.deviceMs
+    && (!a.pos || !b.pos || metres(a.pos, b.pos) <= SAME_SPOT_M);
+  const flush = () => {
+    if (group.length > 1) {
+      let best = group[0];
+      for (const w of group) if (better(w, best)) best = w;
+      for (const w of group) if (w !== best) out.add(w.seq);
+    }
+    group = [];
+  };
+  for (const w of list) {
+    if (group.length && !close(group[group.length - 1], w)) flush();
+    group.push(w);
+  }
+  flush();
+  return out;
+}
+
 // rows: stored captures for one log (any order). Returns sessions, each with
 // its swings (labelled or not), labels, and missed shots (labels with no swing).
 export function sessions(rows) {
@@ -277,6 +345,7 @@ export function sessions(rows) {
     }
     s.labelledSeqs = labelled;
     s.pressSeqs = new Set(s.swings.filter((w) => !labelled.has(w.seq) && isPressSnippet(w, s.labels)).map((w) => w.seq));
+    s.sameSpotSeqs = s.soundGate ? sameSpot(s.swings.filter((w) => !s.pressSeqs.has(w.seq)), labelled) : new Set();
     s.real = s.swings.filter((w) => labelled.has(w.seq)).length;
     s.missed = s.labels.filter((l) => l.swingSeq == null).length;
     s.start ??= s.swings[0]?.time ?? s.labels[0]?.time ?? null;
@@ -315,6 +384,9 @@ export function exportJson(rows, { appVersion } = {}) {
             imu: { rate_hz: d.imuRateHz, peak_index: d.imuPeakIndex, scale: { gyro_dps: GYRO_DPS_PER_LSB, accel_g: ACC_G_PER_LSB },
               columns: ['gx', 'gy', 'gz', 'ax', 'ay', 'az'], raw: d.imu },
             envelope: { rate_hz: d.envRateHz, start_ms: d.envStartMs, sqrt_level: d.env },
+            low_band: d.low ? { rate_hz: d.lowRateHz, start_ms: d.lowStartMs, impact_level: d.lowImpact, sqrt_level: d.low } : null,
+            same_spot: s.sameSpotSeqs.has(w.seq),
+            still_dps: Math.round(swingShape(w.bytes).still), buildup_dps: Math.round(swingShape(w.bytes).build),
           };
         }),
         labels: s.labels.map((l) => ({ seq: l.seq, time: l.time ? new Date(l.time * 1000).toISOString() : null,
@@ -322,7 +394,7 @@ export function exportJson(rows, { appVersion } = {}) {
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 3, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+  return { app: 'golftracker-capture', version: 4, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
     format: 'docs/ble-protocol.md, Capture log',
     label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq); a swing peaking under ${PRESS_SNIPPET_MS} ms before a press is the press itself (button_press)`, logs };
 }

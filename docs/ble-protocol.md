@@ -88,7 +88,7 @@ Unknown ops are ignored, so an older tracker doesn't break a newer app.
 
 ## Capture log — Phase 3
 
-While a round (session) is active and capture is on, the tracker appends records to the 2 MB QSPI flash. Nothing is overwritten: when it's full, swings stop being saved until the app erases the log. About 290 swings fit.
+While a round (session) is active and capture is on, the tracker appends records to the 2 MB QSPI flash. Nothing is overwritten: when it's full, swings stop being saved until the app erases the log. About 270 swings fit (290 before firmware 0.3.3).
 
 Every record starts with an 8-byte header and is a whole number of 4-byte words long (padding is 0xFF):
 
@@ -117,7 +117,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 
 **Label** (kind 5, 32 bytes), one per short button press during a session: context (time of the press), ref_seq uint16 (the swing saved before the press, if its peak was at most 20 s earlier; 0xFFFF none), gap_ms uint16 (that swing's peak to the press; 0xFFFF none). A label with no ref is a shot the trigger missed.
 
-**Swing** (kind 4, 7040 bytes): a candidate is any rotation whose gyro magnitude reaches the trigger; the window is centred on its peak (the highest rotation up to 0.5 s after it).
+**Swing** (kind 4, 7548 bytes; 7040 before firmware 0.3.3): a candidate is any rotation whose gyro magnitude reaches the trigger; the window is centred on its peak (the highest rotation up to 0.5 s after it).
 
 | Offset (after header) | Field | Type | Notes |
 |---|---|---|---|
@@ -135,6 +135,11 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 38 | audio_peak | uint16 | highest envelope value in the window, before companding |
 | 40 | imu | int16 × 6 × imu_count | gx, gy, gz (× 0.070 deg/s), ax, ay, az (× 0.000488 g), in sensor axes |
 | 5032 | envelope | uint8 × env_count | √ of the high-passed (about 2 kHz) peak level per 16 microphone samples; square it to get back to 0–65535 |
+| 7032 | low_count | uint16 | 500 (firmware 0.3.3; absent before) |
+| 7034 | low_start_ms | int16 | time of the first low-band value relative to the peak |
+| 7036 | low_rate | uint16 | Hz × 10 (about 2500: one value per 4 envelope values) |
+| 7038 | low_impact | uint16 | highest low-band value within −400…+250 ms of the peak |
+| 7040 | low_band | uint8 × low_count | √ of the band-passed (about 50–370 Hz) peak level per 64 microphone samples: a dull thud shows here, a sharp click mostly in the envelope |
 
 ## Sync — Phase 3
 

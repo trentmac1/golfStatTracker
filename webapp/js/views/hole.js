@@ -6,7 +6,7 @@ import { deriveHole, deriveRound, emptyHoleStat, playOrder } from '../stats.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
 import { smoothed, LIE_LABEL, applyAutoLie, holeMapped } from '../holemap.js';
-import { DEFAULT_BAG, LIES, DEFAULT_CENTRE } from '../config.js';
+import { DEFAULT_BAG, LIES, DEFAULT_CENTRE, PUTTER } from '../config.js';
 import { $, esc, m, signed, toast, vibrate, sheet, confirmSheet } from '../ui.js';
 import { markEdited } from '../coursemerge.js';
 
@@ -460,7 +460,7 @@ export async function holeView(root, { roundId, hole }) {
       <h3 class="sheet-title">Shot ${s.index + 1}${s.dist ? ` · ${Math.round(s.dist)} m` : ''}</h3>
       ${s.result ? `<p class="sheet-sub">${esc(s.result)}</p>` : ''}
       <p class="sheet-label">Club</p>
-      <div class="chips clubs">${bag.map((c) => `<button data-club="${esc(c)}" class="${raw.club === c ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>
+      <div class="chips clubs">${[...bag.filter((c) => c !== PUTTER), PUTTER].map((c) => `<button data-club="${esc(c)}" class="${raw.club === c ? 'on' : ''}${c === PUTTER ? ' putter' : ''}">${esc(c)}</button>`).join('')}</div>
       <p class="sheet-label">Lie</p>
       <div class="chips lies">${LIES.map(([v, t]) => `<button data-lie="${v}" class="${raw.lie === v ? (raw.lieAuto ? 'auto' : 'on') : ''}">${t}</button>`).join('')}</div>
       <p class="sheet-note" id="lieNote" ${raw.lieAuto ? '' : 'hidden'}>Marked from the course map. Tap another lie if it's wrong.</p>

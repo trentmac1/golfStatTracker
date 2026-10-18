@@ -132,7 +132,10 @@ export function deriveHole(courseHole, holeStat = {}, holeShots = []) {
   const score = hs.score ?? (started ? strokesTaken : null);
 
   let gir = null, scramble = null, sandSave = null, threePutt = null, upDownChance = false;
-  if (complete && score != null) {
+  // A score with no putts and no shots (a scorecard typed in afterwards)
+  // can't say whether the green was hit, so those stats stay unknown.
+  const girKnown = putts != null || n > 0;
+  if (complete && score != null && girKnown) {
     gir = score - (putts ?? 0) <= par - 2;
     upDownChance = !gir;
     scramble = !gir ? score <= par : null;
@@ -197,6 +200,7 @@ export function deriveRound(course, round, shots) {
     par: sum(played, (h) => h.par),
     toPar: sum(played, (h) => h.toPar),
     putts: sum(played, (h) => h.putts),
+    puttHoles: played.filter((h) => h.putts != null).length,
     puttsPerGir: (() => {
       const g = played.filter((h) => h.gir);
       return g.length ? sum(g, (h) => h.putts) / g.length : null;
@@ -210,7 +214,8 @@ export function deriveRound(course, round, shots) {
       short: fwHoles.filter((h) => h.fairway === 'short').length,
     },
     gir: played.filter((h) => h.gir).length,
-    girPct: pct(played.filter((h) => h.gir).length, played.length),
+    girChances: played.filter((h) => h.gir != null).length,
+    girPct: pct(played.filter((h) => h.gir).length, played.filter((h) => h.gir != null).length),
     scrambles: scrambleChances.filter((h) => h.scramble).length,
     scrambleChances: scrambleChances.length,
     sandSaves: sandChances.filter((h) => h.sandSave).length,
@@ -234,6 +239,7 @@ export function clubDistances(derivedHoles) {
   const by = {};
   for (const h of derivedHoles) for (const s of h.shots) {
     if (!s.club || !s.dist || s.mishit || s.penalty) continue;
+    if (s.club === 'Putter') continue; // a putt from off the green isn't a full-swing distance
     // A last shot measured only to the green centre is a guess; leave it out.
     if (s.endKind === 'green-centre') continue;
     (by[s.club] ??= []).push(s.dist);

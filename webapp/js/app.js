@@ -6,6 +6,7 @@ import { APP_VERSION, BUILT_IN_COURSES, DEFAULT_BAG, newCourse } from './config.
 import { holeView } from './views/hole.js';
 import { cardView } from './views/card.js';
 import { reviewView } from './views/review.js';
+import { pastRoundView, roundRating } from './views/pastround.js';
 import { trackerView } from './views/tracker.js';
 import { captureView } from './views/capture.js';
 import * as share from './share.js';
@@ -157,11 +158,12 @@ async function roundsView(root) {
     const course = courseById.get(round.courseId);
     if (!course) continue;
     const r = deriveRound(course, round, await db.shotsForRound(round.id));
-    rows.push(`<li><a href="#/round/${round.id}/card"><span>${fmtDate(round.date)}<small>${esc(course.name)}${round.holeList && (round.holeList.length !== 18 || round.holeList[0] !== 1) ? ` · ${esc(layoutLabel(course, round))}` : ''}${round.status !== 'done' ? ' · in progress' : ''}</small></span>
+    rows.push(`<li><a href="#/round/${round.id}/card"><span>${fmtDate(round.date)}<small>${esc(course.name)}${round.holeList && (round.holeList.length !== 18 || round.holeList[0] !== 1) ? ` · ${esc(layoutLabel(course, round))}` : ''}${round.status !== 'done' ? ' · in progress' : ''}${round.entered ? ' · scorecard' : ''}</small></span>
       <b>${r.holesPlayed ? r.score : '–'}</b><em>${r.holesPlayed ? signed(r.toPar) : ''}${r.holesPlayed && r.holesPlayed < 18 ? ` · ${r.holesPlayed} holes` : ''}</em></a></li>`);
   }
   root.innerHTML = `<section class="page"><header class="page-head"><h1>Rounds</h1></header>
-    ${rows.length ? `<ul class="round-list">${rows.join('')}</ul>` : '<p class="empty">No rounds yet. Start one from Home.</p>'}</section>`;
+    <a class="btn ghost wide add-past" href="#/rounds/add">Add a past round</a>
+    ${rows.length ? `<ul class="round-list">${rows.join('')}</ul>` : '<p class="empty">No rounds yet. Start one from Home, or add one you\'ve already played.</p>'}</section>`;
   return {};
 }
 
@@ -273,6 +275,7 @@ const routes = [
   [/^#\/round\/([^/]+)\/card$/, cardView, (m) => ({ roundId: m[1] }), 'rounds'],
   [/^#\/round\/([^/]+)\/review\/(\d+)$/, reviewView, (m) => ({ roundId: m[1], hole: Number(m[2]) }), null],
   [/^#\/rounds$/, roundsView, () => ({}), 'rounds'],
+  [/^#\/rounds\/add$/, pastRoundView, () => ({}), 'rounds'],
   [/^#\/stats$/, statsView, () => ({}), 'stats'],
   [/^#\/courses$/, coursesView, () => ({}), 'courses'],
   [/^#\/course\/([^/]+)$/, courseEditView, (m) => ({ courseId: m[1] }), 'courses'],

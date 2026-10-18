@@ -1,7 +1,9 @@
 // Defaults and the seeded home course.
-export const APP_VERSION = '0.6.1';
+export const APP_VERSION = '0.6.2';
 
 export const DEFAULT_BAG = ['Dr', '3W', '5W', '4H', '5i', '6i', '7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
+// Always offered for a shot (putting from off the green), whatever is in the bag.
+export const PUTTER = 'Putter';
 
 export const LIES = [
   ['tee', 'Tee'], ['fairway', 'Fairway'], ['rough', 'Rough'], ['bunker', 'Bunker'], ['other', 'Other'],

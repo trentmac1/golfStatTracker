@@ -2,6 +2,7 @@
 import * as db from '../db.js';
 import { deriveRound, clubDistances } from '../stats.js';
 import { DEFAULT_BAG } from '../config.js';
+import { roundRating } from './pastround.js';
 import { sgSummary, clubReport, CATEGORIES } from '../sg.js';
 import { estimate } from '../handicap.js';
 import { esc, m, one, signed, fmtDate } from '../ui.js';
@@ -38,6 +39,9 @@ export async function statsView(root) {
     const holes = sum((r) => r.holesPlayed);
     const per18 = (v) => (holes ? (v / holes) * 18 : null);
     const ratio = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '–');
+    // Putting stats only over holes with putts entered (typed-in scorecards may have none).
+    const puttHoles = sum((r) => r.puttHoles);
+    const perPuttHole = (v) => (puttHoles ? (v / puttHoles) * 18 : null);
     const avgOf = (f) => { const v = items.map((x) => f(x.r)).filter((n) => n != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
     const parAvg = (p) => {
       const hs = items.flatMap((x) => x.r.holes.filter((h) => h.complete && h.par === p));
@@ -77,11 +81,11 @@ export async function statsView(root) {
     }).join('')).join('');
     // ---------- handicap estimate ----------
     const hcRounds = items.map((x) => ({
-      rating: x.course.rating, slope: x.course.slope,
+      ...roundRating(x.round, x.course),
       holes: x.r.holes.map((h) => ({ par: h.par, si: x.course.holes[h.hole - 1]?.si ?? null, score: h.complete ? h.score : null })),
     }));
     const hc = estimate(hcRounds);
-    const noRating = [...new Set(items.filter((x) => !x.course.rating || !x.course.slope).map((x) => x.course))];
+    const noRating = [...new Set(items.filter((x) => { const t = roundRating(x.round, x.course); return !t.rating || !t.slope; }).map((x) => x.course))];
     const hcNote = hc.index != null
       ? `Average of your best ${hc.used} of ${hc.of} score differentials${hc.of < items.length ? ' (most recent 20)' : ''}, World Handicap System method. An estimate, not an official Golf Australia handicap.`
       : hc.usable ? `A handicap estimate needs 3 rated rounds: ${3 - hc.usable} more to go. A differential is what that round would count as towards a handicap.`
@@ -150,9 +154,9 @@ export async function statsView(root) {
       <div class="tiles">
         <div class="tile"><b>${signed(Math.round(per18(sum((r) => r.toPar))))}</b><span>Avg to par</span><small>per 18 holes</small></div>
         <div class="tile"><b>${ratio(sum((r) => r.fairwaysHit), sum((r) => r.fairwayChances))}</b><span>Fairways</span><small>L ${fw.left} · R ${fw.right} · Short ${fw.short}</small></div>
-        <div class="tile"><b>${ratio(sum((r) => r.gir), holes)}</b><span>Greens in reg.</span></div>
-        <div class="tile"><b>${one(per18(sum((r) => r.putts)))}</b><span>Putts</span><small>per 18</small></div>
-        <div class="tile"><b>${one(per18(sum((r) => r.threePutts)))}</b><span>3-putts</span><small>per 18</small></div>
+        <div class="tile"><b>${ratio(sum((r) => r.gir), sum((r) => r.girChances))}</b><span>Greens in reg.</span></div>
+        <div class="tile"><b>${one(perPuttHole(sum((r) => r.putts)))}</b><span>Putts</span><small>per 18</small></div>
+        <div class="tile"><b>${one(perPuttHole(sum((r) => r.threePutts)))}</b><span>3-putts</span><small>per 18</small></div>
         <div class="tile"><b>${ratio(sum((r) => r.scrambles), sum((r) => r.scrambleChances))}</b><span>Scrambling</span></div>
         <div class="tile"><b>${ratio(sum((r) => r.sandSaves), sum((r) => r.sandChances))}</b><span>Sand saves</span></div>
         <div class="tile"><b>${one(per18(sum((r) => r.penalties)))}</b><span>Penalties</span><small>per 18</small></div>

@@ -4,7 +4,7 @@ import * as db from '../db.js';
 import { toLocal } from '../geo.js';
 import { deriveRound } from '../stats.js';
 import { previewRing, smoothed, LIE_LABEL } from '../holemap.js';
-import { holeLayers } from './holeart.js';
+import { holeLayers, holePreview } from './holeart.js';
 import { createMap, pin, line, circle, polygon, frame, fit, hasMap, drawHoleMap } from '../map.js';
 import { esc, signed } from '../ui.js';
 import { scoreClass } from './card.js';
@@ -23,7 +23,8 @@ function holePath(dh) {
 export function holeThumb(dh, courseHole) {
   const pts = holePath(dh);
   const green = dh.green ?? pts.at(-1);
-  if (!green || !pts.length) return '<div class="ht-empty">No shots</div>';
+  // No shots marked (a typed-in scorecard, say): draw the hole from its map.
+  if (!green || !pts.length) return holePreview(courseHole).svg || '<div class="ht-empty">No shots</div>';
   const o = green;
   const from = pts[0] ?? courseHole?.tee;
   const v = from ? toLocal(from, green) : { x: 0, y: 1 };

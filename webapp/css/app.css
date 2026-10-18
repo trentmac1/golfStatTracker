@@ -317,6 +317,7 @@ dialog.sheet::backdrop { background: rgba(10,25,15,.55); }
   min-width: 56px; min-height: 48px; padding: 0 12px; border-radius: 12px; border: 2px solid var(--line);
   background: var(--card); font: 700 21px/1 var(--num); cursor: pointer;
 }
+.chips button.putter { font-size: 17px; padding-left: 12px; padding-right: 12px; }
 .chips button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
 .chips button.auto { background: #dfe9dc; border-color: var(--turf); border-style: dashed; color: var(--turf-deep); }
 .toggles { display: grid; gap: 8px; margin-top: 14px; }
@@ -576,3 +577,21 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .swing-spark .peak { stroke: var(--line); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .how-list { padding-left: 22px; display: grid; gap: 6px; }
 .mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+
+/* ---------- add a past round ---------- */
+.add-past { margin-bottom: 14px; }
+.past-course { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r); background: var(--card); border: 2px solid var(--line); }
+.past-course span { flex: 1; }
+.past-course b { display: block; font: 700 24px/1.1 var(--num); }
+.past-course small { color: var(--muted); }
+.past-course .btn { min-height: 44px; }
+.field { display: grid; gap: 4px; margin-top: 14px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.field input { min-height: 48px; padding: 0 12px; border: 2px solid var(--line); border-radius: 12px; font: 600 18px var(--body); color: var(--ink); background: var(--card); }
+.past-round .sheet-label { margin-top: 16px; }
+.chips.tees button { font-size: 18px; padding-left: 14px; padding-right: 14px; }
+.past-card th small { font-weight: 400; color: var(--muted); }
+.past-card .pc-par { font: 700 20px/1 var(--num); }
+.past-card .pc-par small { display: block; font: 400 12px/1.2 var(--body); color: var(--muted); }
+.past-card .si-input { width: 64px; }
+.past-card tfoot th, .past-card tfoot td { font: 700 20px/1 var(--num); border-bottom: 0; padding-top: 10px; }
+

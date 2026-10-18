@@ -19,7 +19,7 @@ export function statTiles(r) {
   const tile = (v, label, sub = '') => `<div class="tile"><b>${v}</b><span>${label}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
   return `
     ${tile(r.fairwayChances ? `${r.fairwaysHit}/${r.fairwayChances}` : '–', 'Fairways', r.fairwayChances ? `L ${r.fairwayMisses.left} · R ${r.fairwayMisses.right} · Short ${r.fairwayMisses.short}` : '')}
-    ${tile(r.holesPlayed ? `${r.gir}/${r.holesPlayed}` : '–', 'Greens in reg.', pctText(r.girPct))}
+    ${tile(r.girChances ? `${r.gir}/${r.girChances}` : '–', 'Greens in reg.', pctText(r.girPct))}
     ${tile(r.putts || '–', 'Putts', r.puttsPerGir != null ? `${one(r.puttsPerGir)} per GIR` : '')}
     ${tile(r.threePutts, '3-putts')}
     ${tile(r.scrambleChances ? `${r.scrambles}/${r.scrambleChances}` : '–', 'Scrambling')}
@@ -69,7 +69,8 @@ export async function cardView(root, { roundId }) {
       <header class="page-head">
         <a class="back" href="${active ? `#/round/${roundId}/hole/${round.currentHole ?? 1}` : '#/rounds'}">‹ ${active ? `Hole ${round.currentHole ?? 1}` : 'Rounds'}</a>
         <h1>${esc(course.name)}</h1>
-        <p class="sub">${fmtDate(round.date)} · ${esc(layoutLabel(course, round))}${active ? ' · in progress' : ''}</p>
+        <p class="sub">${fmtDate(round.date)} · ${esc(layoutLabel(course, round))}${round.tee?.name ? ` · ${esc(round.tee.name)} tees` : ''}${active ? ' · in progress' : ''}</p>
+        ${round.entered ? `<p class="note">Added from a scorecard${round.tee?.rating && round.tee?.slope ? `, rating ${round.tee.rating} and slope ${round.tee.slope}` : ''}. Tap a hole number to change its score or putts.</p>` : ''}
       </header>
       <div class="total">
         <b>${r.holesPlayed ? r.score : '–'}</b>
@@ -79,12 +80,12 @@ export async function cardView(root, { roundId }) {
       <p class="legend"><span class="sc-mark birdie">3</span> birdie or better <span class="sc-mark bogey">5</span> bogey <span class="sc-mark double">6</span> double+ · tap a hole number to open it</p>
       <h2 id="holeGrid">Hole by hole</h2>
       ${holeGrid(roundId, r, course)}
-      <p class="note">Tap a hole to see your shots on the map.</p>
+      <p class="note">${round.entered ? 'Each hole from the course map. No shots were marked in this round.' : 'Tap a hole to see your shots on the map.'}</p>
       <h2>This round</h2>
       <div class="tiles">${statTiles(r)}</div>
       ${sgBlock(r, round)}
       <div class="btn-col">
-        ${active ? `<button class="btn primary" data-a="finish">Finish round</button>` : `<button class="btn ghost" data-a="reopen">Reopen round</button>`}
+        ${active ? `<button class="btn primary" data-a="finish">Finish round</button>` : round.entered ? '' : `<button class="btn ghost" data-a="reopen">Reopen round</button>`}
         <button class="btn ghost" data-a="csv">Export round (CSV)</button>
         <button class="btn ghost danger-text" data-a="delete">Delete round</button>
       </div>

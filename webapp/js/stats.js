@@ -46,8 +46,11 @@ export function emptyHoleStat() {
   return { putts: null, chips: 0, bunker: 0, penalties: 0, fairway: null, score: null, greenPos: null };
 }
 
+// In the order they were hit: by time when both have one (shots from the
+// tracker arrive after the fact, between ones marked by hand), else by number.
 export function sortShots(shots) {
-  return [...shots].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || (a.time ?? 0) - (b.time ?? 0));
+  return [...shots].sort((a, b) => (a.time != null && b.time != null && a.time !== b.time ? a.time - b.time : 0)
+    || (a.seq ?? 0) - (b.seq ?? 0) || (a.time ?? 0) - (b.time ?? 0));
 }
 
 // Everything the UI and the round totals need for one hole.

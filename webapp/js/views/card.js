@@ -5,6 +5,7 @@ import { roundCsv } from '../export.js';
 import { sgSummary, CATEGORIES } from '../sg.js';
 import { holeGrid } from './review.js';
 import { esc, m, one, signed, pctText, fmtDate, toast, confirmSheet, saveFile } from '../ui.js';
+import { syncCaptures, reconcileTrackerShots, endTrackerRound } from '../trackerround.js';
 
 export function scoreClass(toPar) {
   if (toPar == null) return '';
@@ -97,6 +98,11 @@ export async function cardView(root, { roundId }) {
     if (a === 'finish') {
       const unfinished = r.holes.filter((h) => !h.complete).length;
       if (unfinished && !(await confirmSheet(`${unfinished} ${unfinished === 1 ? 'hole has' : 'holes have'} no putts or score. Finish anyway?`, 'Finish round', false))) return;
+      if (round.tracker) {
+        // Last swings from the tracker, then close its round.
+        try { await syncCaptures(); await reconcileTrackerShots(round, course); } catch { /* sync again later from the hole screen */ }
+        await endTrackerRound();
+      }
       round.status = 'done';
       round.finishedAt = new Date().toISOString();
       await db.put('rounds', round);

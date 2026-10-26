@@ -198,7 +198,8 @@ export class FakeTransport {
   ctx() {
     const s = this.s;
     return { time: Math.floor(Date.now() / 1000), deviceMs: Date.now() - this.t0,
-      pos: s.gpsFix ? { lat: this.near.lat, lon: this.near.lon } : null, hdop: s.hdop, sats: s.sats };
+      // The pretend golfer walks about 90 m north after each shot.
+      pos: s.gpsFix ? { lat: this.near.lat + (this.walked ?? 0) * 9e-6, lon: this.near.lon } : null, hdop: s.hdop, sats: s.sats };
   }
 
   append(make) {
@@ -242,7 +243,7 @@ export class FakeTransport {
         if (!loud && c.soundGate) { c.gatedOut++; }
         else {
         const seq = this.append((q) => encodeSwing(q, this.ctx(), { peak: s.gyroPeak, trigger: c.trigger, loud }));
-        if (seq != null) { this.lastSwingSeq = seq; this.lastSwingAt = Date.now(); c.swings++; s.records = c.swings; this.loud = loud; }
+        if (seq != null) { this.lastSwingSeq = seq; this.lastSwingAt = Date.now(); c.swings++; s.records = c.swings; this.loud = loud; this.walked = (this.walked ?? 0) + 90; }
         }
       }
       if (Math.floor(t) % 15 === 7) {

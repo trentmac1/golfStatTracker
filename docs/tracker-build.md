@@ -145,3 +145,14 @@ Phase 3 is done after at least **2 range sessions and 2 rounds** of labelled dat
 7. [ ] Battery after a 2-hour range session: ___ %.
 
 Then the sessions themselves: send me each exported JSON file (or tell me where they are) with a line on what you did: range or course, roughly how many balls, clubs used, anything odd.
+
+## Playing a round with the tracker
+
+1. In Bluefy, tap a course on Home, pick the holes, choose **Shot tracker** under Shots, and tee off.
+2. On the hole screen, tap **Connect** in the blue tracker bar and pick Golf Tracker. The app puts the tracker in Round mode (trigger 250 °/s, impact needed) and starts its round. The bar shows battery, GPS and how many shots it has found. If the connection drops, it reconnects by itself when the phone is back in range.
+3. Play. Each full swing the tracker saves appears within a few seconds as a shot with a blue number, on the map and in the shot list. Practice swings, knocks and thuds are left out (see Range and Round mode above). A swing is put on the hole on screen, or on the next one if it was clearly hit there (for example, off the next tee before you moved the app on).
+4. Fix anything wrong as with any shot: drag its dot on the map, set the club and lie, or delete it. A deleted tracker shot isn't added back, and a shot you've changed is never touched by a later sync.
+5. After each hole, enter chips and putts in the hole's stats. Keep pressing the tracker button 2–5 s after each chip and putt: the hole screen shows how many presses it counted, to help you count. For a chip you want on the map, use **Mark ball**; a swing within 10 m and 3 minutes of a marked shot isn't added twice.
+6. **Finish round** on the scorecard fetches the last swings and ends the tracker's round.
+
+The swings also stay in Training data, so the same session can still be exported for the analysis.

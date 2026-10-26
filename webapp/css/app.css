@@ -595,3 +595,16 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .past-card .si-input { width: 64px; }
 .past-card tfoot th, .past-card tfoot td { font: 700 20px/1 var(--num); border-bottom: 0; padding-top: 10px; }
 
+
+/* Shot tracker on the round screen */
+.trk-strip { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #eef3f8; border-bottom: 1px solid var(--line); font-size: 15px; min-height: 44px; }
+.trk-strip .trk-line { flex: 1; }
+.trk-strip .btn.small { min-height: 36px; padding: 0 12px; font-size: 15px; }
+.trk-strip .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 4px; vertical-align: 1px; }
+.trk-strip .dot.on { background: var(--blue); }
+.trk-strip .dot.warn { background: #c48a00; }
+.trk-strip .dot.off { background: #b9c3b6; }
+.trk-strip .bad { color: var(--red); font-weight: 600; }
+.trk-strip .warn { color: #8a6200; font-weight: 600; }
+.shot-n.trk { background: var(--blue); }
+.trk-hint { margin: 0 0 10px; font-size: 15px; color: var(--muted); }

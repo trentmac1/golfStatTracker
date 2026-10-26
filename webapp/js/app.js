@@ -55,17 +55,19 @@ async function seed() {
   await db.setSetting('seededCourses', [...seeded]);
 }
 
-async function startRound(courseId, holeList) {
+async function startRound(courseId, holeList, useTracker = false) {
   const round = {
     id: db.uid(), courseId, date: new Date().toISOString(), status: 'active', holes: {}, holeList, currentHole: holeList[0],
+    ...(useTracker ? { tracker: true, holeLog: [{ hole: holeList[0], at: Date.now() }], trackerDismissed: [] } : {}),
   };
   await db.put('rounds', round);
   location.hash = `#/round/${round.id}/hole/${holeList[0]}`;
 }
 
 // Pick 18 or 9 holes and which nines. Remembers the last choice per course.
-function chooseLayout(course) {
+function chooseLayout(course, trackerDefault = false) {
   return new Promise((resolve) => {
+    let useTracker = trackerDefault;
     const nines = ninesOf(course);
     const full = nines.filter((nn) => nn.length === 9);
     const last = course.lastLayout ?? {};
@@ -84,7 +86,10 @@ function chooseLayout(course) {
         <p class="sheet-label">${len === 18 ? 'First nine' : 'Which nine'}</p>
         <div class="seg lay-nine">${seg('first', first, -1)}</div>
         ${len === 18 && nines.length > 2 ? `<p class="sheet-label">Second nine</p><div class="seg lay-nine">${seg('second', second, first)}</div>` : ''}` : ''}
-        <p class="sheet-note">${esc(summary())}</p>`;
+        <p class="sheet-note">${esc(summary())}</p>
+        <p class="sheet-label">Shots</p>
+        <div class="seg lay-trk">${[[false, 'Mark by hand'], [true, 'Shot tracker']].map(([v, t]) => `<button data-trk="${v}" class="${useTracker === v ? 'on' : ''}">${t}</button>`).join('')}</div>
+        <p class="sheet-note">${useTracker ? 'Full shots come from the tracker and appear on the map. Enter chips and putts after each hole. Connect it in Bluefy on the first hole.' : 'Tap Mark ball at your ball before each shot.'}</p>`;
     };
     const order = () => len === 18 ? [...nines[first], ...nines[nines.length > 2 ? second : (first + 1) % 2]] : nines[first];
     const summary = () => { const o = order(); return `Holes ${o.length === 18 ? `${nineLabel(nines[first])}, then ${nineLabel(nines[nines.length > 2 ? second : (first + 1) % 2])}` : nineLabel(nines[first])} · par ${o.reduce((a, n) => a + course.holes[n - 1].par, 0)}`; };
@@ -97,7 +102,8 @@ function chooseLayout(course) {
       el.addEventListener('click', async (e) => {
         const b = e.target.closest('button');
         if (!b) return;
-        if (b.dataset.len) len = Number(b.dataset.len);
+        if (b.dataset.trk) useTracker = b.dataset.trk === 'true';
+        else if (b.dataset.len) len = Number(b.dataset.len);
         else if (b.dataset.first) { first = Number(b.dataset.first); if (second === first) second = (first + 1) % nines.length; }
         else if (b.dataset.second) second = Number(b.dataset.second);
         else if (b.dataset.l === 'cancel') { close(); return; }
@@ -105,7 +111,7 @@ function chooseLayout(course) {
           picked = true;
           course.lastLayout = { len, first, second };
           await db.put('courses', course);
-          resolve(order()); close(); return;
+          resolve({ holes: order(), useTracker }); close(); return;
         }
         draw(el);
       });
@@ -144,8 +150,10 @@ async function homeView(root) {
     if (!b) return;
     if (active && !(await confirmSheet('A round is already in progress. Start another one? The current round stays saved.', 'Start new round', false))) return;
     const course = courses.find((c) => c.id === b.dataset.start);
-    const holeList = await chooseLayout(course);
-    if (holeList) startRound(course.id, holeList);
+    const picked = await chooseLayout(course, await db.getSetting('roundTracker', false));
+    if (!picked) return;
+    await db.setSetting('roundTracker', picked.useTracker);
+    startRound(course.id, picked.holes, picked.useTracker);
   });
   return {};
 }

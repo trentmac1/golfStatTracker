@@ -2,7 +2,9 @@
 import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
-import { deriveHole, deriveRound, emptyHoleStat, playOrder } from '../stats.js';
+import { deriveHole, deriveRound, emptyHoleStat, playOrder, sortShots } from '../stats.js';
+import { tracker } from '../transport.js';
+import { syncCaptures, prepareTracker, reconcileTrackerShots, dismissTrackerShot, logHole } from '../trackerround.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
 import { smoothed, LIE_LABEL, applyAutoLie, holeMapped } from '../holemap.js';
@@ -25,12 +27,16 @@ export async function holeView(root, { roundId, hole }) {
   const n = order.includes(hole) ? hole : order[0];
   const pos = order.indexOf(n);
 
-  if (round.currentHole !== n) { round.currentHole = n; await db.put('rounds', round); }
+  if (round.currentHole !== n || (round.tracker && round.holeLog?.at(-1)?.hole !== n)) {
+    round.currentHole = n;
+    if (round.tracker) logHole(round, n);
+    await db.put('rounds', round);
+  }
 
   const ch = () => course.holes[n - 1];
   const hs = () => (round.holes[n] ??= emptyHoleStat());
   const holeShots = () => shots.filter((s) => s.hole === n);
-  const firstShotId = () => [...holeShots()].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || (a.time ?? 0) - (b.time ?? 0))[0]?.id;
+  const firstShotId = () => sortShots(holeShots())[0]?.id;
   const derived = () => deriveHole(ch(), hs(), holeShots());
 
   // Shots marked before the hole map was downloaded get their lie now.
@@ -49,6 +55,7 @@ export async function holeView(root, { roundId, hole }) {
       </div>
       <button class="nav-btn" data-a="next" aria-label="Next hole">›</button>
     </header>
+    ${round.tracker ? '<div class="trk-strip" id="trk" aria-live="polite"></div>' : ''}
     <div class="map-wrap">
       <div id="map" class="map"></div>
       <div class="yardage" id="yardage" aria-live="polite"></div>
@@ -61,7 +68,7 @@ export async function holeView(root, { roundId, hole }) {
       <div class="measure-tip" id="measureTip">Tap the map to measure</div>
     </div>
     <div class="actions">
-      <button class="btn mark" data-a="mark"><span class="mark-label">Mark ball</span><small id="markSub">Stand at your ball before you hit</small></button>
+      <button class="btn mark" data-a="mark"><span class="mark-label">Mark ball</span><small id="markSub">${round.tracker ? 'For a chip, or a shot the tracker missed' : 'Stand at your ball before you hit'}</small></button>
       <button class="btn on-green" data-a="ongreen">On green</button>
     </div>
     <ol class="shot-list" id="shots"></ol>
@@ -319,12 +326,14 @@ export async function holeView(root, { roundId, hole }) {
     const d = derived();
     const el = $('#shots', root);
     if (!d.shots.length) {
-      el.innerHTML = `<li class="shot-empty">No shots yet. On the tee, tap <b>Mark ball</b>, then hit.</li>`;
+      el.innerHTML = round.tracker
+        ? `<li class="shot-empty">No shots yet. Hit away: shots the tracker saves appear here and on the map (blue rings) within a few seconds.</li>`
+        : `<li class="shot-empty">No shots yet. On the tee, tap <b>Mark ball</b>, then hit.</li>`;
       return;
     }
     el.innerHTML = d.shots.map((s) => `
       <li><button class="shot-row" data-a="shot" data-id="${s.id}">
-        <span class="shot-n">${s.index + 1}</span>
+        <span class="shot-n ${s.source === 'tracker' ? 'trk' : ''}">${s.index + 1}</span>
         <span class="shot-club ${s.club ? '' : 'unset'}">${esc(s.club ?? 'Club')}</span>
         <span class="shot-dist">${s.dist ? `${Math.round(s.dist)} m` : '–'}${s.endKind === 'green-centre' ? '<sup>*</sup>' : ''}</span>
         <span class="shot-res ${s.onGreen && s.approach ? 'good' : ''}">${s.endLie ? `<em class="lie lie-${s.endLie}">${LIE_LABEL[s.endLie]}</em> ` : ''}${esc(s.result || '')}${s.penalty ? ' <em class="pen">Penalty</em>' : ''}${s.mishit ? ' <em>Mishit</em>' : ''}</span>
@@ -344,7 +353,9 @@ export async function holeView(root, { roundId, hole }) {
         <button class="st-btn" data-a="inc" data-k="${key}" aria-label="More ${label}">+</button>
       </div>`;
     const name = d.toPar != null ? SCORE_NAMES[d.toPar] ?? (d.toPar > 0 ? `+${d.toPar}` : `${d.toPar}`) : '';
+    const pressN = trk.presses[n] ?? 0;
     $('#hstats', root).innerHTML = `
+      ${round.tracker ? `<p class="trk-hint">${pressN ? `The tracker counted <b>${pressN}</b> button press${pressN === 1 ? '' : 'es'} on this hole (your chips and putts). ` : ''}Enter chips and putts here after the hole.</p>` : ''}
       <div class="stat-block">
         <span class="sb-label">Putts</span>
         <div class="seg putts" role="group" aria-label="Putts">
@@ -423,7 +434,7 @@ export async function holeView(root, { roundId, hole }) {
     } finally {
       btn.disabled = false;
       btn.classList.remove('busy');
-      sub.textContent = 'Stand at your ball before you hit';
+      sub.textContent = round.tracker ? 'For a chip, or a shot the tracker missed' : 'Stand at your ball before you hit';
     }
   }
 
@@ -474,7 +485,7 @@ export async function holeView(root, { roundId, hole }) {
         <button class="btn ghost danger-text" data-x="delete">Delete shot</button>
         <button class="btn primary" data-x="done">Done</button>
       </div>
-      <p class="sheet-note">GPS ±${Math.round(raw.accuracy ?? 0)} m${raw.edited ? ' · moved by hand' : ''}. Drag the shot's dot on the map to correct it.</p>`,
+      <p class="sheet-note">${raw.source === 'tracker' ? `From the tracker${raw.tracker?.peakGyro ? ` (swing ${raw.tracker.peakGyro} °/s)` : ''}. Wrong? Delete it, or drag its dot to where you hit from.` : `GPS ±${Math.round(raw.accuracy ?? 0)} m${raw.edited ? ' · moved by hand' : ''}. Drag the shot's dot on the map to correct it.`}${raw.source === 'tracker' && raw.edited ? ' Moved by hand.' : ''}</p>`,
     (el, close) => {
       el.addEventListener('click', async (e) => {
         const b = e.target.closest('button');
@@ -505,8 +516,9 @@ export async function holeView(root, { roundId, hole }) {
           raw.target = null; await db.put('shots', raw); render(); close();
         } else if (b.dataset.x === 'delete') {
           close();
-          if (await confirmSheet(`Delete shot ${s.index + 1}?`, 'Delete shot')) {
+          if (await confirmSheet(`Delete shot ${s.index + 1}?${raw.source === 'tracker' ? ' The tracker won\'t add it again.' : ''}`, 'Delete shot')) {
             shots = shots.filter((x) => x.id !== id);
+            await dismissTrackerShot(round, raw);
             await db.del('shots', id);
             render();
             toast('Shot deleted');
@@ -557,6 +569,12 @@ export async function holeView(root, { roundId, hole }) {
     if (!b || !root.contains(b)) return;
     const a = b.dataset.a;
     const h = hs();
+    if (a === 'trkconnect') {
+      try { await tracker.connect('ble'); } catch (err) { toast(err.message || String(err), 'warn'); }
+      if (tracker.error) toast(tracker.error, 'warn');
+      return;
+    }
+    if (a === 'trkstart') { await prepareTracker().catch((err) => toast(err.message, 'warn')); return; }
     if (a === 'mark') markBall();
     else if (a === 'ongreen') onGreen();
     else if (a === 'prev') go(-1);
@@ -613,12 +631,106 @@ export async function holeView(root, { roundId, hole }) {
   }
   db.getSetting('mapFull', false).then((on) => on && setFull(true));
 
+  // ---------- shot tracker ----------
+  // A tracker round: connect (Bluefy), keep the tracker in round mode, sync
+  // its swings as they're saved and put them on the map as shots.
+  const trk = { presses: {}, busy: false, again: false, seenSeq: null, lastSync: null, error: null, retry: null };
+  let offTracker = () => {};
+
+  async function trackerRefresh({ quiet = false } = {}) {
+    if (!round.tracker) return;
+    if (trk.busy) { trk.again = true; return; }
+    trk.busy = true;
+    try {
+      do {
+        trk.again = false;
+        if (tracker.state === 'connected' && tracker.hasCapture) {
+          await syncCaptures();
+          trk.lastSync = Date.now();
+        }
+        const fresh = (await db.get('rounds', roundId)) ?? round;
+        round.trackerDismissed = fresh.trackerDismissed;
+        const res = await reconcileTrackerShots(round, course);
+        trk.presses = res.presses;
+        if (res.added || res.removed) {
+          shots = await db.shotsForRound(roundId);
+          render();
+          if (!quiet && res.added) { vibrate(); toast(res.added === 1 ? 'Shot added from the tracker' : `${res.added} shots added from the tracker`); }
+        } else drawStats();
+        trk.error = null;
+      } while (trk.again);
+    } catch (e) {
+      trk.error = e.message || String(e);
+    } finally {
+      trk.busy = false;
+      drawTracker();
+    }
+  }
+
+  function drawTracker() {
+    const el = $('#trk', root);
+    if (!el) return;
+    const t = tracker, s = t.status, c = t.capture;
+    const n = shots.filter((x) => x.source === 'tracker').length;
+    let line, btn = '';
+    if (!t.bluetoothAvailable() && t.kind !== 'fake') {
+      line = 'Shot tracker: open this app in <b>Bluefy</b> to connect it.';
+    } else if (t.state === 'connected') {
+      const bits = [
+        s ? `<span class="${s.battery <= 20 ? 'bad' : ''}">${s.battery}%</span>` : '',
+        s ? (s.gpsFix ? `GPS ${s.sats}` : '<span class="warn">No GPS</span>') : '',
+        `${n} shot${n === 1 ? '' : 's'}`,
+        trk.busy || t.sync ? 'syncing…' : trk.lastSync ? `synced ${new Date(trk.lastSync).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}` : '',
+      ].filter(Boolean);
+      line = `<i class="dot on"></i> Tracker · ${bits.join(' · ')}`;
+      if (!t.hasCapture) line = '<i class="dot warn"></i> Tracker connected, but its firmware has no capture log. Update it to 0.3 or later.';
+      else if (c && !c.session) btn = '<button class="btn ghost small" data-a="trkstart">Start on tracker</button>';
+      else if (c?.full) line += ' · <span class="bad">storage full</span>';
+    } else if (t.state === 'connecting') {
+      line = '<i class="dot"></i> Connecting to the tracker…';
+    } else {
+      line = `<i class="dot off"></i> Tracker ${t.state === 'lost' ? 'connection lost' : 'not connected'}${n ? ` · ${n} shot${n === 1 ? '' : 's'} so far` : ''}`;
+      btn = `<button class="btn ghost small" data-a="trkconnect">${t.state === 'lost' ? 'Reconnect' : 'Connect'}</button>`;
+    }
+    el.innerHTML = `<span class="trk-line">${line}${trk.error ? ` <span class="bad">${esc(trk.error)}</span>` : ''}</span>${btn}`;
+  }
+
+  if (round.tracker) {
+    let prepared = false;
+    offTracker = tracker.on(async (t) => {
+      const now = t.state === 'connected';
+      // Once per connection, when the tracker has said what state it's in:
+      // round mode on and its round started, then catch up on its swings.
+      if (now && t.capture && !prepared) {
+        prepared = true;
+        await prepareTracker().catch(() => {});
+        trackerRefresh();
+      }
+      if (!now) prepared = false;
+      // A new record on the tracker: fetch it (and turn it into a shot).
+      if (now && t.capture && t.capture.nextSeq !== trk.seenSeq && !t.sync) {
+        const first = trk.seenSeq == null;
+        trk.seenSeq = t.capture.nextSeq;
+        if (!first) trackerRefresh();
+      }
+      drawTracker();
+    });
+    // A dropped connection comes back by itself (the phone remembers the tracker).
+    trk.retry = setInterval(() => {
+      if (tracker.state === 'lost' && tracker.kind === 'ble') tracker.connect('ble').catch(() => {});
+    }, 20000);
+    trackerRefresh({ quiet: true });
+    drawTracker();
+  }
+
   render();
   initialFit();
   drawCompass();
 
   return {
     destroy() {
+      offTracker();
+      clearInterval(trk.retry);
       unsub();
       document.body.classList.remove('map-full');
       map?.remove();

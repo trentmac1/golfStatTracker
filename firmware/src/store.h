@@ -10,6 +10,7 @@
 namespace store {
   enum Kind : uint8_t {
     K_LOG_START = 1, K_SESSION_START = 2, K_SESSION_END = 3, K_SWING = 4, K_LABEL = 5,
+    K_REJECT = 6,                // firmware 0.4.0: a round-mode candidate that wasn't saved, features only
     K_PAD = 0xFE,                // filler after a cut-off write; never synced
   };
 

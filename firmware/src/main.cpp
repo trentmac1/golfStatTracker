@@ -16,6 +16,11 @@
 using namespace Adafruit_LittleFS_Namespace;
 
 static bool roundActive = false;
+// Locked by the app during a tracker round: the 2 s hold no longer starts
+// or ends the round (the leg can hold the button down while walking). Kept
+// across a restart, with the round, until the app ends the round.
+static bool roundLocked = false;
+static volatile bool stateChanged = false;
 static uint8_t buttonPresses = 0;
 static uint16_t busyPins = 0;
 static bool echoNmea = false;
@@ -26,6 +31,7 @@ static bool flashR = true, flashG = true, flashB = true;
 
 // Requests from the app arrive on the Bluetooth task; the loop acts on them.
 static volatile uint8_t roundRequest = 0;       // 1 start, 2 end
+static volatile uint8_t lockRequest = 0;        // 1 lock, 2 unlock
 static volatile int32_t syncRequest = -1;       // seq to sync from
 static volatile bool stopSyncRequest = false;
 static volatile bool eraseRequest = false;
@@ -58,6 +64,7 @@ static void setRound(bool on) {
   if (on == roundActive) return;
   roundActive = on;
   capture::setSession(on);
+  stateChanged = true;
 }
 
 static void updateLeds() {
@@ -95,12 +102,12 @@ static void updateButton() {
   if (pressed && !down) { down = true; held = false; since = now; }
   if (pressed && down && !held && now - since > 2000) {
     held = true;
-    setRound(!roundActive);
-    flash(600, true, true, true);
+    if (roundLocked) flash(300, true, false, false);   // red: the app owns the round
+    else { setRound(!roundActive); flash(600, true, true, true); }
   }
   if (!pressed && down) {
     down = false;
-    if (!held) { buttonPresses++; flash(120, true, true, true); capture::buttonPress(); }
+    if (!held) { buttonPresses++; flash(120, true, true, true); capture::buttonPress(now); }
   }
 }
 
@@ -114,6 +121,7 @@ static void onControl(const uint8_t* d, uint16_t len) {
   switch (d[0]) {
     case OP_START_ROUND: roundRequest = 1; break;
     case OP_END_ROUND: roundRequest = 2; break;
+    case OP_LOCK_ROUND: if (len >= 2) lockRequest = d[1] ? 1 : 2; break;
     case OP_SET_CAPTURE: if (len >= 2) capture::setEnabled(d[1] != 0); break;
     case OP_SYNC_FROM: syncRequest = len >= 3 ? u16(d + 1) : 0; break;
     case OP_STOP_SYNC: stopSyncRequest = true; break;
@@ -182,7 +190,17 @@ static void syncPoll() {
 }
 
 static void handleRequests() {
-  if (roundRequest) { setRound(roundRequest == 1); roundRequest = 0; }
+  if (lockRequest) {
+    bool on = lockRequest == 1;
+    lockRequest = 0;
+    if (on != roundLocked) { roundLocked = on; stateChanged = true; }
+  }
+  if (roundRequest) {
+    bool on = roundRequest == 1;
+    roundRequest = 0;
+    if (!on && roundLocked) { roundLocked = false; stateChanged = true; }   // the app ended its round
+    setRound(on);
+  }
   if (eraseRequest) {
     eraseRequest = false;
     // Only the log the app has seen: its id must match.
@@ -201,7 +219,7 @@ static CapturePacket capturePacket() {
   CapturePacket c = {};
   c.version = 1;
   c.flags = (capture::enabled() ? C_ENABLED : 0) | (roundActive ? C_SESSION : 0)
-          | (capture::full() ? C_FULL : 0) | (syncState.active ? C_SYNCING : 0) | (store::ok() ? C_FLASH_OK : 0);
+          | (capture::full() ? C_FULL : 0) | (syncState.active ? C_SYNCING : 0) | (store::ok() ? C_FLASH_OK : 0) | (roundLocked ? C_LOCKED : 0);
   c.triggerDps = capture::trigger();
   c.logId = store::logId();
   c.nextSeq = store::nextSeq();
@@ -213,6 +231,8 @@ static CapturePacket capturePacket() {
   c.imuOverruns = ov > 65535 ? 65535 : ov;
   c.soundGate = capture::soundGate();
   c.gatedOut = capture::gatedOut();
+  c.ignoredPresses = capture::ignoredPresses();
+  c.rejects = capture::rejects();
   return c;
 }
 
@@ -220,25 +240,34 @@ static CapturePacket capturePacket() {
 // Trigger, sound gate and capture on/off live in a small file on the
 // internal flash, so a restart mid-round keeps round mode.
 static const char* SETTINGS_FILE = "/capture.cfg";
-struct Settings { uint8_t version; uint8_t enabled; uint16_t trigger; uint16_t gate; uint16_t crc; } __attribute__((packed));
+// Version 2 (firmware 0.4.0) adds the round lock and whether a locked round
+// was running, so a restart mid-round carries on with it.
+struct Settings { uint8_t version; uint8_t enabled; uint16_t trigger; uint16_t gate; uint8_t locked; uint8_t inRound; uint16_t crc; } __attribute__((packed));
 
 static void loadSettings() {
   if (!InternalFS.begin()) return;
   File f(InternalFS);
   if (!f.open(SETTINGS_FILE, FILE_O_READ)) return;
   Settings st;
-  bool ok = f.read(&st, sizeof(st)) == sizeof(st) && st.version == 1
-         && st.crc == store::crc16((const uint8_t*)&st, sizeof(st) - 2);
+  uint32_t n = f.read(&st, sizeof(st));
   f.close();
-  if (!ok) return;
+  if (n == 8) {                    // version 1: no lock fields
+    uint8_t* b = (uint8_t*)&st;
+    uint16_t crc = b[6] | (b[7] << 8);
+    if (st.version != 1 || crc != store::crc16(b, 6)) return;
+    st.locked = st.inRound = 0;
+  } else if (n != sizeof(st) || st.version != 2 || st.crc != store::crc16((const uint8_t*)&st, sizeof(st) - 2)) return;
   capture::setEnabled(st.enabled);
   capture::setTrigger(st.trigger);
   capture::setSoundGate(st.gate);
   capture::takeSettingsChanged();
+  roundLocked = st.locked;
+  if (st.locked && st.inRound) setRound(true);   // restarted mid-round
+  stateChanged = false;
 }
 
 static void saveSettings() {
-  Settings st = { 1, (uint8_t)capture::enabled(), capture::trigger(), capture::soundGate(), 0 };
+  Settings st = { 2, (uint8_t)capture::enabled(), capture::trigger(), capture::soundGate(), (uint8_t)roundLocked, (uint8_t)roundActive, 0 };
   st.crc = store::crc16((const uint8_t*)&st, sizeof(st) - 2);
   InternalFS.remove(SETTINGS_FILE);
   File f(InternalFS);
@@ -277,6 +306,8 @@ static void handleSerial() {
         (unsigned long)store::logId(), store::swings(), store::labels(), store::nextSeq(),
         (unsigned long)(store::used() / 1024), (unsigned long)(store::total() / 1024), capture::trigger(),
         capture::soundGate(), capture::gatedOut(), lastAck);
+      Serial.printf("round %s%s, %u presses ignored as walking, %u reject records\n", roundActive ? "on" : "off",
+        roundLocked ? " (locked by the app)" : "", capture::ignoredPresses(), capture::rejects());
       Serial.printf("imu %.1f Hz, %lu overruns, %lu realigns; mic envelope %.1f Hz\n",
         imu::rateHz(), (unsigned long)imu::overruns(), (unsigned long)imu::realigns(), mic::envRateHz());
     }
@@ -340,7 +371,7 @@ void loop() {
   capture::poll();
   syncPoll();
   static uint32_t changedAt = 0;
-  if (capture::takeSettingsChanged()) changedAt = millis() | 1;
+  if (capture::takeSettingsChanged() || stateChanged) { stateChanged = false; changedAt = millis() | 1; }
   if (changedAt && millis() - changedAt > 2000) { changedAt = 0; saveSettings(); }   // after the taps stop
   if (capture::lastSavedMs() != lastSaved) {      // a swing was saved: short magenta flash
     lastSaved = capture::lastSavedMs();

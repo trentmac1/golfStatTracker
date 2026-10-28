@@ -10,7 +10,7 @@ uint32_t millis(){ return (uint32_t)nowMs; } uint32_t micros(){ return (uint32_t
 
 // ---- mocks ----
 const double IMU_HZ = 207.3, ENV_HZ = 1007.8;   // deliberately not nominal
-double swingPeakMs = -1, impactMs = -1, widthMs = 60, busyFrom = -1, busyTo = -1;
+double swingPeakMs = -1, impactMs = -1, widthMs = 60, busyFrom = -1, busyTo = -1, backAmp = 0;
 static imu::Sink sinkFn; static uint32_t imuN = 0;
 void imu::setSink(Sink s){ sinkFn = s; }
 uint32_t imu::count(){ return imuN; }
@@ -20,7 +20,8 @@ uint32_t imu::overruns(){ return 0; }
 float gyroAt(double t) { // dps; a swing: bump to 900 at swingPeakMs, width ~120 ms
   if (t >= busyFrom && t < busyTo) return 160;   // moving about (walking, handling)
   if (swingPeakMs < 0) return 20;
-  double d = (t - swingPeakMs) / widthMs; return 20 + 880 * exp(-d * d);
+  double d = (t - swingPeakMs) / widthMs, e = (t - swingPeakMs + 900) / 120.0;
+  return 20 + 880 * exp(-d * d) + backAmp * exp(-e * e);   // optional backswing 0.9 s before
 }
 void pumpImu() { // deliver all samples with time <= now
   while (imuN * 1000.0 / IMU_HZ <= nowMs) {
@@ -66,13 +67,13 @@ int main() {
   swingPeakMs = 6000; impactMs = 6020;
   run(8000);
   // label press 4 s after the swing
-  capture::buttonPress();
+  capture::buttonPress(millis());
   run(9000);
   // practice swing that's under the trigger: nothing
   swingPeakMs = -1; impactMs = -1;
   run(12000);
   // a press with no swing in the last 20 s
-  run(40000); capture::buttonPress(); run(40100);
+  run(40000); capture::buttonPress(millis()); run(40100);
   capture::setSession(false);
   auto rs = records();
   CHECK(rs.size() == 6);   // log start, session start, swing, label, label, session end
@@ -137,16 +138,70 @@ int main() {
   swingPeakMs = 58000; impactMs = 57500; run(60000);      // sound 500 ms before the peak: outside the window, dropped
   widthMs = 6; swingPeakMs = 64000; impactMs = 64005; run(66000);   // knock: loud but no build-up, dropped
   widthMs = 60; swingPeakMs = 70000; impactMs = 70020; run(70150);
-  capture::buttonPress(); run(72000);                                // the jolt of a button press: dropped
+  capture::buttonPress(millis()); run(72000);                        // a press right after a real swing: kept since 0.4.0, flagged
   busyFrom = 74000; busyTo = 75500;                                   // moving about until just before the swing
   swingPeakMs = 76000; impactMs = 76020; run(78000);                 // swing-like, loud, but not still first: dropped
   busyFrom = busyTo = -1;
   capture::setSession(false);
-  printf("gate: %u kept, %u dropped\n", store::swings() - before, capture::gatedOut());
-  CHECK(store::swings() == before + 1);
-  CHECK(capture::gatedOut() == 6);    // the moving-about itself also reached the 150 trigger (dropped: silent)
+  printf("gate: %u kept, %u dropped, %u rejects\n", store::swings() - before, capture::gatedOut(), capture::rejects());
+  CHECK(store::swings() == before + 2);
+  CHECK(capture::gatedOut() == 6);    // the moving-about itself reached the 150 trigger twice (silent)
+  CHECK(capture::rejects() == 6);
   auto rs2 = records();
-  const uint8_t* sess = rs2[rs2.size() - 4].data();      // session start, kept swing, label, session end
-  CHECK(sess[0] == 2 && u16(sess + 8 + 22) == capture::ROUND_GATE);
+  // Every dropped candidate left a reject record with its reasons.
+  std::vector<uint8_t> reasons;
+  for (auto& r : rs2) if (r[0] == store::K_REJECT) { CHECK(r.size() == 48); CHECK(store::crc16(r.data() + 8, 40) == u16(r.data() + 6)); reasons.push_back(r[8 + 36]); }
+  CHECK(reasons.size() == 6);
+  CHECK(reasons[0] & capture::R_NO_IMPACT);                 // silent
+  CHECK(reasons[1] & capture::R_NO_IMPACT);                 // sound outside the window
+  CHECK(reasons[2] & capture::R_NO_BUILDUP);                // knock
+  CHECK(reasons[5] == capture::R_MOVING);                   // the swing after moving about: only that
+  // The reject's own fields: the moving one has a high "still" value.
+  {
+    const uint8_t* x = nullptr; int k = 0;
+    for (auto& r : rs2) if (r[0] == store::K_REJECT && ++k == 6) x = r.data() + 8 + 20;
+    printf("moving reject: peak %u impact %u build %u still %u jolt %.2f at %+d ms\n", u16(x), u16(x + 2), u16(x + 8), u16(x + 10), u16(x + 12) / 100.0, s16(x + 14));
+    CHECK(u16(x + 10) > 70 && u16(x) > 800 && u16(x + 2) == 40000 && u16(x + 8) > 110);
+  }
+  // The swing with a press 150 ms after its peak is saved, flagged bit 3.
+  int flagged = 0;
+  for (auto& r : rs2) if (r[0] == store::K_SWING && (r[8 + 36] & 8)) flagged++;
+  CHECK(flagged == 1);
+  const uint8_t* sess = nullptr;
+  for (auto& r : rs2) if (r[0] == store::K_SESSION_START) sess = r.data();
+  CHECK(sess && u16(sess + 8 + 22) == capture::ROUND_GATE);
+
+  // A backswing that reaches the trigger 0.9 s before the downswing: the
+  // backswing is rejected (no impact near it) and the downswing still saved.
+  capture::setSession(true);
+  uint16_t sw0 = store::swings();
+  backAmp = 260; swingPeakMs = 92000; impactMs = 92020; run(95000); backAmp = 0;
+  capture::setSession(false);
+  printf("backswing case: %u saved\n", store::swings() - sw0);
+  CHECK(store::swings() == sw0 + 1);
+  capture::setSoundGate(capture::ROUND_GATE);
+
+  // Presses: walking pushes the button at the step rhythm; those are ignored.
+  // A press on its own is a label; two within 0.7 s are one double press.
+  capture::setSoundGate(0);
+  swingPeakMs = -1; impactMs = -1;
+  capture::setSession(true);
+  uint16_t labels0 = store::labels(), ignored0 = capture::ignoredPresses();
+  run(82000);
+  for (int i = 0; i < 8; i++) { capture::buttonPress(millis()); run(millis() + 550); }   // walking: every 0.55 s
+  run(millis() + 5000);
+  CHECK(store::labels() == labels0);
+  CHECK(capture::ignoredPresses() == ignored0 + 8);
+  capture::buttonPress(millis()); run(millis() + 6000);                                  // a single press
+  CHECK(store::labels() == labels0 + 1);
+  capture::buttonPress(millis()); run(millis() + 400); capture::buttonPress(millis()); run(millis() + 6000);   // double
+  CHECK(store::labels() == labels0 + 2);
+  auto rs3 = records();
+  const uint8_t* last = nullptr;
+  for (auto& r : rs3) if (r[0] == store::K_LABEL) last = r.data();
+  CHECK(last && (last[8 + 19] & 16));                       // double-press flag
+  capture::buttonPress(millis()); capture::setSession(false);                            // decided at session end
+  CHECK(store::labels() == labels0 + 3);
+  printf("presses: %u ignored, labels ok\n", capture::ignoredPresses() - ignored0);
   printf("capture tests passed\n");
 }

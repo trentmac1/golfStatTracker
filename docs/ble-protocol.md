@@ -59,6 +59,7 @@ Fits in one default-MTU notification.
 | 0x03 | set time | uint32 Unix seconds | Phase 2; the app sends it on every connect. GPS time wins once known |
 | 0x04 | identify | – | Phase 2; LEDs blink white for 3 s |
 | 0x05 | set capture | uint8, 0 off / 1 on | Phase 3; on by default |
+| 0x06 | lock round | uint8, 1 lock / 0 unlock | Firmware 0.4.0. While locked, the 2 s button hold doesn't start or end the round (the leg can hold the button while walking). The lock and a running round survive a restart. End round (0x02) also unlocks |
 | 0x10 | sync from seq | uint16 seq | Phase 3; streams the capture log from that seq (see Sync) |
 | 0x11 | erase log | uint32 log_id | Phase 3; only if log_id matches the tracker's current log |
 | 0x12 | stop sync | – | Phase 3 |
@@ -69,12 +70,12 @@ Trigger, sound gate and capture on/off are kept on the tracker's internal flash 
 
 Unknown ops are ignored, so an older tracker doesn't break a newer app.
 
-## Capture (24 bytes; 20 before firmware 0.3.0) — Phase 3
+## Capture (28 bytes; 24 before firmware 0.4.0, 20 before 0.3.0) — Phase 3
 
 | Offset | Field | Type | Notes |
 |---|---|---|---|
 | 0 | version | uint8 | 1 |
-| 1 | flags | uint8 | bit0 capture enabled, bit1 session (round) active, bit2 log full, bit3 syncing, bit4 flash ok |
+| 1 | flags | uint8 | bit0 capture enabled, bit1 session (round) active, bit2 log full, bit3 syncing, bit4 flash ok, bit5 round locked by the app (0.4.0) |
 | 2 | trigger | uint16 | deg/s |
 | 4 | log_id | uint32 | changes every time the log is erased |
 | 8 | next_seq | uint16 | seq the next record will get |
@@ -85,6 +86,8 @@ Unknown ops are ignored, so an older tracker doesn't break a newer app.
 | 18 | imu_overruns | uint16 | times the IMU FIFO filled before it was read (should stay 0) |
 | 20 | sound_gate | uint16 | 0 off; firmware 0.3.0 |
 | 22 | gated_out | uint16 | candidates dropped by the sound gate since start-up |
+| 24 | ignored_presses | uint16 | button presses ignored as walking since start-up (0.4.0) |
+| 26 | rejects | uint16 | reject records written since start-up (0.4.0) |
 
 ## Capture log — Phase 3
 
@@ -94,7 +97,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 
 | Offset | Field | Type | Notes |
 |---|---|---|---|
-| 0 | kind | uint8 | 1 log start, 2 session start, 3 session end, 4 swing, 5 label (0xFE filler, never sent) |
+| 0 | kind | uint8 | 1 log start, 2 session start, 3 session end, 4 swing, 5 label, 6 reject (0.4.0) (0xFE filler, never sent) |
 | 1 | version | uint8 | 1 |
 | 2 | len | uint16 | whole record, header included |
 | 4 | seq | uint16 | 0 for log start, then +1 per record |
@@ -111,11 +114,11 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 8 | lat, lon | int32 × 2 | degrees × 1e7, latest fix; 0 without a fix |
 | 16 | hdop | uint16 | × 100, 0xFFFF unknown |
 | 18 | sats | uint8 | |
-| 19 | flags | uint8 | bit0 GPS fix, bit1 GPS time known, bit2 battery under 15%, bit3 session active |
+| 19 | flags | uint8 | bit0 GPS fix, bit1 GPS time known, bit2 battery under 15%, bit3 session active, bit4 double press (labels, 0.4.0) |
 
 **Session start / end** (kinds 2, 3; 32 bytes): context, trigger uint16, sound_gate uint16 (0 before firmware 0.3.0).
 
-**Label** (kind 5, 32 bytes), one per short button press during a session: context (time of the press), ref_seq uint16 (the swing saved before the press, if its peak was at most 20 s earlier; 0xFFFF none), gap_ms uint16 (that swing's peak to the press; 0xFFFF none). A label with no ref is a shot the trigger missed.
+**Label** (kind 5, 32 bytes), one per accepted short button press during a session. Since firmware 0.4.0 a press is decided 2.5 s after it: alone, it's a label; two within 0.7 s with nothing else within 2.5 s are one label with the double-press flag; anything busier is ignored as walking (counted in Capture). Fields: context (time of the press), ref_seq uint16 (the swing saved before the press, if its peak was at most 20 s earlier; 0xFFFF none), gap_ms uint16 (that swing's peak to the press; 0xFFFF none). A label with no ref is a shot the trigger missed.
 
 **Swing** (kind 4, 7548 bytes; 7040 before firmware 0.3.3): a candidate is any rotation whose gyro magnitude reaches the trigger; the window is centred on its peak (the highest rotation up to 0.5 s after it).
 
@@ -130,7 +133,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 30 | env_count | uint16 | 2000 |
 | 32 | env_start_ms | int16 | time of the first envelope value relative to the peak (about −1500) |
 | 34 | env_rate | uint16 | measured, Hz × 10 (about 10000) |
-| 36 | flags | uint8 | bit0 IMU FIFO overrun in the window, bit1 some audio missing (zeros), bit2 some IMU samples missing (zeros) |
+| 36 | flags | uint8 | bit0 IMU FIFO overrun in the window, bit1 some audio missing (zeros), bit2 some IMU samples missing (zeros), bit3 a button press within 0.6 s of the peak (0.4.0; such swings were dropped before) |
 | 37 | impact | uint8 | √ of the loudest envelope value within −400…+250 ms of the peak (firmware 0.3.0; 0 before) |
 | 38 | audio_peak | uint16 | highest envelope value in the window, before companding |
 | 40 | imu | int16 × 6 × imu_count | gx, gy, gz (× 0.070 deg/s), ax, ay, az (× 0.000488 g), in sensor axes |
@@ -140,6 +143,23 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 7036 | low_rate | uint16 | Hz × 10 (about 2500: one value per 4 envelope values) |
 | 7038 | low_impact | uint16 | highest low-band value within −400…+250 ms of the peak |
 | 7040 | low_band | uint8 × low_count | √ of the band-passed (about 50–370 Hz) peak level per 64 microphone samples: a dull thud shows here, a sharp click mostly in the envelope |
+
+**Reject** (kind 6, 48 bytes; firmware 0.4.0): a Round-mode candidate that wasn't saved as a swing, with what it was measured at. Written for every one, so a shot the tracker missed can be traced to the rule that dropped it. After a reject there's no cooldown: a backswing that reaches the trigger must not hold off the downswing.
+
+| Offset (after header) | Field | Type | Notes |
+|---|---|---|---|
+| 0 | context | 20 bytes | at the candidate's peak rotation |
+| 20 | peak_gyro | uint16 | deg/s |
+| 22 | impact | uint16 | loudest envelope value within −400…+250 ms of the peak |
+| 24 | low_impact | uint16 | loudest low-band value in the same window |
+| 26 | audio_peak | uint16 | loudest envelope value in the 2 s |
+| 28 | buildup | uint16 | mean rotation over the 0.3 s before the peak, deg/s |
+| 30 | still | uint16 | mean rotation 1.5–1.0 s before the peak, deg/s |
+| 32 | jolt | uint16 | biggest acceleration change between samples within 3 samples of the impact moment, g × 100 |
+| 34 | impact_ms | int16 | time of the impact value relative to the peak |
+| 36 | reasons | uint8 | bit0 no impact (under the gate), bit1 no build-up (under 110), bit2 moving before (still over 70) |
+| 37 | flags | uint8 | as a swing's flags |
+| 38 | trigger | uint16 | deg/s |
 
 ## Sync — Phase 3
 

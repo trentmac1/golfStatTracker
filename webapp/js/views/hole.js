@@ -4,7 +4,7 @@ import * as gps from '../gps.js';
 import { distance } from '../geo.js';
 import { deriveHole, deriveRound, emptyHoleStat, playOrder, sortShots } from '../stats.js';
 import { tracker } from '../transport.js';
-import { syncCaptures, prepareTracker, reconcileTrackerShots, dismissTrackerShot, logHole } from '../trackerround.js';
+import { syncCaptures, prepareTracker, reconcileTrackerShots, dismissTrackerShot, logHole, acceptPossible, dismissPossible } from '../trackerround.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
 import { smoothed, LIE_LABEL, applyAutoLie, holeMapped } from '../holemap.js';
@@ -140,6 +140,13 @@ export async function holeView(root, { roundId, hole }) {
         .on('click', () => openShot(s.id))
         .on('dragend', (e) => moveShot(s.id, e.target.getLatLng()))
         .addTo(layer);
+    }
+    if (round.tracker) {
+      for (const p of possibleHere()) {
+        pin(p, 'shot possible', '?', { title: 'Possible shot from the tracker' })
+          .on('click', () => openPossible(p.id))
+          .addTo(layer);
+      }
     }
     if (d.greenPos) {
       pin(d.greenPos, 'ball', '', { draggable: true, title: 'Ball on green' })
@@ -322,13 +329,48 @@ export async function holeView(root, { roundId, hole }) {
   }
 
   // ---------- lists and stats ----------
+  function possibleHere() { return round.tracker ? (trk.possible ?? []).filter((p) => p.hole === n) : []; }
+
+  function openPossible(id) {
+    const p = possibleHere().find((x) => x.id === id);
+    if (!p) return;
+    const at = new Date(p.time).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+    sheet(`
+      <h3 class="sheet-title">Possible shot · ${esc(at)}</h3>
+      <p class="sheet-sub">The tracker felt a swing here${p.peakGyro ? ` (${p.peakGyro} °/s)` : ''} but didn't count it: ${esc(p.why)}.</p>
+      <div class="sheet-row">
+        <button class="btn ghost" data-p="no">Not a shot</button>
+        <button class="btn primary" data-p="yes">Add as shot</button>
+      </div>
+      <p class="sheet-note">Either answer helps tune the tracker.</p>`,
+    (el, close) => {
+      el.addEventListener('click', async (e) => {
+        const a = e.target.closest('[data-p]')?.dataset.p;
+        if (!a) return;
+        close();
+        if (a === 'yes') {
+          const shot = await acceptPossible(round, course, p, shots);
+          shots.push(shot);
+          toast('Shot added');
+        } else {
+          await dismissPossible(round, p);
+          toast('Marked as not a shot');
+        }
+        trk.possible = trk.possible.filter((x) => x.id !== id);
+        render();
+      });
+    });
+  }
+
   function drawShots() {
     const d = derived();
     const el = $('#shots', root);
+    const maybe = possibleHere().length;
+    const maybeRow = maybe ? `<li class="shot-foot">${maybe} possible shot${maybe === 1 ? '' : 's'} from the tracker: tap the <b>?</b> on the map to add or dismiss.</li>` : '';
     if (!d.shots.length) {
-      el.innerHTML = round.tracker
+      el.innerHTML = (round.tracker
         ? `<li class="shot-empty">No shots yet. Hit away: shots the tracker saves appear here and on the map (blue rings) within a few seconds.</li>`
-        : `<li class="shot-empty">No shots yet. On the tee, tap <b>Mark ball</b>, then hit.</li>`;
+        : `<li class="shot-empty">No shots yet. On the tee, tap <b>Mark ball</b>, then hit.</li>`) + maybeRow;
       return;
     }
     el.innerHTML = d.shots.map((s) => `
@@ -338,7 +380,7 @@ export async function holeView(root, { roundId, hole }) {
         <span class="shot-dist">${s.dist ? `${Math.round(s.dist)} m` : '–'}${s.endKind === 'green-centre' ? '<sup>*</sup>' : ''}</span>
         <span class="shot-res ${s.onGreen && s.approach ? 'good' : ''}">${s.endLie ? `<em class="lie lie-${s.endLie}">${LIE_LABEL[s.endLie]}</em> ` : ''}${esc(s.result || '')}${s.penalty ? ' <em class="pen">Penalty</em>' : ''}${s.mishit ? ' <em>Mishit</em>' : ''}</span>
       </button></li>`).join('') +
-      (d.shots.some((s) => s.endKind === 'green-centre') ? `<li class="shot-foot">* to green centre. Tap <b>On green</b> to measure to your ball.</li>` : '');
+      (d.shots.some((s) => s.endKind === 'green-centre') ? `<li class="shot-foot">* to green centre. Tap <b>On green</b> to measure to your ball.</li>` : '') + maybeRow;
   }
 
   function drawStats() {
@@ -634,7 +676,7 @@ export async function holeView(root, { roundId, hole }) {
   // ---------- shot tracker ----------
   // A tracker round: connect (Bluefy), keep the tracker in round mode, sync
   // its swings as they're saved and put them on the map as shots.
-  const trk = { presses: {}, busy: false, again: false, seenSeq: null, lastSync: null, error: null, retry: null };
+  const trk = { presses: {}, possible: [], busy: false, again: false, seenSeq: null, lastSync: null, error: null, retry: null };
   let offTracker = () => {};
 
   async function trackerRefresh({ quiet = false } = {}) {
@@ -652,6 +694,9 @@ export async function holeView(root, { roundId, hole }) {
         round.trackerDismissed = fresh.trackerDismissed;
         const res = await reconcileTrackerShots(round, course);
         trk.presses = res.presses;
+        const before = JSON.stringify((trk.possible ?? []).map((p) => p.id));
+        trk.possible = res.possible ?? [];
+        if (JSON.stringify(trk.possible.map((p) => p.id)) !== before) { drawMap(); drawShots(); }
         if (res.added || res.removed) {
           shots = await db.shotsForRound(roundId);
           render();
@@ -679,7 +724,7 @@ export async function holeView(root, { roundId, hole }) {
       const bits = [
         s ? `<span class="${s.battery <= 20 ? 'bad' : ''}">${s.battery}%</span>` : '',
         s ? (s.gpsFix ? `GPS ${s.sats}` : '<span class="warn">No GPS</span>') : '',
-        `${n} shot${n === 1 ? '' : 's'}`,
+        `${n} shot${n === 1 ? '' : 's'}${trk.possible.length ? ` + ${trk.possible.length} possible` : ''}`,
         trk.busy || t.sync ? 'syncing…' : trk.lastSync ? `synced ${new Date(trk.lastSync).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}` : '',
       ].filter(Boolean);
       line = `<i class="dot on"></i> Tracker · ${bits.join(' · ')}`;

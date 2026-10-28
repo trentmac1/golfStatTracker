@@ -77,3 +77,33 @@ test('from capture records: swings in the round become shots, presses are counte
   assert.ok(plan.add.every((s) => s.hole === 1));
   assert.deepEqual(plan.presses, { 1: 2 });
 });
+
+test('possible shots: hidden swings and near-miss rejects, not next to a shot, not dismissed', async () => {
+  const { nearMiss } = await import('../js/trackerround.js');
+  const { REJECT } = await import('../js/capturelog.js');
+  const w = (seq, ms, p, extra = {}) => ({ logId: 7, seq, time: Math.floor((t0 + ms) / 1000), pos: p, hdop: 1, peakGyro: 600, impactLevel: 2000, ...extra });
+  const swings = [w(2, 60000, at(0, 2))];                                     // the tee shot
+  const hidden = [
+    { ...w(3, 70000, at(1, 3)), why: 'same spot' },                           // practice swing next to it: not shown
+    { ...w(4, 400000, at(2, 210)), why: 'thud' },                             // second shot, hidden as a thud: shown
+  ];
+  const rejects = [
+    w(5, 700000, at(0, 330), { reasons: REJECT.noImpact, impactLevel: 600 }),  // chip with a quiet strike: shown
+    w(6, 800000, at(0, 340), { reasons: REJECT.noImpact | REJECT.moving, impactLevel: 600 }),   // two rules: not shown
+    w(7, 900000, at(0, 345), { reasons: REJECT.moving, still: 300 }),           // walking about: not shown
+    w(8, 950000, at(0, 348), { reasons: REJECT.noBuildup, buildup: 90, peakGyro: 200 }),   // too small: not shown
+  ];
+  assert.equal(nearMiss(rejects[0]), 'no strike heard');
+  assert.equal(nearMiss(rejects[1]), null);
+  const plan = planTrackerShots({ round, course, shots: [], swings, presses: [], hidden, rejects });
+  assert.deepEqual(plan.possible.map((p) => p.seq), [4, 5]);
+  assert.ok(plan.possible.every((p) => p.hole === 1));
+  assert.match(plan.possible[0].why, /thud/);
+  const r2 = { ...round, trackerDismissed: [shotId(7, 4)] };
+  assert.deepEqual(planTrackerShots({ round: r2, course, shots: [], swings, presses: [], hidden, rejects }).possible.map((p) => p.seq), [5]);
+  // An accepted possible is a touched tracker shot: never removed by sync.
+  const accepted = { id: shotId(7, 4), roundId: 'r1', hole: 1, seq: 9, lat: at(2, 210).lat, lon: at(2, 210).lon, time: t0 + 400000, source: 'tracker', accepted: true };
+  const plan3 = planTrackerShots({ round, course, shots: [accepted], swings, presses: [], hidden, rejects });
+  assert.equal(plan3.remove.length, 0);
+  assert.deepEqual(plan3.possible.map((p) => p.seq), [5]);
+});

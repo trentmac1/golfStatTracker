@@ -608,3 +608,4 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .trk-strip .warn { color: #8a6200; font-weight: 600; }
 .shot-n.trk { background: var(--blue); }
 .trk-hint { margin: 0 0 10px; font-size: 15px; color: var(--muted); }
+.pin.shot.possible { background: rgba(255,255,255,.75); color: var(--blue); border: 3px dashed var(--blue); }

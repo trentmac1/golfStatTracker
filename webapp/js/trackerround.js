@@ -4,7 +4,7 @@
 // (docs/plan-addition-short-game.md has the automatic version).
 import * as db from './db.js';
 import { tracker, OP } from './transport.js';
-import { decodeRecord, sessions, notShots } from './capturelog.js';
+import { decodeRecord, sessions, notShots, REJECT } from './capturelog.js';
 import { distance, toLocal } from './geo.js';
 import { holeLine, applyAutoLie } from './holemap.js';
 import { playOrder } from './stats.js';
@@ -50,6 +50,8 @@ export async function prepareTracker() {
   if (c.soundGate != null && !c.soundGate) await tracker.send(OP.setSoundGate, ROUND_GATE);
   if (c.trigger !== ROUND_TRIGGER) await tracker.send(OP.setTrigger, ROUND_TRIGGER);
   if (!c.session) await tracker.send(OP.startRound);
+  // Firmware 0.4.0+: the app owns the round, so the button can't end it.
+  if (c.locked === false) await tracker.send(OP.lockRound, true);
 }
 
 export async function endTrackerRound() {
@@ -94,8 +96,10 @@ export function holeFor(course, round, p, timeMs) {
 
 // ---------- turning swings into shots ----------
 // Swings and short-game presses saved during the round, from capture rows
-// (any logs). Swings the app marks as not shots (thud, knock, same spot,
-// the button's own jolt) are left out.
+// (any logs). Swings the app marks as not shots (thud, knock, same spot)
+// come back separately as `hidden`, and the tracker's reject records
+// (firmware 0.4.0) as `rejects`: both can be shown as possible shots.
+// The button's own jolt is left out altogether.
 export function roundTrackerData(round, rows, now = Date.now()) {
   const from = Date.parse(round.date) - 2 * 60000;
   const to = round.finishedAt ? Date.parse(round.finishedAt) + 60000 : now + 60000;
@@ -104,30 +108,49 @@ export function roundTrackerData(round, rows, now = Date.now()) {
     if (!byLog.has(r.logId)) byLog.set(r.logId, []);
     byLog.get(r.logId).push(r);
   }
-  const swings = [], presses = [];
+  const swings = [], presses = [], hidden = [], rejects = [];
   const inRound = (r) => r.time && r.time * 1000 >= from && r.time * 1000 <= to;
   for (const [logId, list] of byLog) {
     if (!list.some(inRound)) continue;
     for (const s of sessions(list)) {
       const mine = s.swings.filter((w) => inRound(w) && !s.pressSeqs.has(w.seq));
       const not = notShots(mine, s.labelledSeqs);
-      for (const w of mine) if (!not.has(w.seq)) swings.push({ ...w, logId });
+      for (const w of mine) {
+        if (!not.has(w.seq)) swings.push({ ...w, logId });
+        else hidden.push({ ...w, logId, why: not.get(w.seq) });
+      }
       for (const l of s.labels) if (inRound(l) && l.swingSeq == null) presses.push({ ...l, logId });
+      for (const j of s.rejects ?? []) if (inRound(j)) rejects.push({ ...j, logId });
     }
   }
   const byTime = (a, b) => a.time - b.time || a.seq - b.seq;
-  return { swings: swings.sort(byTime), presses: presses.sort(byTime) };
+  return { swings: swings.sort(byTime), presses: presses.sort(byTime), hidden: hidden.sort(byTime), rejects: rejects.sort(byTime) };
 }
 
+// A reject worth showing as a possible shot: a real-sized swing that failed
+// only one of the tracker's rules, and not by much. Walking and handling
+// fail more than one, or by a lot, and stay out of the way.
+export function nearMiss(j) {
+  if (!j.pos || j.peakGyro < 300) return null;
+  if (j.reasons === REJECT.noImpact && j.impactLevel >= 300) return 'no strike heard';
+  if (j.reasons === REJECT.noBuildup && j.buildup >= 80) return 'too sudden for a swing';
+  if (j.reasons === REJECT.moving && j.still <= 140) return 'you were moving just before';
+  return null;
+}
+export const HIDDEN_WHY = { thud: 'it sounded like a thud', jolt: 'the tracker jumped like a knock', 'same spot': 'a louder swing was saved nearby' };
+
 // A shot is the player's once they've changed it: then sync leaves it alone.
-const touched = (s) => s.edited || s.club || s.lieByHand || s.target || s.penalty || s.mishit;
+const touched = (s) => s.edited || s.accepted || s.club || s.lieByHand || s.target || s.penalty || s.mishit;
 
 // What to change so the round's tracker shots match the synced swings: add
 // new ones, drop untouched ones the checks no longer count (a louder swing
 // from the same spot arrived later), and never bring back one the player
 // deleted. A swing within 10 m and 3 minutes of a shot marked by hand is
-// already that shot. Returns { add: [shot], remove: [id], presses: {hole: n} }.
-export function planTrackerShots({ round, course, shots, swings, presses }) {
+// already that shot. Also lists possible shots: swings the checks hid and
+// near-miss rejects, not deleted, not next to a shot already there, one per
+// spot (the loudest). Returns { add: [shot], remove: [id], presses: {hole: n},
+// possible: [{ id, hole, lat, lon, time, why, ... }] }.
+export function planTrackerShots({ round, course, shots, swings, presses, hidden = [], rejects = [] }) {
   const dismissed = new Set(round.trackerDismissed ?? []);
   const want = new Map();
   for (const w of swings) {
@@ -156,21 +179,60 @@ export function planTrackerShots({ round, course, shots, swings, presses }) {
     applyAutoLie(shot, course.holes[hole - 1], first);
     add.push(shot);
   }
+  // Possible shots.
+  const final = [...kept, ...add];
+  const near = (a, b, m, ms) => distance(a, b) <= m && Math.abs(a.time - b.time) <= ms;
+  const cands = [
+    ...hidden.map((w) => ({ w, why: HIDDEN_WHY[w.why] ?? w.why, kind: 'hidden' })),
+    ...rejects.map((j) => ({ w: j, why: nearMiss(j), kind: 'reject' })).filter((c) => c.why),
+  ].filter(({ w }) => w.pos && !dismissed.has(shotId(w.logId, w.seq)) && !have.has(shotId(w.logId, w.seq)))
+    .map(({ w, why, kind }) => ({ id: shotId(w.logId, w.seq), lat: w.pos.lat, lon: w.pos.lon, time: w.time * 1000, why, kind,
+      peakGyro: w.peakGyro ?? null, impact: w.impactLevel ?? null, logId: w.logId, seq: w.seq, hdop: w.hdop }))
+    .filter((c) => !final.some((s) => s.lat != null && near(c, s, 15, 90000)))
+    .sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0));
+  const possible = [];
+  for (const c of cands) if (!possible.some((p) => near(c, p, 10, 60000))) possible.push(c);
+  for (const p of possible) p.hole = holeFor(course, round, p, p.time);
+  possible.sort((a, b) => a.time - b.time);
+
   const pressHoles = {};
   for (const p of presses) {
     const h = holeFor(course, round, p.pos, p.time * 1000);
     pressHoles[h] = (pressHoles[h] ?? 0) + 1;
   }
-  return { add, remove, presses: pressHoles };
+  return { add, remove, presses: pressHoles, possible };
 }
 
 export async function reconcileTrackerShots(round, course) {
-  const { swings, presses } = roundTrackerData(round, await db.all('captures'));
+  const data = roundTrackerData(round, await db.all('captures'));
   const shots = await db.shotsForRound(round.id);
-  const plan = planTrackerShots({ round, course, shots, swings, presses });
+  const plan = planTrackerShots({ round, course, shots, ...data });
   for (const id of plan.remove) await db.del('shots', id);
   for (const s of plan.add) await db.put('shots', s);
-  return { added: plan.add.length, removed: plan.remove.length, presses: plan.presses };
+  return { added: plan.add.length, removed: plan.remove.length, presses: plan.presses, possible: plan.possible };
+}
+
+// A possible shot the player confirms: a tracker shot that sync keeps.
+// Accepted and dismissed ids are kept on the round as labels for tuning.
+export async function acceptPossible(round, course, p, shots) {
+  const t = p.time;
+  const first = !shots.some((s) => s.hole === p.hole && s.time < t);
+  const shot = {
+    id: p.id, roundId: round.id, hole: p.hole, seq: shots.reduce((a, s) => Math.max(a, s.seq ?? 0), 0) + 1,
+    lat: p.lat, lon: p.lon, accuracy: p.hdop != null ? Math.max(2.5, p.hdop * 2.5) : 5, time: t,
+    club: null, source: 'tracker', confidence: null, penalty: false, lie: first ? 'tee' : null, mishit: false, target: null,
+    accepted: true, tracker: { logId: p.logId, seq: p.seq, peakGyro: p.peakGyro, impact: p.impact, was: p.why },
+  };
+  applyAutoLie(shot, course.holes[p.hole - 1], first);
+  await db.put('shots', shot);
+  round.trackerAccepted = [...new Set([...(round.trackerAccepted ?? []), p.id])];
+  await db.put('rounds', round);
+  return shot;
+}
+
+export async function dismissPossible(round, p) {
+  round.trackerDismissed = [...new Set([...(round.trackerDismissed ?? []), p.id])];
+  await db.put('rounds', round);
 }
 
 // Called when a tracker shot is deleted, so the next sync doesn't add it back.

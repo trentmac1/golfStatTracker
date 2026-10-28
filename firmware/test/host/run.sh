@@ -10,4 +10,4 @@ flags="-std=c++17 -O1 -I $here/mock -I $src -DFW_MAJOR=0 -DFW_MINOR=2 -DFW_PATCH
 g++ $flags "$here/test_store.cpp" "$src/store.cpp" -o "$out/test_store"
 g++ $flags "$here/test_capture.cpp" "$src/store.cpp" "$src/capture.cpp" -o "$out/test_capture"
 "$out/test_store"
-CAPTURE_FIXTURE="${CAPTURE_FIXTURE:-$out/capture-log.bin}" "$out/test_capture"
+CAPTURE_FIXTURE="${CAPTURE_FIXTURE:-$out/capture-log.bin}" CAPTURE_FIXTURE_FULL="${CAPTURE_FIXTURE_FULL:-$out/capture-log-full.bin}" "$out/test_capture"

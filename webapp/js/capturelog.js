@@ -2,8 +2,10 @@
 // reassembly for sync, grouping into sessions, and the JSON export.
 // Format: docs/ble-protocol.md, "Capture log" and "Sync".
 
-export const KIND = { logStart: 1, sessionStart: 2, sessionEnd: 3, swing: 4, label: 5, pad: 0xfe };
-export const KIND_NAME = { 1: 'log-start', 2: 'session-start', 3: 'session-end', 4: 'swing', 5: 'label' };
+export const KIND = { logStart: 1, sessionStart: 2, sessionEnd: 3, swing: 4, label: 5, reject: 6, pad: 0xfe };
+export const KIND_NAME = { 1: 'log-start', 2: 'session-start', 3: 'session-end', 4: 'swing', 5: 'label', 6: 'reject' };
+// Reject reasons (firmware 0.4.0).
+export const REJECT = { noImpact: 1, noBuildup: 2, moving: 4 };
 export const GYRO_DPS_PER_LSB = 0.07;
 export const ACC_G_PER_LSB = 0.000488;
 const HEADER = 8, CTX = 20;
@@ -29,6 +31,7 @@ function context(dv, o) {
     sats: dv.getUint8(o + 18),
     gpsTime: !!(flags & 2),
     lowBattery: !!(flags & 4),
+    double: !!(flags & 16),                       // labels: a double press (firmware 0.4.0)
   };
 }
 
@@ -59,6 +62,17 @@ export function decodeRecord(bytes, { full = false } = {}) {
     const ref = dv.getUint16(x, true), gap = dv.getUint16(x + 2, true);
     r.refSeq = ref === 0xffff ? null : ref;
     r.gapMs = gap === 0xffff ? null : gap;
+  } else if (kind === KIND.reject) {
+    r.peakGyro = dv.getUint16(x, true);
+    r.impactLevel = dv.getUint16(x + 2, true);
+    r.lowImpact = dv.getUint16(x + 4, true);
+    r.audioPeak = dv.getUint16(x + 6, true);
+    r.buildup = dv.getUint16(x + 8, true);
+    r.still = dv.getUint16(x + 10, true);
+    r.jolt = dv.getUint16(x + 12, true) / 100;
+    r.impactMs = dv.getInt16(x + 14, true);
+    r.reasons = dv.getUint8(x + 16);
+    r.trigger = dv.getUint16(x + 18, true);
   } else if (kind === KIND.swing) {
     r.peakGyro = dv.getUint16(x, true);
     r.trigger = dv.getUint16(x + 2, true);
@@ -69,7 +83,7 @@ export function decodeRecord(bytes, { full = false } = {}) {
     r.envStartMs = dv.getInt16(x + 12, true);
     r.envRateHz = dv.getUint16(x + 14, true) / 10;
     const f = dv.getUint8(x + 16);
-    r.flags = { imuOverrun: !!(f & 1), audioMissing: !!(f & 2), imuMissing: !!(f & 4) };
+    r.flags = { imuOverrun: !!(f & 1), audioMissing: !!(f & 2), imuMissing: !!(f & 4), buttonNear: !!(f & 8) };
     r.audioPeak = dv.getUint16(x + 18, true);
     const imp = dv.getUint8(x + 17);               // firmware 0.3.0+: √ of the loudest level near the peak
     r.impactLevel = imp ? imp * imp : null;
@@ -360,7 +374,7 @@ export function sessions(rows) {
   let cur = null;
   const open = (r) => {
     cur = { logId: r.logId, startSeq: r.seq, start: r.time ?? null, end: null, trigger: r.trigger ?? null, soundGate: r.soundGate ?? 0,
-      swings: [], labels: [], ended: false };
+      swings: [], labels: [], rejects: [], ended: false };
     out.push(cur);
   };
   for (const r of sorted) {
@@ -370,6 +384,7 @@ export function sessions(rows) {
     if (r.kind === KIND.sessionEnd) { cur.end = r.time ?? null; cur.ended = true; cur = null; continue; }
     if (r.kind === KIND.swing) cur.swings.push(r);
     if (r.kind === KIND.label) cur.labels.push(r);
+    if (r.kind === KIND.reject) cur.rejects.push(r);
   }
   for (const s of out) {
     const labelled = new Map();
@@ -425,11 +440,15 @@ export function exportJson(rows, { appVersion } = {}) {
           };
         }),
         labels: s.labels.map((l) => ({ seq: l.seq, time: l.time ? new Date(l.time * 1000).toISOString() : null,
-          device_ms: l.deviceMs, swing_seq: l.swingSeq ?? null, tracker_ref_seq: l.refSeq, tracker_gap_ms: l.gapMs, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
+          device_ms: l.deviceMs, swing_seq: l.swingSeq ?? null, tracker_ref_seq: l.refSeq, tracker_gap_ms: l.gapMs, double: l.double, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
+        rejects: (s.rejects ?? []).map((j) => ({ seq: j.seq, time: j.time ? new Date(j.time * 1000).toISOString() : null, device_ms: j.deviceMs,
+          lat: j.pos?.lat ?? null, lon: j.pos?.lon ?? null, peak_gyro_dps: j.peakGyro, impact_level: j.impactLevel, low_impact: j.lowImpact,
+          audio_peak: j.audioPeak, buildup_dps: j.buildup, still_dps: j.still, jolt_g: j.jolt, impact_ms: j.impactMs,
+          reasons: Object.entries(REJECT).filter(([, v]) => j.reasons & v).map(([k]) => k) })),
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 5, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+  return { app: 'golftracker-capture', version: 6, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
     format: 'docs/ble-protocol.md, Capture log',
     label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq); a swing peaking under ${PRESS_SNIPPET_MS} ms before a press is the press itself (button_press)`, logs };
 }

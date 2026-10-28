@@ -203,5 +203,11 @@ int main() {
   capture::buttonPress(millis()); capture::setSession(false);                            // decided at session end
   CHECK(store::labels() == labels0 + 3);
   printf("presses: %u ignored, labels ok\n", capture::ignoredPresses() - ignored0);
+  // The whole log (round mode, rejects, presses) for the app's decoder tests.
+  if (const char* out = getenv("CAPTURE_FIXTURE_FULL")) {
+    FILE* f = fopen(out, "wb");
+    for (auto& rec : records()) fwrite(rec.data(), 1, rec.size(), f);
+    fclose(f);
+  }
   printf("capture tests passed\n");
 }

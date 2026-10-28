@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   decodeRecord, crc16, Reassembler, chunkRecord, sessions, exportJson, encodeSwing, encodeLabel,
-  encodeSession, encodeLogStart, impactOffsetMs, KIND,
+  encodeSession, encodeLogStart, impactOffsetMs, KIND, REJECT,
 } from '../js/capturelog.js';
 import { decodeCapture, encodeCapture, encodeControl, OP, tracker } from '../js/transport.js';
 
@@ -42,7 +42,7 @@ test('decodes records written by the firmware', () => {
   // The sample at the peak index is the biggest rotation.
   const g = swing.imu.map(([x, y, z]) => Math.hypot(x, y, z));
   assert.equal(g.indexOf(Math.max(...g)), 312);
-  assert.deepEqual(swing.flags, { imuOverrun: false, audioMissing: false, imuMissing: false });
+  assert.deepEqual(swing.flags, { imuOverrun: false, audioMissing: false, imuMissing: false, buttonNear: false });
   const off = impactOffsetMs(split(fixture)[2]);
   assert.ok(Math.abs(off - 20) <= 3, `impact at ${off} ms`);
   assert.equal(label.refSeq, 2); assert.equal(label.gapMs, 2000);
@@ -55,6 +55,26 @@ test('swing shape: thud ratio and jolt from a firmware-written swing', async () 
   assert.ok(Math.abs(sh.thud - 3000 / 40000) < 0.01, `thud ${sh.thud}`);
   assert.ok(sh.jolt != null && sh.jolt < 1, `jolt ${sh.jolt}`);   // simulated swing: steady 1 g
   assert.ok(sh.build > 110 && sh.still < 70);
+});
+
+test('reject records, the button flag and double presses from firmware 0.4.0', () => {
+  const full = new Uint8Array(readFileSync(new URL('./fixtures/capture-log-full.bin', import.meta.url)));
+  const recs = split(full).map((b) => decodeRecord(b));
+  assert.ok(recs.every((r) => r.crcOk));
+  const rejects = recs.filter((r) => r.kind === KIND.reject);
+  assert.equal(rejects.length, 7);                                    // 6 in the gate test, 1 backswing
+  assert.ok(rejects[0].reasons & REJECT.noImpact);
+  assert.ok(rejects[2].reasons & REJECT.noBuildup);
+  assert.equal(rejects[5].reasons, REJECT.moving);
+  assert.equal(rejects[5].impactLevel, 40000);
+  assert.ok(rejects[5].still > 70 && rejects[5].buildup > 110 && rejects[5].peakGyro > 800);
+  assert.ok(recs.some((r) => r.kind === KIND.swing && r.flags.buttonNear));
+  const labels = recs.filter((r) => r.kind === KIND.label);
+  assert.equal(labels.filter((l) => l.double).length, 1);
+  const out = exportJson(recs.map((r, i) => ({ ...r, bytes: split(full)[i], logId: 9 })));
+  const rj = out.logs[0].sessions.flatMap((s) => s.rejects);
+  assert.equal(rj.length, 7);
+  assert.deepEqual(rj[5].reasons, ['moving']);
 });
 
 test('a damaged record fails its CRC', () => {
@@ -151,10 +171,14 @@ test('round mode: swings close together at the same spot keep only the most like
 test('capture packet and the new control ops', () => {
   const c = { enabled: true, session: true, full: false, syncing: true, flashOk: true, trigger: 150, logId: 0xdeadbeef,
     nextSeq: 42, swings: 30, labels: 10, usedKb: 210, totalKb: 2048, imuOverruns: 0 };
-  assert.deepEqual(decodeCapture(encodeCapture(c)), { version: 1, ...c, soundGate: null, gatedOut: 0 });   // 20-byte (0.2.x) packet
+  assert.deepEqual(decodeCapture(encodeCapture(c)), { version: 1, ...c, soundGate: null, gatedOut: 0, locked: null, ignoredPresses: 0, rejects: 0 });   // 20-byte (0.2.x) packet
   const c3 = { ...c, soundGate: 1000, gatedOut: 7 };
   assert.equal(encodeCapture(c3).byteLength, 24);
-  assert.deepEqual(decodeCapture(encodeCapture(c3)), { version: 1, ...c3 });
+  assert.deepEqual(decodeCapture(encodeCapture(c3)), { version: 1, ...c3, locked: null, ignoredPresses: 0, rejects: 0 });
+  const c4 = { ...c3, locked: true, ignoredPresses: 1300, rejects: 42 };
+  assert.equal(encodeCapture(c4).byteLength, 28);
+  assert.deepEqual(decodeCapture(encodeCapture(c4)), { version: 1, ...c4 });
+  assert.deepEqual([...encodeControl(OP.lockRound, true)], [0x06, 1]);
   assert.deepEqual([...encodeControl(OP.setSoundGate, 1000)], [0x21, 0xe8, 0x03]);
   // Hand-built as the firmware's CapturePacket (link.h).
   const b = new Uint8Array([1, 0b10011, 150, 0, 0xef, 0xbe, 0xad, 0xde, 42, 0, 30, 0, 10, 0, 210, 0, 0, 8, 3, 0]);

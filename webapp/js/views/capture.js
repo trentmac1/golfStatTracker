@@ -103,6 +103,7 @@ export async function captureView(root) {
         </div>` : ''}
         <p class="note">${c.soundGate ? 'Round mode uses 250 °/s and impact 1000. If a full shot isn\'t saved, lower the impact level; if walking still saves swings, raise it.' : 'A swing is saved whenever the rotation reaches the trigger: 250 °/s for full swings, 150 for chips and pitches.'}${c.soundGate == null ? ' Update the tracker to firmware 0.3.0 for round mode.' : ''} Settings stay on the tracker when it restarts${c.soundGate == null ? ' (firmware 0.3.0 and later)' : ''}.</p>
         ${!c.flashOk ? '<p class="note warn-note">The tracker can\'t use its flash storage, so nothing is being saved. Send Claude the serial log.</p>' : ''}
+        ${c.locked != null ? `<p class="note">Round ${c.locked ? '<b>locked by the app</b> (the button hold does nothing)' : 'not locked (a 2 s hold starts or ends it)'} · ${c.ignoredPresses} press${c.ignoredPresses === 1 ? '' : 'es'} ignored as walking · ${c.rejects} rejected swing${c.rejects === 1 ? '' : 's'} logged since the tracker started.</p>` : ''}
         ${c.imuOverruns ? `<p class="note warn-note">The motion sensor overflowed ${c.imuOverruns} time${c.imuOverruns === 1 ? '' : 's'}; some swings may have gaps (they're flagged in the export).</p>` : ''}
         <h2>Sync</h2>
         ${sync ? `<p class="note">Syncing… ${sync.records} record${sync.records === 1 ? '' : 's'} (${Math.round(sync.got / 1024)} KB)${sync.errors ? `, ${sync.errors} chunk${sync.errors === 1 ? '' : 's'} lost` : ''}.</p>`
@@ -138,7 +139,7 @@ export async function captureView(root) {
       }).join('') : '';
       return `<details class="capture-session" data-key="${esc(s.key)}" ${open ? 'open' : ''}>
         <summary><span><b>${dateText(s.start)}</b> ${timeText(s.start)}${s.end ? `–${timeText(s.end)}` : s.ended ? '' : ' (still on)'}</span>
-          <small>${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.notShot.size ? `${s.notShot.size} not shot${s.notShot.size === 1 ? '' : 's'} · ` : ''}${s.swings.length - s.real - s.pressSeqs.size - s.notShot.size} ${s.soundGate ? (s.swings.length - s.real - s.pressSeqs.size - s.notShot.size === 1 ? 'full shot' : 'full shots') : 'other'}${s.missed ? ` · ${s.missed} missed` : ''}</small></summary>
+          <small>${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.notShot.size ? `${s.notShot.size} not shot${s.notShot.size === 1 ? '' : 's'} · ` : ''}${s.swings.length - s.real - s.pressSeqs.size - s.notShot.size} ${s.soundGate ? (s.swings.length - s.real - s.pressSeqs.size - s.notShot.size === 1 ? 'full shot' : 'full shots') : 'other'}${s.missed ? ` · ${s.missed} missed` : ''}${s.rejects?.length ? ` · ${s.rejects.length} rejected` : ''}</small></summary>
         ${open ? `<ul class="swing-list">${swingRows || '<li class="note">No swings in this session.</li>'}</ul>
           ${s.missed ? `<p class="note">${s.missed} button press${s.missed === 1 ? '' : 'es'} had no swing 1.5–8 s before: shots the trigger missed.</p>` : ''}` : ''}
       </details>`;

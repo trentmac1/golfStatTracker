@@ -11,13 +11,26 @@ const O = { lat: -27.23, lon: 152.97 };
 const at = (x, y) => fromLocal(O, { x, y });
 const course = {
   holes: [
-    { n: 1, par: 4, tee: at(0, 0), green: at(0, 350) },
+    { n: 1, par: 4, tee: at(0, 0), green: at(0, 350), shape: { polygon: [at(-12, 338), at(12, 338), at(12, 362), at(-12, 362)].map((p) => [p.lat, p.lon]) } },
     { n: 2, par: 4, tee: at(40, 360), green: at(60, 60) },
     { n: 3, par: 3, tee: at(80, 40), green: at(200, 40) },
   ],
 };
 const t0 = Date.parse('2026-10-25T00:00:00Z');
 const round = { id: 'r1', date: new Date(t0).toISOString(), holeList: [1, 2, 3], holes: {}, tracker: true, holeLog: [{ hole: 1, at: t0 }], trackerDismissed: [] };
+
+test('nothing on a green is a shot or a possible shot', async () => {
+  const { onGreen } = await import('../js/trackerround.js');
+  const { REJECT } = await import('../js/capturelog.js');
+  assert.equal(onGreen(course, at(3, 355)), true);
+  assert.equal(onGreen(course, at(0, 330)), false);           // chip 8 m short of the green
+  assert.equal(onGreen(course, at(60, 60)), false);           // hole 2 has no outline
+  const swings = [swing(7, 2, 60000, at(0, 2)), swing(7, 3, 700000, at(3, 355))];   // tee shot, then a putt
+  const rejects = [swing(7, 4, 760000, at(-4, 350), { reasons: REJECT.noImpact, impactLevel: 600, lowImpact: 2000, buildup: 160 })];
+  const plan = planTrackerShots({ round, course, shots: [], swings, presses: [], rejects });
+  assert.deepEqual(plan.add.map((s) => s.tracker.seq), [2]);
+  assert.equal(plan.possible.length, 0);
+});
 
 test('distance to a hole is to its line of play', () => {
   assert.ok(distanceToHole(at(5, 200), course.holes[0]) < 6);
@@ -88,13 +101,20 @@ test('possible shots: hidden swings and near-miss rejects, not next to a shot, n
     { ...w(4, 400000, at(2, 210)), why: 'thud' },                             // second shot, hidden as a thud: shown
   ];
   const rejects = [
-    w(5, 700000, at(0, 330), { reasons: REJECT.noImpact, impactLevel: 600 }),  // chip with a quiet strike: shown
+    w(5, 700000, at(0, 330), { reasons: REJECT.noImpact, impactLevel: 600, lowImpact: 1700, buildup: 160 }),  // chip with a quiet strike: shown
     w(6, 800000, at(0, 340), { reasons: REJECT.noImpact | REJECT.moving, impactLevel: 600 }),   // two rules: not shown
     w(7, 900000, at(0, 345), { reasons: REJECT.moving, still: 300 }),           // walking about: not shown
     w(8, 950000, at(0, 348), { reasons: REJECT.noBuildup, buildup: 90, peakGyro: 200 }),   // too small: not shown
   ];
   assert.equal(nearMiss(rejects[0]), 'no strike heard');
   assert.equal(nearMiss(rejects[1]), null);
+  // 31 Oct tuning: a quiet strike needs a real build-up and a low-band thump;
+  // moving just before needs a loud strike.
+  assert.equal(nearMiss({ ...rejects[0], lowImpact: 900 }), null);
+  assert.equal(nearMiss({ ...rejects[0], buildup: 120 }), null);
+  assert.equal(nearMiss(w(9, 0, at(0, 0), { reasons: REJECT.moving, still: 116, impactLevel: 3243 })), 'you were moving just before');
+  assert.equal(nearMiss(w(9, 0, at(0, 0), { reasons: REJECT.moving, still: 116, impactLevel: 1500 })), null);
+  assert.equal(nearMiss(w(9, 0, at(0, 0), { reasons: REJECT.moving, still: 130, impactLevel: 4000 })), null);
   const plan = planTrackerShots({ round, course, shots: [], swings, presses: [], hidden, rejects });
   assert.deepEqual(plan.possible.map((p) => p.seq), [4, 5]);
   assert.ok(plan.possible.every((p) => p.hole === 1));

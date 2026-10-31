@@ -8,6 +8,7 @@ import { decodeRecord, sessions, notShots, REJECT } from './capturelog.js';
 import { distance, toLocal } from './geo.js';
 import { holeLine, applyAutoLie } from './holemap.js';
 import { playOrder } from './stats.js';
+import { pointInPolygon } from './greens.js';
 
 export const ROUND_TRIGGER = 250, ROUND_GATE = 1000;   // as the Training data screen's Round mode
 export const shotId = (logId, seq) => `trk-${(logId >>> 0).toString(16)}-${seq}`;
@@ -94,6 +95,16 @@ export function holeFor(course, round, p, timeMs) {
   return bestD < 80 || here === Infinity ? best : h;
 }
 
+// On a green (inside any hole's mapped green outline): putting, picking the
+// ball up, walking off. Not a full shot. On 31 Oct, 5 saved swings and 227
+// rejects were on greens and none of the 27 shots; the closest chip was 5.7 m
+// off the edge. Holes with no outline never count.
+export function onGreen(course, p) {
+  if (!p || !course?.holes) return false;
+  return course.holes.some((h) => h?.shape?.polygon?.length > 2
+    && pointInPolygon(p, h.shape.polygon.map(([lat, lon]) => ({ lat, lon }))));
+}
+
 // ---------- turning swings into shots ----------
 // Swings and short-game presses saved during the round, from capture rows
 // (any logs). Swings the app marks as not shots (thud, knock, same spot)
@@ -129,12 +140,19 @@ export function roundTrackerData(round, rows, now = Date.now()) {
 
 // A reject worth showing as a possible shot: a real-sized swing that failed
 // only one of the tracker's rules, and not by much. Walking and handling
-// fail more than one, or by a lot, and stay out of the way.
+// fail more than one, or by a lot, and stay out of the way. Tuned on the
+// 31 Oct round (27 shots; the old rules showed 69 empty ? pins):
+// - no strike heard: the 2 chips found this way had low band 1649 and 2439
+//   and build-up 167 and 182; walking rarely has both.
+// - moving just before: the 2 shots (still 116 and 119) had strikes of 3243
+//   and 4835; walking past something noisy is much quieter.
+export const NEAR_MISS = { peak: 300, impact: 300, low: 1400, build: 140, buildFast: 80, still: 120, movingImpact: 2500 };
 export function nearMiss(j) {
-  if (!j.pos || j.peakGyro < 300) return null;
-  if (j.reasons === REJECT.noImpact && j.impactLevel >= 300) return 'no strike heard';
-  if (j.reasons === REJECT.noBuildup && j.buildup >= 80) return 'too sudden for a swing';
-  if (j.reasons === REJECT.moving && j.still <= 140) return 'you were moving just before';
+  const N = NEAR_MISS;
+  if (!j.pos || j.peakGyro < N.peak) return null;
+  if (j.reasons === REJECT.noImpact && j.impactLevel >= N.impact && (j.lowImpact ?? 0) >= N.low && j.buildup >= N.build) return 'no strike heard';
+  if (j.reasons === REJECT.noBuildup && j.buildup >= N.buildFast) return 'too sudden for a swing';
+  if (j.reasons === REJECT.moving && j.still <= N.still && j.impactLevel >= N.movingImpact) return 'you were moving just before';
   return null;
 }
 export const HIDDEN_WHY = { thud: 'it sounded like a thud', jolt: 'the tracker jumped like a knock', 'same spot': 'a louder swing was saved nearby' };
@@ -145,17 +163,17 @@ const touched = (s) => s.edited || s.accepted || s.club || s.lieByHand || s.targ
 // What to change so the round's tracker shots match the synced swings: add
 // new ones, drop untouched ones the checks no longer count (a louder swing
 // from the same spot arrived later), and never bring back one the player
-// deleted. A swing within 10 m and 3 minutes of a shot marked by hand is
-// already that shot. Also lists possible shots: swings the checks hid and
-// near-miss rejects, not deleted, not next to a shot already there, one per
-// spot (the loudest). Returns { add: [shot], remove: [id], presses: {hole: n},
+// deleted. Nothing on a green counts (onGreen). A swing within 10 m and 3
+// minutes of a shot marked by hand is already that shot. Also lists possible
+// shots: swings the checks hid and near-miss rejects, not deleted, not next
+// to a shot already there, one per spot (the loudest). Returns { add: [shot], remove: [id], presses: {hole: n},
 // possible: [{ id, hole, lat, lon, time, why, ... }] }.
 export function planTrackerShots({ round, course, shots, swings, presses, hidden = [], rejects = [] }) {
   const dismissed = new Set(round.trackerDismissed ?? []);
   const want = new Map();
   for (const w of swings) {
     const id = shotId(w.logId, w.seq);
-    if (dismissed.has(id) || !w.pos) continue;
+    if (dismissed.has(id) || !w.pos || onGreen(course, w.pos)) continue;
     const t = w.time * 1000;
     const marked = shots.some((s) => s.source !== 'tracker' && s.lat != null && distance(s, w.pos) < 10 && t - s.time >= -60000 && t - s.time < 180000);
     if (!marked) want.set(id, w);
@@ -185,7 +203,7 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
   const cands = [
     ...hidden.map((w) => ({ w, why: HIDDEN_WHY[w.why] ?? w.why, kind: 'hidden' })),
     ...rejects.map((j) => ({ w: j, why: nearMiss(j), kind: 'reject' })).filter((c) => c.why),
-  ].filter(({ w }) => w.pos && !dismissed.has(shotId(w.logId, w.seq)) && !have.has(shotId(w.logId, w.seq)))
+  ].filter(({ w }) => w.pos && !onGreen(course, w.pos) && !dismissed.has(shotId(w.logId, w.seq)) && !have.has(shotId(w.logId, w.seq)))
     .map(({ w, why, kind }) => ({ id: shotId(w.logId, w.seq), lat: w.pos.lat, lon: w.pos.lon, time: w.time * 1000, why, kind,
       peakGyro: w.peakGyro ?? null, impact: w.impactLevel ?? null, logId: w.logId, seq: w.seq, hdop: w.hdop }))
     .filter((c) => !final.some((s) => s.lat != null && near(c, s, 15, 90000)))

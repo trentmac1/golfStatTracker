@@ -57,24 +57,24 @@ test('swing shape: thud ratio and jolt from a firmware-written swing', async () 
   assert.ok(sh.build > 110 && sh.still < 70);
 });
 
-test('reject records, the button flag and double presses from firmware 0.4.0', () => {
+test('reject records, the button flag and double presses from firmware 0.4.1', () => {
   const full = new Uint8Array(readFileSync(new URL('./fixtures/capture-log-full.bin', import.meta.url)));
   const recs = split(full).map((b) => decodeRecord(b));
   assert.ok(recs.every((r) => r.crcOk));
   const rejects = recs.filter((r) => r.kind === KIND.reject);
-  assert.equal(rejects.length, 7);                                    // 6 in the gate test, 1 backswing
+  assert.equal(rejects.length, 5);                                    // 4 one-rule fails in the gate test, 1 backswing
   assert.ok(rejects[0].reasons & REJECT.noImpact);
   assert.ok(rejects[2].reasons & REJECT.noBuildup);
-  assert.equal(rejects[5].reasons, REJECT.moving);
-  assert.equal(rejects[5].impactLevel, 40000);
-  assert.ok(rejects[5].still > 70 && rejects[5].buildup > 110 && rejects[5].peakGyro > 800);
+  assert.equal(rejects[3].reasons, REJECT.moving);
+  assert.equal(rejects[3].impactLevel, 40000);
+  assert.ok(rejects[3].still > 80 && rejects[3].buildup > 110 && rejects[3].peakGyro > 800);
   assert.ok(recs.some((r) => r.kind === KIND.swing && r.flags.buttonNear));
   const labels = recs.filter((r) => r.kind === KIND.label);
   assert.equal(labels.filter((l) => l.double).length, 1);
   const out = exportJson(recs.map((r, i) => ({ ...r, bytes: split(full)[i], logId: 9 })));
   const rj = out.logs[0].sessions.flatMap((s) => s.rejects);
-  assert.equal(rj.length, 7);
-  assert.deepEqual(rj[5].reasons, ['moving']);
+  assert.equal(rj.length, 5);
+  assert.deepEqual(rj[3].reasons, ['moving']);
 });
 
 test('a damaged record fails its CRC', () => {

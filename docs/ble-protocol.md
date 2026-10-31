@@ -64,7 +64,7 @@ Fits in one default-MTU notification.
 | 0x11 | erase log | uint32 log_id | Phase 3; only if log_id matches the tracker's current log |
 | 0x12 | stop sync | – | Phase 3 |
 | 0x20 | set trigger | uint16 deg/s | Phase 3; gyro magnitude that starts a swing candidate, 30–2000, default 150. Phase 5 may add fields |
-| 0x21 | set sound gate | uint16 level | Firmware 0.3.0; 0 off (range mode). Otherwise (round mode, 1000) a candidate is saved only if the envelope (0–65535) reaches this level within −400…+250 ms of the peak rotation, the mean rotation over the 0.3 s before the peak is at least 110 deg/s (firmware 0.3.1; rules out knocks), no button press came within 0.6 s of the peak (0.3.1; rules out the jolt of reaching for the button), and the mean rotation 1.5–1.0 s before the peak is at most 70 deg/s (0.3.2; still at address, rules out knocks while moving about) |
+| 0x21 | set sound gate | uint16 level | Firmware 0.3.0; 0 off (range mode). Otherwise (round mode, 1000) a candidate is saved only if the envelope (0–65535) reaches this level within −400…+250 ms of the peak rotation, the mean rotation over the 0.3 s before the peak is at least 110 deg/s (firmware 0.3.1; rules out knocks), no button press came within 0.6 s of the peak (0.3.1; rules out the jolt of reaching for the button), and the mean rotation 1.5–1.0 s before the peak is at most 70 deg/s (0.3.2; still at address, rules out knocks while moving about; 80 since 0.4.1) |
 
 Trigger, sound gate and capture on/off are kept on the tracker's internal flash across restarts (firmware 0.3.0).
 
@@ -87,7 +87,7 @@ Unknown ops are ignored, so an older tracker doesn't break a newer app.
 | 20 | sound_gate | uint16 | 0 off; firmware 0.3.0 |
 | 22 | gated_out | uint16 | candidates dropped by the sound gate since start-up |
 | 24 | ignored_presses | uint16 | button presses ignored as walking since start-up (0.4.0) |
-| 26 | rejects | uint16 | reject records written since start-up (0.4.0) |
+| 26 | rejects | uint16 | reject records written since start-up (0.4.0; since 0.4.1 only candidates that failed one rule) |
 
 ## Capture log — Phase 3
 
@@ -144,7 +144,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 7038 | low_impact | uint16 | highest low-band value within −400…+250 ms of the peak |
 | 7040 | low_band | uint8 × low_count | √ of the band-passed (about 50–370 Hz) peak level per 64 microphone samples: a dull thud shows here, a sharp click mostly in the envelope |
 
-**Reject** (kind 6, 48 bytes; firmware 0.4.0): a Round-mode candidate that wasn't saved as a swing, with what it was measured at. Written for every one, so a shot the tracker missed can be traced to the rule that dropped it. After a reject there's no cooldown: a backswing that reaches the trigger must not hold off the downswing.
+**Reject** (kind 6, 48 bytes; firmware 0.4.0): a Round-mode candidate that wasn't saved as a swing, with what it was measured at. Written for every one that failed a single rule (0.4.1; 0.4.0 wrote them all, about 2,000 an hour while walking), so a shot the tracker missed can be traced to the rule that dropped it. Candidates that fail two or three rules (walking) are only counted. After a reject there's no cooldown: a backswing that reaches the trigger must not hold off the downswing.
 
 | Offset (after header) | Field | Type | Notes |
 |---|---|---|---|
@@ -157,7 +157,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 30 | still | uint16 | mean rotation 1.5–1.0 s before the peak, deg/s |
 | 32 | jolt | uint16 | biggest acceleration change between samples within 3 samples of the impact moment, g × 100 |
 | 34 | impact_ms | int16 | time of the impact value relative to the peak |
-| 36 | reasons | uint8 | bit0 no impact (under the gate), bit1 no build-up (under 110), bit2 moving before (still over 70) |
+| 36 | reasons | uint8 | bit0 no impact (under the gate), bit1 no build-up (under 110), bit2 moving before (still over 70; 80 since 0.4.1) |
 | 37 | flags | uint8 | as a swing's flags |
 | 38 | trigger | uint16 | deg/s |
 

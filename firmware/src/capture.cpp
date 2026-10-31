@@ -255,7 +255,8 @@ namespace {
       // - standing still first: the mean rotation 1.5-1.0 s before the peak
       //   (address, before the backswing) at most STILL_MAX. In the 15-17 Oct
       //   data full shots were at most 58 deg/s here; knocks and handling
-      //   that got past the build-up check were mostly 82-360.
+      //   that got past the build-up check were mostly 82-360. 31 Oct round:
+      //   a tee shot and a chip at 74 and 79 (a waggle); 80 since 0.4.1.
       float still = 0;
       uint16_t ns = 0;
       if (peakIdx >= capture::PRE) {
@@ -273,7 +274,11 @@ namespace {
                      | (ns && still > capture::STILL_MAX ? capture::R_MOVING : 0);
       if (reason) {
         if (nGated < 65535) nGated++;
-        writeReject(peakMs, reason, impact, lowImpact, audioPeak, build, still, impactMs, flags);
+        // Only candidates that failed one rule leave a record (0.4.1): on
+        // 31 Oct every missed shot failed just one, while walking (3,300 of
+        // 4,480 records in 2 hours) fails two or three.
+        bool one = (reason & (reason - 1)) == 0;
+        if (one) writeReject(peakMs, reason, impact, lowImpact, audioPeak, build, still, impactMs, flags);
         // No cooldown after a reject: a backswing that reaches the trigger
         // (about 150 deg/s on most of Trent's swings, up to 650) would
         // otherwise hold off the downswing 0.8-1 s later and lose the shot.

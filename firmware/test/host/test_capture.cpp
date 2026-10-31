@@ -146,22 +146,22 @@ int main() {
   printf("gate: %u kept, %u dropped, %u rejects\n", store::swings() - before, capture::gatedOut(), capture::rejects());
   CHECK(store::swings() == before + 2);
   CHECK(capture::gatedOut() == 6);    // the moving-about itself reached the 150 trigger twice (silent)
-  CHECK(capture::rejects() == 6);
+  CHECK(capture::rejects() == 4);     // ...and failed two rules (silent and moving): counted, no record
   auto rs2 = records();
-  // Every dropped candidate left a reject record with its reasons.
+  // Every candidate that failed one rule left a reject record with its reason.
   std::vector<uint8_t> reasons;
   for (auto& r : rs2) if (r[0] == store::K_REJECT) { CHECK(r.size() == 48); CHECK(store::crc16(r.data() + 8, 40) == u16(r.data() + 6)); reasons.push_back(r[8 + 36]); }
-  CHECK(reasons.size() == 6);
-  CHECK(reasons[0] & capture::R_NO_IMPACT);                 // silent
-  CHECK(reasons[1] & capture::R_NO_IMPACT);                 // sound outside the window
-  CHECK(reasons[2] & capture::R_NO_BUILDUP);                // knock
-  CHECK(reasons[5] == capture::R_MOVING);                   // the swing after moving about: only that
+  CHECK(reasons.size() == 4);
+  CHECK(reasons[0] == capture::R_NO_IMPACT);                // silent
+  CHECK(reasons[1] == capture::R_NO_IMPACT);                // sound outside the window
+  CHECK(reasons[2] == capture::R_NO_BUILDUP);               // knock
+  CHECK(reasons[3] == capture::R_MOVING);                   // the swing after moving about: only that
   // The reject's own fields: the moving one has a high "still" value.
   {
     const uint8_t* x = nullptr; int k = 0;
-    for (auto& r : rs2) if (r[0] == store::K_REJECT && ++k == 6) x = r.data() + 8 + 20;
+    for (auto& r : rs2) if (r[0] == store::K_REJECT && ++k == 4) x = r.data() + 8 + 20;
     printf("moving reject: peak %u impact %u build %u still %u jolt %.2f at %+d ms\n", u16(x), u16(x + 2), u16(x + 8), u16(x + 10), u16(x + 12) / 100.0, s16(x + 14));
-    CHECK(u16(x + 10) > 70 && u16(x) > 800 && u16(x + 2) == 40000 && u16(x + 8) > 110);
+    CHECK(u16(x + 10) > 80 && u16(x) > 800 && u16(x + 2) == 40000 && u16(x + 8) > 110);
   }
   // The swing with a press 150 ms after its peak is saved, flagged bit 3.
   int flagged = 0;

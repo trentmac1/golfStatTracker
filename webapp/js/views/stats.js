@@ -4,8 +4,9 @@ import { deriveRound, clubDistances } from '../stats.js';
 import { DEFAULT_BAG } from '../config.js';
 import { roundRating } from './pastround.js';
 import { sgSummary, clubReport, CATEGORIES } from '../sg.js';
-import { estimate } from '../handicap.js';
-import { esc, m, one, signed, fmtDate } from '../ui.js';
+import { estimate, differential } from '../handicap.js';
+import { esc, m, one, signed, fmtDate, sheet } from '../ui.js';
+import { METRICS, seriesFor, trendNote } from '../trends.js';
 
 // Approach result grid, laid out as if looking down the shot at the green.
 const GRID = [
@@ -109,10 +110,10 @@ export async function statsView(root) {
     const sgBars = sgRows.map((r) => {
       const room = r.v < 0 ? zero : 100 - zero;
       const w = (Math.abs(r.v) / sgMax) * room;
-      return `<div class="sg-row" title="${r.label}: ${r.v.toFixed(1)} strokes per round">
+      return `<button class="sg-row" data-metric="sg-${r.k}" title="${r.label}: ${r.v.toFixed(1)} strokes per round">
         <span class="sg-label">${r.label}</span>
         <span class="sg-track" style="--zero:${zero}%"><i class="sg-bar ${r.v < 0 ? 'loss' : 'gain'}" style="${r.v < 0 ? `right:${100 - zero}%;width:${w}%` : `left:${zero}%;width:${w}%`}"></i></span>
-        <b class="sg-val">${r.v > 0 ? '+' : r.v < 0 ? '−' : ''}${Math.abs(r.v).toFixed(1)}</b></div>`;
+        <b class="sg-val">${r.v > 0 ? '+' : r.v < 0 ? '−' : ''}${Math.abs(r.v).toFixed(1)}</b></button>`;
     }).join('');
 
     // ---------- clubs to work on ----------
@@ -138,31 +139,32 @@ export async function statsView(root) {
         <p class="sub">${items.length} ${items.length === 1 ? 'round' : 'rounds'}, ${holes} holes</p>
       </header>
 
-      <div class="hc-card">
+      <button class="hc-card" data-metric="hcDiff">
         <div class="hc-num">${hc.index != null ? `<b>${hc.index.toFixed(1)}</b><span>Handicap estimate</span>`
           : hc.usable ? `<b>${hc.diffs.at(-1).toFixed(1)}</b><span>Latest differential</span>` : '<b class="none">–</b><span>Handicap estimate</span>'}</div>
         <p>${hcNote}</p>
-      </div>
+      </button>
       ${hcMissing}${hcNine}
 
       <h2>Score to par, per 18</h2>
-      <svg class="trend" viewBox="0 0 ${W} ${H}" role="img" aria-label="Score to par by round">
+      <svg class="trend tappable" data-metric="toPar" viewBox="0 0 ${W} ${H}" role="img" aria-label="Score to par by round">
         <line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" class="axis"/>${bars}
         <text x="${W - 3}" y="12" class="axis-t end">+${Math.round(maxAbs)}</text><text x="${W - 3}" y="${H - 3}" class="axis-t end">−${Math.round(maxAbs)}</text>
       </svg>
 
+      <p class="note tap-hint">Tap a stat to see how it has changed over these rounds.</p>
       <div class="tiles">
-        <div class="tile"><b>${signed(Math.round(per18(sum((r) => r.toPar))))}</b><span>Avg to par</span><small>per 18 holes</small></div>
-        <div class="tile"><b>${ratio(sum((r) => r.fairwaysHit), sum((r) => r.fairwayChances))}</b><span>Fairways</span><small>L ${fw.left} · R ${fw.right} · Short ${fw.short}</small></div>
-        <div class="tile"><b>${ratio(sum((r) => r.gir), sum((r) => r.girChances))}</b><span>Greens in reg.</span></div>
-        <div class="tile"><b>${one(perPuttHole(sum((r) => r.putts)))}</b><span>Putts</span><small>per 18</small></div>
-        <div class="tile"><b>${one(perPuttHole(sum((r) => r.threePutts)))}</b><span>3-putts</span><small>per 18</small></div>
-        <div class="tile"><b>${ratio(sum((r) => r.scrambles), sum((r) => r.scrambleChances))}</b><span>Scrambling</span></div>
-        <div class="tile"><b>${ratio(sum((r) => r.sandSaves), sum((r) => r.sandChances))}</b><span>Sand saves</span></div>
-        <div class="tile"><b>${one(per18(sum((r) => r.penalties)))}</b><span>Penalties</span><small>per 18</small></div>
-        <div class="tile"><b>${one(parAvg(3))} · ${one(parAvg(4))} · ${one(parAvg(5))}</b><span>Avg on par 3 · 4 · 5</span></div>
-        <div class="tile"><b>${avgOf((r) => r.drivingDistance) ? `${m(avgOf((r) => r.drivingDistance))} m` : '–'}</b><span>Driving distance</span></div>
-        <div class="tile"><b>${avgOf((r) => r.proximity) != null ? `${m(avgOf((r) => r.proximity))} m` : '–'}</b><span>Approach to centre</span></div>
+        <button class="tile" data-metric="toPar"><b>${signed(Math.round(per18(sum((r) => r.toPar))))}</b><span>Avg to par</span><small>per 18 holes</small></button>
+        <button class="tile" data-metric="fairways"><b>${ratio(sum((r) => r.fairwaysHit), sum((r) => r.fairwayChances))}</b><span>Fairways</span><small>L ${fw.left} · R ${fw.right} · Short ${fw.short}</small></button>
+        <button class="tile" data-metric="gir"><b>${ratio(sum((r) => r.gir), sum((r) => r.girChances))}</b><span>Greens in reg.</span></button>
+        <button class="tile" data-metric="putts"><b>${one(perPuttHole(sum((r) => r.putts)))}</b><span>Putts</span><small>per 18</small></button>
+        <button class="tile" data-metric="threePutts"><b>${one(perPuttHole(sum((r) => r.threePutts)))}</b><span>3-putts</span><small>per 18</small></button>
+        <button class="tile" data-metric="scrambling"><b>${ratio(sum((r) => r.scrambles), sum((r) => r.scrambleChances))}</b><span>Scrambling</span></button>
+        <button class="tile" data-metric="sand"><b>${ratio(sum((r) => r.sandSaves), sum((r) => r.sandChances))}</b><span>Sand saves</span></button>
+        <button class="tile" data-metric="penalties"><b>${one(per18(sum((r) => r.penalties)))}</b><span>Penalties</span><small>per 18</small></button>
+        <button class="tile" data-metric="parAvg"><b>${one(parAvg(3))} · ${one(parAvg(4))} · ${one(parAvg(5))}</b><span>Avg on par 3 · 4 · 5</span></button>
+        <button class="tile" data-metric="driving"><b>${avgOf((r) => r.drivingDistance) ? `${m(avgOf((r) => r.drivingDistance))} m` : '–'}</b><span>Driving distance</span></button>
+        <button class="tile" data-metric="proximity"><b>${avgOf((r) => r.proximity) != null ? `${m(avgOf((r) => r.proximity))} m` : '–'}</b><span>Approach to centre</span></button>
       </div>
 
       <h2>Strokes gained</h2>
@@ -204,7 +206,37 @@ export async function statsView(root) {
     </section>`;
   }
 
+  // Score differential per rated round, using the index the current rounds give.
+  function hcMetric(items) {
+    const rated = (x) => ({ ...roundRating(x.round, x.course), holes: x.r.holes.map((h) => ({ par: h.par, si: x.course.holes[h.hole - 1]?.si ?? null, score: h.complete ? h.score : null })) });
+    const idx = estimate(items.map(rated)).index;
+    return { label: 'Score differential', sub: 'what each round counts as towards a handicap', better: 'down', fmt: (v) => (v == null ? '–' : v.toFixed(1)),
+      value: (x) => differential(rated(x), idx)?.diff ?? null,
+      empty: 'Differentials need rounds of 14 or more holes on a course with its rating and slope entered.' };
+  }
+
+  function openTrend(key) {
+    const body = (d) => {
+      const items = range ? all.slice(-range) : all;
+      const metric = key === 'hcDiff' ? hcMetric(items) : METRICS[key];
+      d.querySelector('.trend-body').innerHTML = trendBody(metric, items, range);
+    };
+    sheet('<div class="trend-body"></div>', (d) => {
+      body(d);
+      d.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-range]');
+        if (!b) return;
+        range = Number(b.dataset.range);
+        await db.setSetting('statsRange', range);
+        draw();
+        body(d);
+      });
+    });
+  }
+
   root.addEventListener('click', async (e) => {
+    const t = e.target.closest('[data-metric]');
+    if (t) { openTrend(t.dataset.metric); return; }
     const b = e.target.closest('[data-range]');
     if (!b) return;
     range = Number(b.dataset.range);
@@ -214,3 +246,74 @@ export async function statsView(root) {
   draw();
   return {};
 }
+
+const rangeSeg = (range) => `<div class="seg small" role="group" aria-label="Rounds included">
+  ${[[5, 'Last 5'], [10, 'Last 10'], [0, 'All']].map(([v, t]) => `<button data-range="${v}" class="${range === v ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+
+// Sheet contents for one stat: title, range selector, line chart, note, and the values by round.
+export function trendBody(metric, items, range) {
+  const series = seriesFor(metric, items);
+  const isMulti = series.length > 1;
+  const any = series.some((s) => s.points.length);
+  const head = `<h2 class="sheet-title">${esc(metric.label)}</h2>
+    ${metric.sub ? `<p class="sheet-sub">${esc(metric.sub)}</p>` : ''}${rangeSeg(range)}`;
+  if (!any) return `${head}<p class="empty">${esc(metric.empty ?? 'None of these rounds have this stat yet.')}</p>`;
+  const notes = series.filter((s) => s.points.length).map((s) => {
+    const n = trendNote(metric, s.points);
+    return n ? `<p class="sheet-note">${isMulti ? `<b>${esc(s.name)}.</b> ` : ''}${esc(n)}</p>` : '';
+  }).join('');
+  const rows = [...items.keys()].reverse().map((i) => {
+    const vals = series.map((s) => s.points.find((p) => p.i === i)?.v ?? null);
+    if (vals.every((v) => v == null)) return '';
+    const x = items[i];
+    return `<li><span>${fmtDate(x.round.date)}<small>${esc(x.course.name)}${x.r.holesPlayed < 18 ? ` · ${x.r.holesPlayed} holes` : ''}</small></span>
+      <b>${vals.map((v) => metric.fmt(v)).join(' · ')}</b></li>`;
+  }).join('');
+  return `${head}${lineChart(metric, series, items)}${notes}
+    <ul class="trend-rounds">${isMulti ? `<li class="trend-rounds-head"><span>Round</span><b>${series.map((s) => esc(s.name)).join(' · ')}</b></li>` : ''}${rows}</ul>`;
+}
+
+// Line chart: one point per round (oldest left), a dashed line at the average of
+// the rounds shown, and the first and last dates on the x axis.
+function lineChart(metric, series, items) {
+  const W = 340, H = 190, L = 38, R = multiOr(series, 42, 10), T = 12, B = 24;
+  const vals = series.flatMap((s) => s.points.map((p) => p.v));
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (metric.zero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  const span = hi - lo || Math.max(1, Math.abs(hi) * 0.2);
+  lo -= span * 0.12; hi += span * 0.12;
+  if (metric.min != null) lo = Math.max(lo, metric.min);
+  if (metric.max != null) hi = Math.min(hi, metric.max);
+  if (hi - lo < 1e-9) hi = lo + 1;
+  const n = items.length;
+  const xAt = (i) => (n === 1 ? L + (W - L - R) / 2 : L + (i / (n - 1)) * (W - L - R));
+  const yAt = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const ticks = [lo, (lo + hi) / 2, hi];
+  const grid = ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${yAt(v)}" y2="${yAt(v)}" class="grid"/>
+    <text x="${L - 5}" y="${yAt(v) + 4}" class="axis-t end">${esc(metric.fmt(v))}</text>`).join('');
+  const zeroLine = metric.zero && lo < 0 && hi > 0 ? `<line x1="${L}" x2="${W - R}" y1="${yAt(0)}" y2="${yAt(0)}" class="zero"/>` : '';
+  const lines = series.map((s, si) => {
+    if (!s.points.length) return '';
+    const cls = `s${si}`;
+    const path = s.points.map((p, j) => `${j ? 'L' : 'M'}${xAt(p.i).toFixed(1)},${yAt(p.v).toFixed(1)}`).join('');
+    const avg = s.points.reduce((a, p) => a + p.v, 0) / s.points.length;
+    const avgLine = multi(series) ? '' : `<line x1="${L}" x2="${W - R}" y1="${yAt(avg)}" y2="${yAt(avg)}" class="avg"/>`;
+    const dots = s.points.map((p) => `<circle cx="${xAt(p.i)}" cy="${yAt(p.v)}" r="${n > 30 ? 2.5 : 4}" class="${cls}"><title>${fmtDate(items[p.i].round.date)}: ${esc(metric.fmt(p.v))}</title></circle>`).join('');
+    return `${avgLine}<path d="${path}" class="line ${cls}"/>${dots}`;
+  }).join('');
+  // Series names beside each line's last point, nudged apart so they don't overlap.
+  const tags = multi(series) ? series.map((s, si) => ({ s, si, last: s.points.at(-1) })).filter((t) => t.last)
+    .map((t) => ({ ...t, y: yAt(t.last.v) + 4 })).sort((a, b) => a.y - b.y)
+    .map((t, k, arr) => { if (k && t.y - arr[k - 1].y < 13) t.y = arr[k - 1].y + 13; return t; })
+    .map((t) => `<text x="${xAt(t.last.i) + 7}" y="${t.y}" class="axis-t s-tag s${t.si}">${esc(t.s.name)}</text>`).join('') : '';
+  const dates = n > 1
+    ? `<text x="${L}" y="${H - 6}" class="axis-t">${shortDate(items[0].round.date)}</text><text x="${W - R}" y="${H - 6}" class="axis-t end">${shortDate(items[n - 1].round.date)}</text>`
+    : `<text x="${xAt(0)}" y="${H - 6}" class="axis-t mid">${shortDate(items[0].round.date)}</text>`;
+  return `<svg class="tchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(metric.label)} by round">${grid}${zeroLine}${lines}${tags}${dates}</svg>${multi(series) ? '' : (() => {
+    const pts = series[0].points;
+    return `<p class="tchart-key"><i></i>Average of these rounds: <b>${esc(metric.fmt(pts.reduce((a, p) => a + p.v, 0) / pts.length))}</b></p>`;
+  })()}`;
+}
+const multi = (series) => series.length > 1;
+const multiOr = (series, a, b) => (multi(series) ? a : b);
+const shortDate = (iso) => new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: '2-digit' });

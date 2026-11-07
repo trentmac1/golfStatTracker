@@ -408,6 +408,45 @@ td.bar-col { height: 34px; }
 .sg-val { font: 700 22px/1 var(--num); text-align: right; white-space: nowrap; }
 .sg-axis { display: grid; grid-template-columns: 96px 1fr 58px; gap: 8px; font-size: 12px; color: var(--muted); }
 .sg-axis-mid { display: flex; justify-content: space-between; }
+
+/* ---------- stat trends (tap a stat) ---------- */
+button[data-metric] { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; -webkit-tap-highlight-color: transparent; }
+button.tile[data-metric] { position: relative; padding-right: 26px; }
+button.tile[data-metric]::after { content: '›'; position: absolute; top: 8px; right: 12px; font: 700 22px/1 var(--num); color: var(--muted); opacity: .6; }
+button.tile[data-metric]:active, button.sg-row[data-metric]:active { background: #eef2ea; }
+button.hc-card { border: 0; }
+button.hc-card:active { background: #0d2d1b; }
+button.sg-row { background: transparent; border: 0; padding: 2px 0; border-radius: 8px; }
+.trend.tappable { cursor: pointer; }
+.tap-hint { margin: 0 0 8px; }
+.trend-body .seg.small { margin: 12px 0 10px; }
+.trend-body .empty { margin-top: 14px; }
+.tchart { width: 100%; height: auto; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }
+.tchart .grid { stroke: #e6ebe2; }
+.tchart .zero { stroke: var(--muted); stroke-opacity: .6; }
+.tchart .avg { stroke: var(--flag); stroke-width: 2; stroke-dasharray: 5 4; }
+.tchart .axis-t { font: 600 11px var(--num); fill: var(--muted); }
+.tchart .axis-t.end { text-anchor: end; }
+.tchart .axis-t.mid { text-anchor: middle; }
+.tchart-key { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.tchart-key i { width: 22px; border-top: 2px dashed var(--flag); }
+.tchart-key b { color: var(--ink); }
+.tchart .line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.tchart .line.s0 { stroke: var(--turf); }
+.tchart .line.s1 { stroke: var(--blue); stroke-dasharray: 6 3; }
+.tchart .line.s2 { stroke: var(--ink); stroke-dasharray: 2 3; }
+.tchart circle.s0 { fill: var(--turf); }
+.tchart circle.s1 { fill: var(--blue); }
+.tchart circle.s2 { fill: var(--ink); }
+.tchart .s-tag { font-size: 12px; }
+.tchart .s-tag.s0 { fill: var(--turf); } .tchart .s-tag.s1 { fill: var(--blue); } .tchart .s-tag.s2 { fill: var(--ink); }
+.trend-rounds { list-style: none; margin: 12px 0 0; padding: 0; max-height: 34dvh; overflow-y: auto; border-top: 1px solid var(--line); }
+.trend-rounds li { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-bottom: 1px solid #e6ebe2; }
+.trend-rounds span { flex: 1; font-weight: 600; }
+.trend-rounds small { display: block; color: var(--muted); font-weight: 400; }
+.trend-rounds b { font: 700 24px/1 var(--num); white-space: nowrap; }
+.trend-rounds-head { color: var(--muted); font-size: 13px; }
+.trend-rounds-head b { font: 600 13px var(--body); }
 .sg-axis-mid i { font-style: normal; }
 .work-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: w; }
 .work-list li { display: grid; grid-template-columns: 64px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }

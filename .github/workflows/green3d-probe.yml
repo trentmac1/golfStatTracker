@@ -1,0 +1,18 @@
+name: Green 3D probe
+on:
+  push:
+    branches: [green3d-probe]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node analysis/probe/fetch_greens.mjs > probe-log.txt 2>&1 || true
+      - run: |
+          git config user.name "probe bot"; git config user.email "actions@users.noreply.github.com"
+          git checkout -B green3d-data
+          git rm -rq --cached . ; git add -f probe-log.txt greens-3d.json 2>/dev/null; git commit -qm "green data" && git push -f origin green3d-data

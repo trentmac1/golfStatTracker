@@ -1,12 +1,13 @@
 // Stats across rounds: trends, averages, club distances and miss pattern.
 import * as db from '../db.js';
-import { deriveRound, clubDistances } from '../stats.js';
+import { deriveRound, clubDistances, countsForDistance } from '../stats.js';
 import { DEFAULT_BAG } from '../config.js';
 import { roundRating } from './pastround.js';
 import { sgSummary, clubReport, CATEGORIES } from '../sg.js';
 import { estimate, differential } from '../handicap.js';
 import { esc, m, one, signed, fmtDate, sheet } from '../ui.js';
-import { METRICS, seriesFor, trendNote } from '../trends.js';
+import { median } from '../geo.js';
+import { METRICS, APPROACH, seriesFor, trendNote, approachSplit, clubMetric, clubShots } from '../trends.js';
 
 // Approach result grid, laid out as if looking down the shot at the green.
 const GRID = [
@@ -25,7 +26,7 @@ export async function statsView(root) {
     if (!course) continue;
     const shots = await db.shotsForRound(round.id);
     const r = deriveRound(course, round, shots);
-    if (r.holesPlayed) all.push({ round, course, r });
+    if (r.holesPlayed) all.push({ round, course, shots, r });
   }
   let range = Number(await db.getSetting('statsRange', 10));
 
@@ -185,24 +186,20 @@ export async function statsView(root) {
 
       <h2>Approach misses</h2>
       ${approaches ? `
-      <div class="miss-grid" role="table" aria-label="Where approach shots finished: ${hits} on the green, ${misses} missed">${missGrid}</div>
+      <div class="miss-grid tappable" data-metric="approach" role="table" aria-label="Where approach shots finished: ${hits} on the green, ${misses} missed">${missGrid}</div>
       <p class="miss-note">${topMiss ? `Most common miss: <b>${cap(topMiss[0])}</b>, ${topMiss[1]} of ${approaches} approaches.` : 'Every approach found the green.'}
-        Shots aimed at the green, seen from where each was hit, so long is past the flag and left is left of your line.</p>`
+        Shots aimed at the green, seen from where each was hit, so long is past the flag and left is left of your line. Tap the grid to see the trend.</p>`
         : '<p class="empty">No approaches recorded yet. Tap <b>On green</b> on each green so the app knows where approaches finished.</p>'}
 
       <h2>Club distances</h2>
       ${clubs.length ? `<table class="clubs-table">
         <thead><tr><th>Club</th><th>Median</th><th class="bar-col">Middle half of shots</th><th>n</th></tr></thead>
-        <tbody>${clubs.map((c) => `<tr><th>${esc(c.club)}</th><td>${m(c.median)} m</td>
+        <tbody>${clubs.map((c) => `<tr data-club="${esc(c.club)}"><th>${esc(c.club)}</th><td>${m(c.median)} m</td>
           <td class="bar-col"><span class="iqr" style="left:${(c.q1 / maxClub) * 100}%;width:${Math.max(1.5, ((c.q3 - c.q1) / maxClub) * 100)}%"></span><span class="med" style="left:${(c.median / maxClub) * 100}%"></span></td>
-          <td>${c.count}</td></tr>`).join('')}</tbody></table>
-        <p class="note">Mishits and penalty shots are left out. Set a shot's club by tapping it on the hole screen.</p>`
+          <td>${c.count}<i class="chev" aria-hidden="true">›</i></td></tr>`).join('')}</tbody></table>
+        <p class="note">Tap a club for its distances over time and to leave shots out (a layup or punch-out, say). Mishits and penalty shots are always left out. Set a shot's club by tapping it on the hole screen.</p>`
         : '<p class="empty">Tap a shot on the hole screen and pick its club to build these.</p>'}
 
-      <h2>Rounds</h2>
-      <ul class="round-list">${[...items].reverse().map((x) => `
-        <li><a href="#/round/${x.round.id}/card"><span>${fmtDate(x.round.date)}<small>${esc(x.course.name)}</small></span><b>${x.r.score}</b><em>${signed(x.r.toPar)}${x.r.holesPlayed < 18 ? ` · ${x.r.holesPlayed} holes` : ''}</em></a></li>`).join('')}
-      </ul>
     </section>`;
   }
 
@@ -215,15 +212,23 @@ export async function statsView(root) {
       empty: 'Differentials need rounds of 14 or more holes on a course with its rating and slope entered.' };
   }
 
+  // key: a METRICS key, 'hcDiff', 'approach', or 'club:<club>'.
   function openTrend(key) {
     const body = (d) => {
       const items = range ? all.slice(-range) : all;
-      const metric = key === 'hcDiff' ? hcMetric(items) : METRICS[key];
-      d.querySelector('.trend-body').innerHTML = trendBody(metric, items, range);
+      const list = d.querySelector('.trend-rounds');
+      const scroll = list?.scrollTop ?? 0;
+      d.querySelector('.trend-body').innerHTML = key === 'approach' ? approachBody(items, range)
+        : key.startsWith('club:') ? clubBody(key.slice(5), items, range)
+        : trendBody(key === 'hcDiff' ? hcMetric(items) : METRICS[key], items, range);
+      const after = d.querySelector('.trend-rounds');
+      if (after) after.scrollTop = scroll;
     };
     sheet('<div class="trend-body"></div>', (d) => {
       body(d);
       d.addEventListener('click', async (e) => {
+        const t = e.target.closest('[data-nodist]');
+        if (t) { await toggleNoDist(t.dataset.nodist); draw(); body(d); return; }
         const b = e.target.closest('[data-range]');
         if (!b) return;
         range = Number(b.dataset.range);
@@ -234,9 +239,21 @@ export async function statsView(root) {
     });
   }
 
+  // Leave a shot out of club distances, or put it back, then re-work that round.
+  async function toggleNoDist(id) {
+    const x = all.find((it) => it.shots.some((sh) => sh.id === id));
+    if (!x) return;
+    const raw = x.shots.find((sh) => sh.id === id);
+    raw.noDist = !raw.noDist;
+    await db.put('shots', raw);
+    x.r = deriveRound(x.course, x.round, x.shots);
+  }
+
   root.addEventListener('click', async (e) => {
     const t = e.target.closest('[data-metric]');
     if (t) { openTrend(t.dataset.metric); return; }
+    const c = e.target.closest('[data-club]');
+    if (c) { openTrend(`club:${c.dataset.club}`); return; }
     const b = e.target.closest('[data-range]');
     if (!b) return;
     range = Number(b.dataset.range);
@@ -250,41 +267,100 @@ export async function statsView(root) {
 const rangeSeg = (range) => `<div class="seg small" role="group" aria-label="Rounds included">
   ${[[5, 'Last 5'], [10, 'Last 10'], [0, 'All']].map(([v, t]) => `<button data-range="${v}" class="${range === v ? 'on' : ''}">${t}</button>`).join('')}</div>`;
 
-// Sheet contents for one stat: title, range selector, line chart, note, and the values by round.
-export function trendBody(metric, items, range) {
-  const series = seriesFor(metric, items);
+const sheetHead = (label, sub, range) => `<h2 class="sheet-title">${esc(label)}</h2>
+  ${sub ? `<p class="sheet-sub">${esc(sub)}</p>` : ''}${rangeSeg(range)}`;
+const roundName = (x) => `${fmtDate(x.round.date)}<small>${esc(x.course.name)}${x.r.holesPlayed < 18 ? ` · ${x.r.holesPlayed} holes` : ''}</small>`;
+
+// Chart, average key and trend notes for a metric, or null when no round has it.
+function chartBlock(metric, items, series = seriesFor(metric, items)) {
+  if (!series.some((s) => s.points.length)) return null;
   const isMulti = series.length > 1;
-  const any = series.some((s) => s.points.length);
-  const head = `<h2 class="sheet-title">${esc(metric.label)}</h2>
-    ${metric.sub ? `<p class="sheet-sub">${esc(metric.sub)}</p>` : ''}${rangeSeg(range)}`;
-  if (!any) return `${head}<p class="empty">${esc(metric.empty ?? 'None of these rounds have this stat yet.')}</p>`;
   const notes = series.filter((s) => s.points.length).map((s) => {
     const n = trendNote(metric, s.points);
     return n ? `<p class="sheet-note">${isMulti ? `<b>${esc(s.name)}.</b> ` : ''}${esc(n)}</p>` : '';
   }).join('');
+  return `${lineChart(metric, series, items)}${notes}`;
+}
+
+// Sheet contents for one stat: title, range selector, line chart, note, and the values by round.
+export function trendBody(metric, items, range) {
+  const series = seriesFor(metric, items);
+  const isMulti = series.length > 1;
+  const head = sheetHead(metric.label, metric.sub, range);
+  const chart = chartBlock(metric, items, series);
+  if (!chart) return `${head}<p class="empty">${esc(metric.empty ?? 'None of these rounds have this stat yet.')}</p>`;
   const rows = [...items.keys()].reverse().map((i) => {
     const vals = series.map((s) => s.points.find((p) => p.i === i)?.v ?? null);
     if (vals.every((v) => v == null)) return '';
-    const x = items[i];
-    return `<li><span>${fmtDate(x.round.date)}<small>${esc(x.course.name)}${x.r.holesPlayed < 18 ? ` · ${x.r.holesPlayed} holes` : ''}</small></span>
-      <b>${vals.map((v) => metric.fmt(v)).join(' · ')}</b></li>`;
+    return `<li><span>${roundName(items[i])}</span><b>${vals.map((v) => metric.fmt(v)).join(' · ')}</b></li>`;
   }).join('');
-  return `${head}${lineChart(metric, series, items)}${notes}
+  return `${head}${chart}
     <ul class="trend-rounds">${isMulti ? `<li class="trend-rounds-head"><span>Round</span><b>${series.map((s) => esc(s.name)).join(' · ')}</b></li>` : ''}${rows}</ul>`;
+}
+
+// Approach misses: how often the green was hit, and the short/long and left/right
+// misses, as shares of each round's approaches.
+export function approachBody(items, range) {
+  const head = sheetHead('Approach misses', 'Share of each round\'s approaches: shots aimed at the green.', range);
+  const charts = Object.values(APPROACH).map((metric) => {
+    const c = chartBlock(metric, items);
+    return c ? `<h3 class="trend-h">${esc(metric.label)}</h3>${c}` : '';
+  }).join('');
+  if (!charts) return `${head}<p class="empty">None of these rounds have approaches recorded. Tap <b>On green</b> on each green so the app knows where approaches finished.</p>`;
+  const pc = (v) => `${Math.round(v)}%`;
+  const rows = [...items.keys()].reverse().map((i) => {
+    const a = approachSplit(items[i].r);
+    if (!a) return '';
+    return `<li><span>${roundName(items[i])}<small>Short ${pc(a.short)} · Long ${pc(a.long)} · Left ${pc(a.left)} · Right ${pc(a.right)}</small></span>
+      <b>${pc(a.green)}<small>of ${a.n}</small></b></li>`;
+  }).join('');
+  return `${head}${charts}
+    <h3 class="trend-h">By round</h3>
+    <ul class="trend-rounds"><li class="trend-rounds-head"><span>Round</span><b>On the green</b></li>${rows}</ul>
+    <p class="sheet-note">Short and long include the corners (short-left and so on), as do left and right, so a short-left miss counts in both.</p>`;
+}
+
+// One club: median distance per round, every shot as a dot, and each shot listed
+// with a switch to leave it out of club distances.
+export function clubBody(club, items, range) {
+  const metric = clubMetric(club);
+  const head = sheetHead(club, metric.sub, range);
+  const shots = clubShots(items, club);
+  if (!shots.length) return `${head}<p class="empty">${esc(metric.empty)}</p>`;
+  const counted = shots.filter((c) => countsForDistance(c.shot)).map((c) => c.shot.dist).sort((a, b) => a - b);
+  const q = (p) => counted[Math.min(counted.length - 1, Math.floor(p * counted.length))];
+  const summary = counted.length
+    ? `<p class="club-sum"><b>${m(median(counted))} m</b> median · middle half ${m(q(0.25))}–${m(q(0.75))} m · ${counted.length} of ${shots.length} shots counted</p>`
+    : `<p class="club-sum">All ${shots.length} shots are left out.</p>`;
+  const chart = chartBlock(metric, items) ?? '';
+  const rows = [...shots].reverse().map(({ x, shot }) => {
+    const fixed = shot.mishit ? 'Mishit' : shot.penalty ? 'Penalty' : null;
+    const out = !countsForDistance(shot);
+    return `<li class="${out ? 'left-out' : ''}"><span><i class="d">${m(shot.dist)} m</i><small>${shortDate(x.round.date)} · hole ${shot.hole} · shot ${shot.index + 1}${shot.result ? ` · ${esc(shot.result)}` : ''}</small></span>
+      ${fixed ? `<em class="pill fixed" title="${fixed} shots are always left out">${fixed}</em>`
+        : `<button class="pill ${out ? 'off' : 'on'}" data-nodist="${esc(shot.id)}" aria-pressed="${out ? 'false' : 'true'}">${out ? 'Left out' : 'Counted'}</button>`}</li>`;
+  }).join('');
+  return `${head}${summary}${chart}
+    <h3 class="trend-h">Shots</h3>
+    <p class="sheet-note">Tap <b>Counted</b> to leave a shot out of club distances and driving distance (a layup, punch-out or knock-down), and tap again to put it back.</p>
+    <ul class="trend-rounds club-shots">${rows}</ul>`;
 }
 
 // Line chart: one point per round (oldest left), a dashed line at the average of
 // the rounds shown, and the first and last dates on the x axis.
 function lineChart(metric, series, items) {
   const W = 340, H = 190, L = 38, R = multiOr(series, 42, 10), T = 12, B = 24;
-  const vals = series.flatMap((s) => s.points.map((p) => p.v));
+  const scatter = metric.scatter?.(items) ?? [];
+  const vals = [...series.flatMap((s) => s.points.map((p) => p.v)), ...scatter.map((p) => p.v)];
   let lo = Math.min(...vals), hi = Math.max(...vals);
   if (metric.zero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
-  const span = hi - lo || Math.max(1, Math.abs(hi) * 0.2);
+  // Keep a sensible minimum height so flat lines don't get labels like 20% · 20% · 20%.
+  const minSpan = metric.max === 100 || metric.unit === ' m' ? 10 : 1;
+  if (hi - lo < minSpan) { const mid = (hi + lo) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2; }
+  const span = hi - lo;
   lo -= span * 0.12; hi += span * 0.12;
-  if (metric.min != null) lo = Math.max(lo, metric.min);
-  if (metric.max != null) hi = Math.min(hi, metric.max);
-  if (hi - lo < 1e-9) hi = lo + 1;
+  if (metric.min != null && lo < metric.min) { hi += metric.min - lo; lo = metric.min; }
+  if (metric.max != null && hi > metric.max) { lo = Math.max(metric.min ?? -Infinity, lo - (hi - metric.max)); hi = metric.max; }
   const n = items.length;
   const xAt = (i) => (n === 1 ? L + (W - L - R) / 2 : L + (i / (n - 1)) * (W - L - R));
   const yAt = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
@@ -309,8 +385,9 @@ function lineChart(metric, series, items) {
   const dates = n > 1
     ? `<text x="${L}" y="${H - 6}" class="axis-t">${shortDate(items[0].round.date)}</text><text x="${W - R}" y="${H - 6}" class="axis-t end">${shortDate(items[n - 1].round.date)}</text>`
     : `<text x="${xAt(0)}" y="${H - 6}" class="axis-t mid">${shortDate(items[0].round.date)}</text>`;
-  return `<svg class="tchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(metric.label)} by round">${grid}${zeroLine}${lines}${tags}${dates}</svg>${multi(series) ? '' : (() => {
+  return `<svg class="tchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(metric.label)} by round">${grid}${zeroLine}${scatter.map((p) => `<circle cx="${xAt(p.i)}" cy="${yAt(p.v)}" r="3" class="scat"/>`).join('')}${lines}${tags}${dates}</svg>${multi(series) ? '' : (() => {
     const pts = series[0].points;
+    if (!pts.length) return '';
     return `<p class="tchart-key"><i></i>Average of these rounds: <b>${esc(metric.fmt(pts.reduce((a, p) => a + p.v, 0) / pts.length))}</b></p>`;
   })()}`;
 }

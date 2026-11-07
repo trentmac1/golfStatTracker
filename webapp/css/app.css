@@ -447,6 +447,22 @@ button.sg-row { background: transparent; border: 0; padding: 2px 0; border-radiu
 .trend-rounds b { font: 700 24px/1 var(--num); white-space: nowrap; }
 .trend-rounds-head { color: var(--muted); font-size: 13px; }
 .trend-rounds-head b { font: 600 13px var(--body); }
+.trend-rounds b small { display: block; font: 500 13px var(--body); color: var(--muted); text-align: right; }
+.trend-h { font: 700 21px/1.1 var(--num); margin: 18px 0 8px; }
+.tchart .scat { fill: none; stroke: var(--turf); stroke-opacity: .45; stroke-width: 1.5; }
+.miss-grid.tappable { cursor: pointer; }
+.miss-grid.tappable:active { background: #eef2ea; }
+.clubs-table tr[data-club] { cursor: pointer; }
+.clubs-table tr[data-club]:active { background: #eef2ea; }
+.clubs-table .chev { font-style: normal; color: var(--muted); opacity: .6; margin-left: 6px; }
+.club-sum { margin: 0 0 10px; color: var(--muted); }
+.club-sum b { font: 700 28px/1 var(--num); color: var(--ink); margin-right: 4px; }
+.club-shots .d { font-style: normal; }
+.club-shots li.left-out .d { color: var(--muted); text-decoration: line-through; }
+.pill { min-width: 92px; min-height: 40px; padding: 0 12px; border-radius: 20px; font: 700 17px/1 var(--num); text-align: center; border: 2px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.pill.on { border-color: var(--turf); color: var(--turf); }
+.pill.off { background: #eceee9; color: var(--muted); }
+.pill.fixed { font-style: normal; border-style: dashed; color: var(--muted); cursor: default; }
 .sg-axis-mid i { font-style: normal; }
 .work-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: w; }
 .work-list li { display: grid; grid-template-columns: 64px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }

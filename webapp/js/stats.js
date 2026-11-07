@@ -191,7 +191,7 @@ export function deriveRound(course, round, shots) {
     const b = missBucket(s.miss);
     if (b) missCounts[b] = (missCounts[b] ?? 0) + 1;
   }
-  const drives = played.flatMap((h) => h.shots.filter((s) => s.isTee && h.par >= 4 && s.dist && !s.penalty && !s.mishit));
+  const drives = played.flatMap((h) => h.shots.filter((s) => s.isTee && h.par >= 4 && s.dist && !s.penalty && !s.mishit && !s.noDist));
   const driverOnly = drives.filter((s) => s.club === 'Dr');
   const driveSet = driverOnly.length ? driverOnly : drives;
   const prox = played.map((h) => h.proximity).filter((v) => v != null);
@@ -237,14 +237,16 @@ export function deriveRound(course, round, shots) {
   };
 }
 
-// Club distances across many derived holes: median and IQR, mishits excluded.
+// Club distances across many derived holes: median and IQR, mishits and left-out shots excluded.
+// Shots with a club and a real measured distance (putts and green-centre guesses aren't).
+export const hasClubDistance = (s) => !!(s.club && s.dist && s.club !== 'Putter' && s.endKind !== 'green-centre');
+// …and that count towards club distances: not a mishit, a penalty, or left out by hand.
+export const countsForDistance = (s) => hasClubDistance(s) && !s.mishit && !s.penalty && !s.noDist;
+
 export function clubDistances(derivedHoles) {
   const by = {};
   for (const h of derivedHoles) for (const s of h.shots) {
-    if (!s.club || !s.dist || s.mishit || s.penalty) continue;
-    if (s.club === 'Putter') continue; // a putt from off the green isn't a full-swing distance
-    // A last shot measured only to the green centre is a guess; leave it out.
-    if (s.endKind === 'green-centre') continue;
+    if (!countsForDistance(s)) continue;
     (by[s.club] ??= []).push(s.dist);
   }
   return Object.entries(by).map(([club, d]) => ({

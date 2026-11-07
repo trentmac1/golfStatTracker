@@ -33,3 +33,25 @@ test('trend note respects which direction is better', () => {
   assert.match(trendNote(METRICS.putts, pts([32, 30])), /Needs 3/);
   assert.equal(slope(pts([1, 2, 3])), 1);
 });
+
+import { approachSplit, clubMetric, clubShots } from '../js/trends.js';
+
+test('approach split: corners count in both directions', () => {
+  const a = approachSplit({ approachHits: 2, missCounts: { 'short-left': 1, long: 1 } });
+  assert.equal(a.n, 4);
+  assert.equal(a.green, 50);
+  assert.equal(a.short, 25);
+  assert.equal(a.left, 25);
+  assert.equal(a.long, 25);
+  assert.equal(a.right, 0);
+  assert.equal(approachSplit({ approachHits: 0, missCounts: {} }), null);
+});
+
+test('club trend: median per round leaves out mishits and left-out shots', () => {
+  const sh = (dist, o = {}) => ({ id: String(dist), club: '7i', dist, endKind: 'shot', ...o });
+  const x = R({ holes: [{ shots: [sh(150), sh(160), sh(90, { noDist: true }), sh(80, { mishit: true }), sh(140, { club: '8i' }), sh(100, { endKind: 'green-centre' })] }] });
+  const metric = clubMetric('7i');
+  assert.equal(metric.value(x), 155);
+  assert.equal(clubShots([x], '7i').length, 4); // green-centre guess isn't listed
+  assert.deepEqual(metric.scatter([x]).map((p) => p.v), [150, 160]);
+});

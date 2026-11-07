@@ -3,6 +3,8 @@
 // to show (no fairway chances, no putts entered…). Values are per 18 holes
 // where a count would otherwise favour longer rounds.
 import { sgSummary, CATEGORIES } from './sg.js';
+import { median } from './geo.js';
+import { countsForDistance } from './stats.js';
 
 const pct = (a, b) => (b ? (100 * a) / b : null);
 const per18 = (v, holes) => (holes ? (v / holes) * 18 : null);
@@ -82,6 +84,51 @@ export function trendNote(metric, points) {
   const diff = late - early;
   const scale = Math.max(1e-9, ...points.map((p) => Math.abs(p.v)));
   if (Math.abs(diff) < scale * 0.03) return `Steady: your last ${half} rounds average about the same as your first ${half}.`;
-  const good = metric.better === 'up' ? diff > 0 : diff < 0;
-  return `${good ? 'Improving' : 'Slipping'}: your last ${half} rounds average ${metric.fmt(late)}, against ${metric.fmt(early)} for your first ${half}.`;
+  const word = !metric.better ? (diff > 0 ? metric.upWord ?? 'Up' : metric.downWord ?? 'Down')
+    : (metric.better === 'up' ? diff > 0 : diff < 0) ? 'Improving' : 'Slipping';
+  return `${word}: your last ${half} rounds average ${metric.fmt(late)}, against ${metric.fmt(early)} for your first ${half}.`;
+}
+
+// ---------- approach misses ----------
+// Share of a round's approaches (shots aimed at the green) by where they finished.
+// Short and long include the corners (short-left…), as do left and right.
+export function approachSplit(r) {
+  const c = r.missCounts ?? {};
+  const n = (r.approachHits ?? 0) + Object.values(c).reduce((a, b) => a + b, 0);
+  if (!n) return null;
+  const share = (f) => (100 * Object.entries(c).filter(([k]) => f(k)).reduce((a, [, v]) => a + v, 0)) / n;
+  return {
+    n, green: (100 * (r.approachHits ?? 0)) / n,
+    short: share((k) => k.startsWith('short')), long: share((k) => k.startsWith('long')),
+    left: share((k) => k.endsWith('left')), right: share((k) => k.endsWith('right')),
+  };
+}
+const ap = (k) => (x) => approachSplit(x.r)?.[k] ?? null;
+export const APPROACH = {
+  green: { label: 'Approaches on the green', unit: '%', better: 'up', fmt: pctFmt, min: 0, max: 100, value: ap('green') },
+  depth: { label: 'Short or long', better: 'down', fmt: pctFmt, min: 0, max: 100, series: [['Short', ap('short')], ['Long', ap('long')]] },
+  line: { label: 'Left or right', better: 'down', fmt: pctFmt, min: 0, max: 100, series: [['Left', ap('left')], ['Right', ap('right')]] },
+};
+
+// ---------- one club's distances ----------
+// Every shot hit with `club` that has a real measured distance, oldest first:
+// [{i, x, shot}] where i is the round's index in items.
+export function clubShots(items, club) {
+  return items.flatMap((x, i) => x.r.holes.flatMap((h) => h.shots
+    .filter((s) => s.club === club && s.dist && s.endKind !== 'green-centre')
+    .map((shot) => ({ i, x, shot }))));
+}
+
+// Median distance per round, from the shots that count; every counted shot as a dot.
+export function clubMetric(club) {
+  return {
+    label: club, sub: 'Median distance per round. Dots are single shots.', better: null, upWord: 'Longer', downWord: 'Shorter',
+    fmt: mFmt, unit: ' m',
+    value: (x) => {
+      const d = x.r.holes.flatMap((h) => h.shots.filter((s) => s.club === club && countsForDistance(s)).map((s) => s.dist));
+      return d.length ? median(d) : null;
+    },
+    scatter: (items) => clubShots(items, club).filter((c) => countsForDistance(c.shot)).map((c) => ({ i: c.i, v: c.shot.dist })),
+    empty: `No ${club} shots with a measured distance in these rounds.`,
+  };
 }

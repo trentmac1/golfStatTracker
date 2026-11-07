@@ -520,6 +520,7 @@ export async function holeView(root, { roundId, hole }) {
       <div class="toggles">
         <label><input type="checkbox" data-t="penalty" ${raw.penalty ? 'checked' : ''}> Penalty on this shot <small>adds 1 stroke</small></label>
         <label><input type="checkbox" data-t="mishit" ${raw.mishit ? 'checked' : ''}> Mishit <small>left out of club distances</small></label>
+        <label><input type="checkbox" data-t="noDist" ${raw.noDist ? 'checked' : ''}> Leave out of club distances <small>a layup, punch-out or knock-down</small></label>
       </div>
       <div class="sheet-row wrap">
         <button class="btn ghost" data-x="target">${raw.target ? 'Move target' : 'Set target on map'}</button>

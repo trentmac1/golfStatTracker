@@ -470,6 +470,12 @@ button.sg-row { background: transparent; border: 0; padding: 2px 0; border-radiu
 .ar.gentle path { stroke: rgba(255,255,255,.75); stroke-width: 1.5; }
 .ar.mod path { stroke: #fff; stroke-width: 2.4; }
 .ar.steep path { stroke: var(--flag); stroke-width: 3; }
+.gp-mode { margin: 10px auto 0; max-width: 420px; }
+.gp-3d { margin: 10px auto 6px; max-width: 420px; }
+.gp-canvas { display: block; width: 100%; aspect-ratio: 4 / 3; max-height: 46dvh; border-radius: 16px; background: #24402b; touch-action: none; }
+.gp-3d-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-weight: 600; color: var(--muted); }
+.gp-3d-bar .seg { flex: 1; margin: 0; }
+.gp-3d-bar .btn { min-height: 44px; }
 .gp-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); justify-content: center; }
 .gp-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .lg-ar { display: inline-block; width: 18px; height: 0; border-top: 3px solid; border-radius: 2px; background: #24402b; }
@@ -648,3 +654,4 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .shot-n.trk { background: var(--blue); }
 .trk-hint { margin: 0 0 10px; font-size: 15px; color: var(--muted); }
 .pin.shot.possible { background: rgba(255,255,255,.75); color: var(--blue); border: 3px dashed var(--blue); }
+.gp-wrap[hidden], .gp-3d[hidden], .gp-legend[hidden] { display: none; }

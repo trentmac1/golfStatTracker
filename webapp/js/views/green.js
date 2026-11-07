@@ -5,8 +5,11 @@ import { toLocal, distance } from '../geo.js';
 import { analyse, describeFall, shapePolygon, buildCourseGreens, CREDITS } from '../greens.js';
 import { previewRing, smoothPathD } from '../holemap.js';
 import { esc, sheet, toast } from '../ui.js';
+import { buildGreenMesh, mountGreen3d, hasWebGL } from '../green3d.js';
 
 const PAD = 4; // metres around the green in the drawing
+const EXAGGERATIONS = [2, 4, 8];
+const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* private mode */ } return null; };
 
 // Where a view should be taken from: you, your last shot, the hole line, the tee.
 export function viewPoint({ fix, lastShot, shape, tee, green }) {
@@ -155,25 +158,86 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
   try { g = greenSvg(h, { from, ball }); } catch (err) { toast(`Couldn't draw this green: ${err.message}`, 'warn'); return; }
   const { a } = g;
   const year = h.shape.survey?.year;
+  // 3D needs the height grid and WebGL; the last view chosen is remembered.
+  const can3d = !!(a && h.shape.grid && hasWebGL());
+  let mode = can3d && pref('gp-mode') === '3d' ? '3d' : 'top';
+  let exag = Number(pref('gp-exag')) || 4;
+  if (!EXAGGERATIONS.includes(exag)) exag = 4;
+  let view3d = null;
   sheet(`
     <h3 class="sheet-title">Green ${hole}</h3>
     <p class="gp-fall"><b>${esc(g.fall)}</b>${a && a.plane.pct >= 0.6 ? ` · ${a.plane.pct.toFixed(1)}%` : ''}</p>
     <p class="sheet-sub">${Math.round(g.depth)} m deep × ${Math.round(g.width)} m wide${a ? ` · ${a.relief.toFixed(1)} m between the high and low points${a.steepShare > 0.3 ? ' · tiers or steep sections' : ''}` : ''}</p>
-    <div class="gp-wrap">${g.svg}</div>
-    ${a ? `<div class="gp-legend">
+    ${can3d ? `<div class="seg small gp-mode">
+      <button data-g="top" class="${mode === 'top' ? 'on' : ''}">Top view</button>
+      <button data-g="3d" class="${mode === '3d' ? 'on' : ''}">3D</button>
+    </div>` : ''}
+    <div class="gp-wrap" ${mode === '3d' ? 'hidden' : ''}>${g.svg}</div>
+    ${can3d ? `<div class="gp-3d" ${mode === '3d' ? '' : 'hidden'}>
+      <canvas class="gp-canvas" aria-label="3D view of green ${hole}. Drag to turn, pinch to zoom, double-tap to reset."></canvas>
+      <div class="gp-3d-bar">
+        <span>Height ×</span>
+        <div class="seg small">${EXAGGERATIONS.map((x) => `<button data-x="${x}" class="${x === exag ? 'on' : ''}">${x}</button>`).join('')}</div>
+        <button class="btn ghost small" data-g="reset">Reset</button>
+      </div>
+      <p class="sheet-note">Drag to turn, pinch to zoom, double-tap to reset. <span id="gpx"></span> Lines are ${a.zmax - a.zmin > 1.2 ? '20' : '10'} cm height steps${ball ? '; your ball is the white dot' : ''}.</p>
+    </div>` : ''}
+    ${a ? `<div class="gp-legend"${mode === '3d' ? ' hidden' : ''}>
       <span><i class="lg-ar gentle"></i>1–1.5%</span><span><i class="lg-ar mod"></i>1.5–3%</span><span><i class="lg-ar steep"></i>over 3%</span>
       <span><i class="lg-shade"></i>lighter is higher</span>
     </div>` : ''}
     ${a ? '' : `<p class="sheet-note">Slopes come from Queensland Government LiDAR, which doesn't cover this course. The outline and distances still work.</p>`}
-    <p class="sheet-note"${a ? '' : ' hidden'}>${esc(fromLabel ?? 'Looking from the front')}: arrows point downhill (none where it's under 1%); lines are 10 cm height steps${a && a.zmax - a.zmin > 1.2 ? ' (20 cm here)' : ''}.
+    <p class="sheet-note gp-topnote"${a && mode !== '3d' ? '' : ' hidden'}>${esc(fromLabel ?? 'Looking from the front')}: arrows point downhill (none where it's under 1%); lines are 10 cm height steps${a && a.zmax - a.zmin > 1.2 ? ' (20 cm here)' : ''}.
       A guide to the main tilt, not every break: LiDAR${year ? ` from ${year}` : ''} at about 1 m, ${h.shape.source === 'estimate' ? 'outline estimated from your front and back points' : 'outline from OpenStreetMap'}.</p>
     <p class="sheet-note">${CREDITS}</p>
     <div class="sheet-row"><button class="btn ghost" data-g="refresh">Refresh data</button><button class="btn primary" data-g="close">Done</button></div>
     <p class="sheet-note" id="gprog"></p>`,
   (el, close) => {
+    const show3d = () => {
+      if (view3d) return;
+      try {
+        const mesh = buildGreenMesh(h, { from, ball, exaggeration: exag });
+        if (!mesh) throw new Error('no heights on this green');
+        view3d = mountGreen3d(el.querySelector('.gp-canvas'), mesh);
+        stretchNote(mesh);
+      } catch (err) {
+        setMode('top');
+        toast(`Couldn't show 3D: ${err.message}`, 'warn');
+      }
+    };
+    const stretchNote = (mesh) => {
+      el.querySelector('#gpx').textContent = mesh.exaggeration < mesh.requested
+        ? `Heights are stretched ×${mesh.exaggeration} (as far as this steep green allows).`
+        : `Heights are stretched ×${mesh.exaggeration} so slopes show.`;
+    };
+    const setMode = (m) => {
+      mode = m;
+      pref('gp-mode', m);
+      el.querySelectorAll('.gp-mode [data-g]').forEach((x) => x.classList.toggle('on', x.dataset.g === m));
+      el.querySelector('.gp-wrap').hidden = m === '3d';
+      el.querySelector('.gp-3d').hidden = m !== '3d';
+      const lg = el.querySelector('.gp-legend');
+      if (lg) lg.hidden = m === '3d';
+      const tn = el.querySelector('.gp-topnote');
+      if (tn && a) tn.hidden = m === '3d';
+      if (m === '3d') show3d();
+    };
+    if (mode === '3d') requestAnimationFrame(show3d);
+    el.addEventListener('close', () => { view3d?.destroy(); view3d = null; });
     el.addEventListener('click', async (e) => {
+      const x = e.target.closest('[data-x]');
+      if (x) {
+        exag = Number(x.dataset.x);
+        pref('gp-exag', String(exag));
+        el.querySelectorAll('[data-x]').forEach((y) => y.classList.toggle('on', y === x));
+        const mesh = buildGreenMesh(h, { from, ball, exaggeration: exag });
+        if (mesh && view3d) { view3d.setMesh(mesh); stretchNote(mesh); }
+        return;
+      }
       const b = e.target.closest('[data-g]');
       if (!b) return;
+      if (b.dataset.g === 'top' || b.dataset.g === '3d') { setMode(b.dataset.g); return; }
+      if (b.dataset.g === 'reset') { view3d?.reset(); return; }
       if (b.dataset.g === 'close') close();
       if (b.dataset.g === 'refresh') {
         b.disabled = true;

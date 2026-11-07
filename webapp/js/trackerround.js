@@ -157,6 +157,13 @@ export function nearMiss(j) {
 }
 export const HIDDEN_WHY = { thud: 'it sounded like a thud', jolt: 'the tracker jumped like a knock', 'same spot': 'a louder swing was saved nearby' };
 
+// Possible shots are one per spot and stay clear of shots: none within
+// POSSIBLE_M and POSSIBLE_MS of a shot or of a louder possible shot. Was 15 m
+// and 90 s from shots, 10 m and 60 s between them; 3 minutes (7 Nov 2026)
+// drops the practice swings and rehearsals made while partners play: about
+// 1 in 5 of the empty ? pins on 31 Oct-6 Nov, with no shot lost.
+export const POSSIBLE_M = 15, POSSIBLE_MS = 180000;
+
 // A shot is the player's once they've changed it: then sync leaves it alone.
 const touched = (s) => s.edited || s.accepted || s.club || s.lieByHand || s.target || s.penalty || s.mishit;
 
@@ -206,10 +213,10 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
   ].filter(({ w }) => w.pos && !onGreen(course, w.pos) && !dismissed.has(shotId(w.logId, w.seq)) && !have.has(shotId(w.logId, w.seq)))
     .map(({ w, why, kind }) => ({ id: shotId(w.logId, w.seq), lat: w.pos.lat, lon: w.pos.lon, time: w.time * 1000, why, kind,
       peakGyro: w.peakGyro ?? null, impact: w.impactLevel ?? null, logId: w.logId, seq: w.seq, hdop: w.hdop }))
-    .filter((c) => !final.some((s) => s.lat != null && near(c, s, 15, 90000)))
+    .filter((c) => !final.some((s) => s.lat != null && near(c, s, POSSIBLE_M, POSSIBLE_MS)))
     .sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0));
   const possible = [];
-  for (const c of cands) if (!possible.some((p) => near(c, p, 10, 60000))) possible.push(c);
+  for (const c of cands) if (!possible.some((p) => near(c, p, POSSIBLE_M, POSSIBLE_MS))) possible.push(c);
   for (const p of possible) p.hole = holeFor(course, round, p, p.time);
   possible.sort((a, b) => a.time - b.time);
 

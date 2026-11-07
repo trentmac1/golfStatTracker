@@ -73,6 +73,8 @@ export function decodeRecord(bytes, { full = false } = {}) {
     r.impactMs = dv.getInt16(x + 14, true);
     r.reasons = dv.getUint8(x + 16);
     r.trigger = dv.getUint16(x + 18, true);
+    // Firmware 0.4.2: the downswing turn (turnDeg), degrees × 10; 0x8000 = unknown.
+    if (len >= HEADER + CTX + 22) { const t = dv.getInt16(x + 20, true); r.turn = t === -32768 ? null : t / 10; }
   } else if (kind === KIND.swing) {
     r.peakGyro = dv.getUint16(x, true);
     r.trigger = dv.getUint16(x + 2, true);
@@ -220,9 +222,12 @@ export function encodeLabel(seq, ctx, refSeq = null, gapMs = null) {
 }
 
 // A made-up swing: rotation peaking at sample 312, a click `impactMs` after it.
-export function encodeSwing(seq, ctx, { peak = 900, trigger = 150, impactMs = 20, loud = true } = {}) {
-  const count = 416, envCount = 2000;
-  const b = new Uint8Array(CTX + 20 + count * 12 + envCount), dv = new DataView(b.buffer);
+// `turn`: the rotation is about the vertical (+1 a right-hander's downswing,
+// −1 the other way) instead of across it. `lowImpact`: adds a low band whose
+// level at the strike is that (a thud when it's over the click's 40000).
+export function encodeSwing(seq, ctx, { peak = 900, trigger = 150, impactMs = 20, loud = true, turn = 0, lowImpact = null } = {}) {
+  const count = 416, envCount = 2000, lowCount = lowImpact == null ? 0 : 500;
+  const b = new Uint8Array(CTX + 20 + count * 12 + envCount + (lowCount ? 8 + lowCount : 0)), dv = new DataView(b.buffer);
   b.set(ctxBytes(ctx));
   const x = CTX;
   dv.setUint16(x, peak, true); dv.setUint16(x + 2, trigger, true);
@@ -233,7 +238,9 @@ export function encodeSwing(seq, ctx, { peak = 900, trigger = 150, impactMs = 20
     const d = (i - 312) / 12;
     const g = 20 + (peak - 20) * Math.exp(-d * d);
     const o = x + 20 + i * 12;
-    dv.setInt16(o, Math.round(g / GYRO_DPS_PER_LSB), true);
+    // Gravity is along z, so a turn about the vertical is gz.
+    if (turn) dv.setInt16(o + 4, Math.round((turn * g) / GYRO_DPS_PER_LSB), true);
+    else dv.setInt16(o, Math.round(g / GYRO_DPS_PER_LSB), true);
     dv.setInt16(o + 10, Math.round(1 / ACC_G_PER_LSB), true);
   }
   const e0 = x + 20 + count * 12;
@@ -246,6 +253,12 @@ export function encodeSwing(seq, ctx, { peak = 900, trigger = 150, impactMs = 20
   }
   dv.setUint16(x + 18, audioPeak, true);
   dv.setUint8(x + 17, loud ? 200 : 11);
+  if (lowCount) {
+    const l0 = e0 + envCount;
+    dv.setUint16(l0, lowCount, true); dv.setInt16(l0 + 2, -1500, true);
+    dv.setUint16(l0 + 4, 2500, true); dv.setUint16(l0 + 6, lowImpact, true);
+    b.fill(10, l0 + 8, l0 + 8 + lowCount);
+  }
   return finish(KIND.swing, seq, b);
 }
 
@@ -292,7 +305,45 @@ export function isPressSnippet(swing, labels) {
 //   SAME_SPOT_MS and SAME_SPOT_M only one is kept: a labelled one, else the
 //   loudest strike. (At the range, real shots are this close: use Range mode
 //   there.)
-export const THUD_RATIO = 1.0, JOLT_G = 8, SAME_SPOT_MS = 60000, SAME_SPOT_M = 10;
+//
+// Updated 7 Nov 2026 (app 0.8.4), from the 31 Oct, 1 Nov (two nines) and
+// 6 Nov tracker rounds, 122 shots:
+// - turn: how far the hips turned towards the target through the downswing
+//   (turnDeg). A thud with a real golf turn (TURN_SHOT or more) is a shot:
+//   drivers and woods often sound like a thud from the pocket (1.0-3.1) and
+//   were hidden. Of 29 thud swings that were shots, 21 turned 40° or more.
+// - same spot: practice swings before a shot and rehearsals after it come
+//   up to about 3 minutes from the same place, so the window is 3 minutes
+//   and 15 m (was 60 s and 10 m). A clean strike beats a thud, then the
+//   louder wins. Two real shots that close came up once in 122.
+export const THUD_RATIO = 1.0, JOLT_G = 8, SAME_SPOT_MS = 180000, SAME_SPOT_M = 15, TURN_SHOT = 40;
+
+// Degrees the tracker turned about the vertical through the downswing (from
+// 0.2 s before the peak rotation to 0.07 s after), with gravity taken from
+// the accelerometer at address (1.4-0.7 s before the peak). The dot product
+// doesn't depend on how the tracker sits in the pocket. Positive is a
+// right-hander's downswing (hips turning towards the target): real shots
+// 44-115°, walking and handling around 0. A left-hander's would be negative.
+// imu: rows of raw [gx, gy, gz, ax, ay, az] counts.
+export function turnDeg(imu, peakIndex, rateHz = 208) {
+  if (!imu?.length || peakIndex == null) return null;
+  const mean = (a, b) => {
+    const s = [0, 0, 0];
+    let n = 0;
+    for (let i = Math.max(0, a); i < Math.min(imu.length, b); i++) { s[0] += imu[i][3]; s[1] += imu[i][4]; s[2] += imu[i][5]; n++; }
+    return n ? s.map((v) => (v / n) * ACC_G_PER_LSB) : [0, 0, 0];
+  };
+  let g = mean(peakIndex - 300, Math.max(1, peakIndex - 150));
+  if (Math.hypot(...g) < 0.3) g = mean(0, 50);
+  const len = Math.hypot(...g);
+  if (len < 0.3) return null;
+  const u = g.map((v) => v / len);
+  let sum = 0;
+  for (let i = Math.max(0, peakIndex - 40); i < Math.min(imu.length, peakIndex + 15); i++) {
+    sum += (imu[i][0] * u[0] + imu[i][1] * u[1] + imu[i][2] * u[2]) * GYRO_DPS_PER_LSB;
+  }
+  return sum / rateHz;
+}
 const shapes = new WeakMap();
 export function swingShape(bytes) {
   if (shapes.has(bytes)) return shapes.get(bytes);
@@ -320,7 +371,8 @@ export function swingShape(bytes) {
     }
   }
   const thud = r.impactLevel && r.lowImpact != null ? r.lowImpact / r.impactLevel : null;
-  const out = { still: mean(pk - 312, pk - 208), build: mean(pk - 62, pk), jolt, thud, impact: r.impactLevel ?? r.audioPeak ?? 0 };
+  const out = { still: mean(pk - 312, pk - 208), build: mean(pk - 62, pk), jolt, thud, impact: r.impactLevel ?? r.audioPeak ?? 0,
+    turn: turnDeg(r.imu, pk, hz) };
   shapes.set(bytes, out);
   return out;
 }
@@ -336,14 +388,18 @@ export function notShots(swings, labelled = new Map()) {
   for (const w of swings) {
     if (labelled.has(w.seq) || !w.bytes) continue;
     const sh = swingShape(w.bytes);
-    if (sh.thud != null && sh.thud >= THUD_RATIO) out.set(w.seq, 'thud');
+    const thud = sh.thud != null && sh.thud >= THUD_RATIO;
+    if (thud && !(sh.turn != null && sh.turn >= TURN_SHOT)) out.set(w.seq, 'thud');
     else if (sh.jolt != null && sh.jolt >= JOLT_G) out.set(w.seq, 'jolt');
   }
   const list = swings.filter((w) => !out.has(w.seq)).sort((a, b) => a.seq - b.seq);
+  const clean = (w) => { const t = swingShape(w.bytes).thud; return t == null || t < THUD_RATIO; };
   const better = (a, b) => {   // is a more likely the shot than b?
     const la = labelled.has(a.seq), lb = labelled.has(b.seq);
     if (la !== lb) return la;
     if (!a.bytes || !b.bytes) return a.seq > b.seq;
+    const ca = clean(a), cb = clean(b);
+    if (ca !== cb) return ca;
     return swingShape(a.bytes).impact > swingShape(b.bytes).impact;
   };
   const close = (a, b) => b.deviceMs - a.deviceMs <= SAME_SPOT_MS && b.deviceMs >= a.deviceMs
@@ -436,19 +492,19 @@ export function exportJson(rows, { appVersion } = {}) {
             low_band: d.low ? { rate_hz: d.lowRateHz, start_ms: d.lowStartMs, impact_level: d.lowImpact, sqrt_level: d.low } : null,
             not_shot: s.notShot.get(w.seq) ?? null,
             still_dps: Math.round(swingShape(w.bytes).still), buildup_dps: Math.round(swingShape(w.bytes).build),
-            jolt_g: swingShape(w.bytes).jolt, thud_ratio: swingShape(w.bytes).thud,
+            jolt_g: swingShape(w.bytes).jolt, thud_ratio: swingShape(w.bytes).thud, turn_deg: swingShape(w.bytes).turn,
           };
         }),
         labels: s.labels.map((l) => ({ seq: l.seq, time: l.time ? new Date(l.time * 1000).toISOString() : null,
           device_ms: l.deviceMs, swing_seq: l.swingSeq ?? null, tracker_ref_seq: l.refSeq, tracker_gap_ms: l.gapMs, double: l.double, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
         rejects: (s.rejects ?? []).map((j) => ({ seq: j.seq, time: j.time ? new Date(j.time * 1000).toISOString() : null, device_ms: j.deviceMs,
           lat: j.pos?.lat ?? null, lon: j.pos?.lon ?? null, peak_gyro_dps: j.peakGyro, impact_level: j.impactLevel, low_impact: j.lowImpact,
-          audio_peak: j.audioPeak, buildup_dps: j.buildup, still_dps: j.still, jolt_g: j.jolt, impact_ms: j.impactMs,
+          audio_peak: j.audioPeak, buildup_dps: j.buildup, still_dps: j.still, jolt_g: j.jolt, impact_ms: j.impactMs, turn_deg: j.turn ?? null,
           reasons: Object.entries(REJECT).filter(([, v]) => j.reasons & v).map(([k]) => k) })),
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 6, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+  return { app: 'golftracker-capture', version: 7, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
     format: 'docs/ble-protocol.md, Capture log',
     label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq); a swing peaking under ${PRESS_SNIPPET_MS} ms before a press is the press itself (button_press)`, logs };
 }

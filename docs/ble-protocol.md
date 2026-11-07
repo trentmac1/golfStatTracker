@@ -144,7 +144,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 7038 | low_impact | uint16 | highest low-band value within −400…+250 ms of the peak |
 | 7040 | low_band | uint8 × low_count | √ of the band-passed (about 50–370 Hz) peak level per 64 microphone samples: a dull thud shows here, a sharp click mostly in the envelope |
 
-**Reject** (kind 6, 48 bytes; firmware 0.4.0): a Round-mode candidate that wasn't saved as a swing, with what it was measured at. Written for every one that failed a single rule (0.4.1; 0.4.0 wrote them all, about 2,000 an hour while walking), so a shot the tracker missed can be traced to the rule that dropped it. Candidates that fail two or three rules (walking) are only counted. After a reject there's no cooldown: a backswing that reaches the trigger must not hold off the downswing.
+**Reject** (kind 6, 48 bytes; 52 since firmware 0.4.2; firmware 0.4.0): a Round-mode candidate that wasn't saved as a swing, with what it was measured at. Written for every one that failed a single rule (0.4.1; 0.4.0 wrote them all, about 2,000 an hour while walking), so a shot the tracker missed can be traced to the rule that dropped it. Candidates that fail two or three rules (walking) are only counted. After a reject there's no cooldown: a backswing that reaches the trigger must not hold off the downswing.
 
 | Offset (after header) | Field | Type | Notes |
 |---|---|---|---|
@@ -160,6 +160,7 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 36 | reasons | uint8 | bit0 no impact (under the gate), bit1 no build-up (under 110), bit2 moving before (still over 70; 80 since 0.4.1) |
 | 37 | flags | uint8 | as a swing's flags |
 | 38 | trigger | uint16 | deg/s |
+| 40 | turn | int16 | firmware 0.4.2: degrees turned about the vertical through the downswing (the gyro along gravity, from 40 samples before the peak to 14 after; gravity from the accelerometer 300–150 samples before), × 10. Positive is a right-hander's downswing, whichever way up the tracker sits. 0x8000 = unknown. The app works out the same value for saved swings from their IMU snippet (`turnDeg`) |
 
 ## Sync — Phase 3
 

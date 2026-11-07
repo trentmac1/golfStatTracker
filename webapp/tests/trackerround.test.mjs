@@ -127,3 +127,16 @@ test('possible shots: hidden swings and near-miss rejects, not next to a shot, n
   assert.equal(plan3.remove.length, 0);
   assert.deepEqual(plan3.possible.map((p) => p.seq), [5]);
 });
+
+test('possible shots: rehearsals up to 3 minutes after a shot and near a louder possible shot stay hidden', async () => {
+  const w = (seq, ms, p, extra = {}) => ({ logId: 7, seq, time: Math.floor((t0 + ms) / 1000), pos: p, hdop: 1, peakGyro: 600, impactLevel: 2000, ...extra });
+  const swings = [w(2, 60000, at(0, 2))];                                      // the tee shot
+  const hidden = [
+    { ...w(3, 200000, at(8, 6)), why: 'thud' },                                // rehearsal 140 s later, 9 m away: not shown
+    { ...w(4, 300000, at(1, 200), { impactLevel: 1500 }), why: 'thud' },       // second shot
+    { ...w(5, 420000, at(9, 205), { impactLevel: 1200 }), why: 'thud' },       // 2 min later, 10 m away, quieter: not shown
+    { ...w(6, 500000, at(0, 2)), why: 'thud' },                                // back on the tee 7 min later: shown
+  ];
+  const plan = planTrackerShots({ round, course, shots: [], swings, presses: [], hidden, rejects: [] });
+  assert.deepEqual(plan.possible.map((p) => p.seq), [4, 6]);
+});

@@ -11,6 +11,7 @@ uint32_t millis(){ return (uint32_t)nowMs; } uint32_t micros(){ return (uint32_t
 // ---- mocks ----
 const double IMU_HZ = 207.3, ENV_HZ = 1007.8;   // deliberately not nominal
 double swingPeakMs = -1, impactMs = -1, widthMs = 60, busyFrom = -1, busyTo = -1, backAmp = 0;
+bool vertical = false;   // the rotation about the vertical (gz, along gravity) instead of across it (gx)
 static imu::Sink sinkFn; static uint32_t imuN = 0;
 void imu::setSink(Sink s){ sinkFn = s; }
 uint32_t imu::count(){ return imuN; }
@@ -26,7 +27,8 @@ float gyroAt(double t) { // dps; a swing: bump to 900 at swingPeakMs, width ~120
 void pumpImu() { // deliver all samples with time <= now
   while (imuN * 1000.0 / IMU_HZ <= nowMs) {
     double t = imuN * 1000.0 / IMU_HZ;
-    int16_t raw[6] = { (int16_t)(gyroAt(t) / imu::GYRO_DPS_PER_LSB), 0, 0, 0, 0, (int16_t)(1.0 / imu::ACC_G_PER_LSB) };
+    int16_t g = (int16_t)(gyroAt(t) / imu::GYRO_DPS_PER_LSB);
+    int16_t raw[6] = { vertical ? (int16_t)0 : g, 0, vertical ? g : (int16_t)0, 0, 0, (int16_t)(1.0 / imu::ACC_G_PER_LSB) };
     raw[1] = (int16_t)(imuN & 0xFF);   // tag sample index in gy to check alignment
     uint32_t i = imuN++;
     sinkFn(raw, i);
@@ -140,8 +142,9 @@ int main() {
   widthMs = 60; swingPeakMs = 70000; impactMs = 70020; run(70150);
   capture::buttonPress(millis()); run(72000);                        // a press right after a real swing: kept since 0.4.0, flagged
   busyFrom = 74000; busyTo = 75500;                                   // moving about until just before the swing
+  vertical = true;                                                    // ...and turning like a downswing
   swingPeakMs = 76000; impactMs = 76020; run(78000);                 // swing-like, loud, but not still first: dropped
-  busyFrom = busyTo = -1;
+  busyFrom = busyTo = -1; vertical = false;
   capture::setSession(false);
   printf("gate: %u kept, %u dropped, %u rejects\n", store::swings() - before, capture::gatedOut(), capture::rejects());
   CHECK(store::swings() == before + 2);
@@ -150,7 +153,7 @@ int main() {
   auto rs2 = records();
   // Every candidate that failed one rule left a reject record with its reason.
   std::vector<uint8_t> reasons;
-  for (auto& r : rs2) if (r[0] == store::K_REJECT) { CHECK(r.size() == 48); CHECK(store::crc16(r.data() + 8, 40) == u16(r.data() + 6)); reasons.push_back(r[8 + 36]); }
+  for (auto& r : rs2) if (r[0] == store::K_REJECT) { CHECK(r.size() == 52); CHECK(store::crc16(r.data() + 8, 44) == u16(r.data() + 6)); reasons.push_back(r[8 + 36]); }
   CHECK(reasons.size() == 4);
   CHECK(reasons[0] == capture::R_NO_IMPACT);                // silent
   CHECK(reasons[1] == capture::R_NO_IMPACT);                // sound outside the window
@@ -162,6 +165,14 @@ int main() {
     for (auto& r : rs2) if (r[0] == store::K_REJECT && ++k == 4) x = r.data() + 8 + 20;
     printf("moving reject: peak %u impact %u build %u still %u jolt %.2f at %+d ms\n", u16(x), u16(x + 2), u16(x + 8), u16(x + 10), u16(x + 12) / 100.0, s16(x + 14));
     CHECK(u16(x + 10) > 80 && u16(x) > 800 && u16(x + 2) == 40000 && u16(x + 8) > 110);
+    // 0.4.2: the turn through the downswing, degrees × 10. About 93° for
+    // this simulated swing turning about the vertical...
+    printf("moving reject turn %.1f deg\n", s16(x + 20) / 10.0);
+    CHECK(s16(x + 20) > 800 && s16(x + 20) < 1050);
+    // ...and next to nothing for the silent one, turning across it.
+    const uint8_t* y = nullptr; k = 0;
+    for (auto& r : rs2) if (r[0] == store::K_REJECT && ++k == 1) y = r.data() + 8 + 20;
+    CHECK(abs(s16(y + 20)) < 30);
   }
   // The swing with a press 150 ms after its peak is saved, flagged bit 3.
   int flagged = 0;

@@ -38,7 +38,7 @@ namespace {
   const uint32_t LABEL_WINDOW_MS = 20000;
   const uint16_t BUILDUP_SAMPLES = 62;        // 0.3 s at 208 Hz
   const uint16_t STILL_SAMPLES = 104;         // 0.5 s at 208 Hz, from 1.5 s before the peak
-  const uint32_t REJECT_BODY = 40;
+  const uint32_t REJECT_BODY = 44;           // 0.4.2: + turn (40 before)
 
   // Record body: context (20 bytes) + swing fields (20) + IMU + envelope.
   const uint32_t CTX = 20, SWING_FIELDS = 20;
@@ -113,8 +113,39 @@ namespace {
     return best;
   }
 
+  // Degrees turned about the vertical through the downswing: the gyro's
+  // component along gravity (accelerometer mean 300-150 samples before the
+  // peak, at address) summed from 40 samples before the peak to 14 after.
+  // Same as turnDeg() in webapp/js/capturelog.js. Positive is a right-hander's
+  // downswing; it doesn't depend on how the tracker sits in the pocket.
+  // NAN if the samples have left the ring or there's no gravity to go by.
+  float turnAt(uint32_t peakIdx) {
+    uint32_t count = imu::count();
+    auto have = [&](uint32_t i) { return i < count && count - i <= RING; };
+    float g[3] = {0, 0, 0};
+    uint16_t n = 0;
+    uint32_t a = peakIdx >= 300 ? peakIdx - 300 : 0, b = peakIdx >= 151 ? peakIdx - 150 : 1;
+    for (uint32_t i = a; i < b; i++) {
+      if (!have(i)) continue;
+      const int16_t* v = ring[i % RING];
+      for (uint8_t k = 0; k < 3; k++) g[k] += v[3 + k] * imu::ACC_G_PER_LSB;
+      n++;
+    }
+    if (!n) return NAN;
+    float len = sqrtf(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]) / n;
+    if (len < 0.3f) return NAN;
+    for (uint8_t k = 0; k < 3; k++) g[k] /= len * n;
+    float sum = 0;
+    for (uint32_t i = peakIdx >= 40 ? peakIdx - 40 : 0; i < peakIdx + 15; i++) {
+      if (!have(i)) continue;
+      const int16_t* v = ring[i % RING];
+      sum += (v[0] * g[0] + v[1] * g[1] + v[2] * g[2]) * imu::GYRO_DPS_PER_LSB;
+    }
+    return sum / imu::rateHz();
+  }
+
   void writeReject(float peakMs, uint8_t reason, uint16_t impact, uint16_t lowImpact, uint16_t audioPeak,
-                   float build, float still, float impactMs, uint8_t flags) {
+                   float build, float still, float impactMs, uint8_t flags, float turn) {
     uint8_t b[REJECT_BODY];
     memset(b, 0, sizeof(b));
     context(b, (uint32_t)peakMs);
@@ -131,6 +162,10 @@ namespace {
     x[16] = reason;
     x[17] = flags;
     put16(x + 18, triggerDps);
+    // Degrees × 10, 0x8000 if unknown (0.4.2).
+    int32_t t10 = isnan(turn) ? -32768 : (int32_t)lroundf(turn * 10);
+    if (!isnan(turn)) t10 = t10 < -32767 ? -32767 : t10 > 32767 ? 32767 : t10;
+    put16(x + 20, (uint16_t)(int16_t)t10);
     if (store::append(store::K_REJECT, b, sizeof(b)) && nRejects < 65535) nRejects++;
   }
 
@@ -278,7 +313,7 @@ namespace {
         // 31 Oct every missed shot failed just one, while walking (3,300 of
         // 4,480 records in 2 hours) fails two or three.
         bool one = (reason & (reason - 1)) == 0;
-        if (one) writeReject(peakMs, reason, impact, lowImpact, audioPeak, build, still, impactMs, flags);
+        if (one) writeReject(peakMs, reason, impact, lowImpact, audioPeak, build, still, impactMs, flags, turnAt(peakIdx));
         // No cooldown after a reject: a backswing that reaches the trigger
         // (about 150 deg/s on most of Trent's swings, up to 650) would
         // otherwise hold off the downswing 0.8-1 s later and lose the shot.

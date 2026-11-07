@@ -152,8 +152,8 @@ test('round mode: swings close together at the same spot keep only the most like
     encodeSession(1, true, ctx(0), 250, 1000),
     encodeSwing(2, ctx(1000)),                                   // real shot
     encodeSwing(3, ctx(40000)),                                  // practice swing 39 s later, same spot
-    encodeSwing(4, ctx(130000)),                                 // next shot 90 s later
-    encodeSwing(5, ctx(134000, { lat: -27.391, lon: 152.94 })),  // 4 s later but 110 m away: kept
+    encodeSwing(4, ctx(250000)),                                 // next shot from here 3.5 min later
+    encodeSwing(5, ctx(254000, { lat: -27.391, lon: 152.94 })),  // 4 s later but 110 m away: kept
   ];
   const rows = bytes.map((b) => ({ ...decodeRecord(b), bytes: b, logId: 1 }));
   const [s] = sessions(rows);
@@ -166,6 +166,51 @@ test('round mode: swings close together at the same spot keep only the most like
   assert.equal(r.notShot.size, 0);
   const out = exportJson(rows);
   assert.equal(out.logs[0].sessions[0].swings.filter((w) => w.not_shot).length, 1);
+});
+
+test('turn: a downswing about the vertical, whichever way up the tracker is', async () => {
+  const { turnDeg, swingShape } = await import('../js/capturelog.js');
+  const ctx = { time: 1790000000, deviceMs: 1000, pos: { lat: -27.39, lon: 152.94 } };
+  const right = swingShape(encodeSwing(2, ctx, { turn: 1 })).turn;
+  assert.ok(right > 80 && right < 100, `turn ${right}`);
+  assert.ok(swingShape(encodeSwing(3, ctx, { turn: -1 })).turn < -80);
+  assert.ok(Math.abs(swingShape(encodeSwing(4, ctx)).turn) < 1);           // rotation across the vertical
+  // Upside down: gravity and the vertical rotation both flip, the turn doesn't.
+  const d = decodeRecord(encodeSwing(5, ctx, { turn: 1 }), { full: true });
+  const flipped = d.imu.map(([gx, gy, gz, ax, ay, az]) => [gx, gy, -gz, ax, ay, -az]);
+  assert.ok(Math.abs(turnDeg(flipped, 312, 208) - right) < 0.5);
+  assert.equal(turnDeg([], 0), null);
+});
+
+test('round mode: a thud with a full turn is a shot, and a clean strike beats a thud at the same spot', () => {
+  const ctx = (ms, lat = -27.39) => ({ time: 1790000000 + Math.floor(ms / 1000), deviceMs: 100000 + ms, pos: { lat, lon: 152.94 }, hdop: 1, sats: 9 });
+  const bytes = [
+    encodeSession(1, true, ctx(0), 250, 1000),
+    encodeSwing(2, ctx(1000), { turn: 1, lowImpact: 60000 }),            // driver: a thud, but a full turn
+    encodeSwing(3, ctx(400000, -27.392), { lowImpact: 60000 }),          // a thud with no turn: hidden
+    encodeSwing(4, ctx(800000, -27.394), { turn: 1, lowImpact: 60000 }), // rehearsal before the shot (thud)
+    encodeSwing(5, ctx(900000, -27.394), { turn: 1, lowImpact: 20000 }), // the shot, a clean strike
+    encodeSwing(6, ctx(1000000, -27.394), { turn: 1, lowImpact: 60000 }), // rehearsal 100 s after
+  ];
+  const [s] = sessions(bytes.map((b) => ({ ...decodeRecord(b), bytes: b, logId: 1 })));
+  assert.equal(s.notShot.get(2), undefined);
+  assert.equal(s.notShot.get(3), 'thud');
+  assert.equal(s.notShot.get(4), 'same spot');
+  assert.equal(s.notShot.get(5), undefined);
+  assert.equal(s.notShot.get(6), 'same spot');
+});
+
+test('reject records from firmware 0.4.2 carry the turn', () => {
+  const full = new Uint8Array(readFileSync(new URL('./fixtures/capture-log-full.bin', import.meta.url)));
+  const rejects = split(full).map((b) => decodeRecord(b)).filter((r) => r.kind === KIND.reject);
+  assert.ok(rejects.every((r) => r.len === 52));
+  assert.ok(rejects[3].turn > 80 && rejects[3].turn < 105, `turn ${rejects[3].turn}`);   // the swing after moving about turns like a downswing
+  assert.ok(Math.abs(rejects[0].turn) < 3);
+  // A 0.4.1 record (48 bytes) has no turn.
+  const old = new Uint8Array(48); old.set(split(full).find((b) => b[0] === KIND.reject).subarray(0, 48));
+  old[2] = 48; old[3] = 0;
+  const dv = new DataView(old.buffer); dv.setUint16(6, crc16(old, 8), true);
+  assert.equal(decodeRecord(old).turn, undefined);
 });
 
 test('capture packet and the new control ops', () => {

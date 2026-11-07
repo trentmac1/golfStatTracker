@@ -5,7 +5,7 @@ import { toLocal, distance } from '../geo.js';
 import { analyse, describeFall, shapePolygon, buildCourseGreens, CREDITS } from '../greens.js';
 import { previewRing, smoothPathD } from '../holemap.js';
 import { esc, sheet, toast } from '../ui.js';
-import { buildGreenMesh, mountGreen3d, hasWebGL } from '../green3d.js';
+import { buildGreenMesh, mountGreen3d, hasWebGL, HEAT_STOPS } from '../green3d.js';
 
 const PAD = 4; // metres around the green in the drawing
 const EXAGGERATIONS = [2, 4, 8];
@@ -162,6 +162,8 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
   const can3d = !!(a && h.shape.grid && hasWebGL());
   let mode = can3d && pref('gp-mode') === '3d' ? '3d' : 'top';
   let exag = Number(pref('gp-exag')) || 4;
+  let heatGrid = pref('gp-grid') !== 'off';
+  const heatCss = `linear-gradient(to right, ${HEAT_STOPS.map(([t, c]) => `rgb(${c.map((v) => Math.round(v * 255)).join(',')}) ${Math.round(t * 100)}%`).join(', ')})`;
   if (!EXAGGERATIONS.includes(exag)) exag = 4;
   let view3d = null;
   sheet(`
@@ -175,6 +177,13 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
     <div class="gp-wrap" ${mode === '3d' ? 'hidden' : ''}>${g.svg}</div>
     ${can3d ? `<div class="gp-3d" ${mode === '3d' ? '' : 'hidden'}>
       <canvas class="gp-canvas" aria-label="3D view of green ${hole}. Drag to turn, pinch to zoom, double-tap to reset."></canvas>
+      <div class="gp-heat">
+        <div class="gp-heat-key" ${heatGrid ? '' : 'hidden'}>
+          <span class="gp-heat-bar" style="background:${heatCss}"></span>
+          <span class="gp-heat-labels"><span>Low</span><span>High${a ? ` (+${(a.zmax - a.zmin).toFixed(1)} m)` : ''}</span></span>
+        </div>
+        <button class="btn ghost small gp-grid-btn${heatGrid ? ' on' : ''}" data-g="grid" aria-pressed="${heatGrid}">Colour grid ${heatGrid ? 'on' : 'off'}</button>
+      </div>
       <div class="gp-3d-bar">
         <span>Height ×</span>
         <div class="seg small">${EXAGGERATIONS.map((x) => `<button data-x="${x}" class="${x === exag ? 'on' : ''}">${x}</button>`).join('')}</div>
@@ -196,7 +205,7 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
     const show3d = () => {
       if (view3d) return;
       try {
-        const mesh = buildGreenMesh(h, { from, ball, exaggeration: exag });
+        const mesh = buildGreenMesh(h, { from, ball, exaggeration: exag, heatGrid });
         if (!mesh) throw new Error('no heights on this green');
         view3d = mountGreen3d(el.querySelector('.gp-canvas'), mesh);
         stretchNote(mesh);
@@ -230,7 +239,7 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
         exag = Number(x.dataset.x);
         pref('gp-exag', String(exag));
         el.querySelectorAll('[data-x]').forEach((y) => y.classList.toggle('on', y === x));
-        const mesh = buildGreenMesh(h, { from, ball, exaggeration: exag });
+        const mesh = buildGreenMesh(h, { from, ball, exaggeration: exag, heatGrid });
         if (mesh && view3d) { view3d.setMesh(mesh); stretchNote(mesh); }
         return;
       }
@@ -238,6 +247,17 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
       if (!b) return;
       if (b.dataset.g === 'top' || b.dataset.g === '3d') { setMode(b.dataset.g); return; }
       if (b.dataset.g === 'reset') { view3d?.reset(); return; }
+      if (b.dataset.g === 'grid') {
+        heatGrid = !heatGrid;
+        pref('gp-grid', heatGrid ? 'on' : 'off');
+        b.classList.toggle('on', heatGrid);
+        b.setAttribute('aria-pressed', String(heatGrid));
+        b.textContent = `Colour grid ${heatGrid ? 'on' : 'off'}`;
+        el.querySelector('.gp-heat-key').hidden = !heatGrid;
+        const mesh = buildGreenMesh(h, { from, ball, exaggeration: exag, heatGrid });
+        if (mesh && view3d) view3d.setMesh(mesh);
+        return;
+      }
       if (b.dataset.g === 'close') close();
       if (b.dataset.g === 'refresh') {
         b.disabled = true;

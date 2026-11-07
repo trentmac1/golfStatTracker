@@ -47,6 +47,29 @@ function hsl(h, s, l) {
   const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
   return [f(0), f(8), f(4)];
 }
+// Height colours for the grid: blue (lowest), green (middle), then yellow,
+// orange and red (highest), fading smoothly between them.
+export const HEAT_STOPS = [
+  [0, [0.16, 0.42, 0.98]],    // blue
+  [0.5, [0.18, 0.80, 0.30]],  // green
+  [0.67, [1.00, 0.90, 0.15]], // yellow
+  [0.83, [1.00, 0.55, 0.10]], // orange
+  [1, [0.93, 0.14, 0.12]],    // red
+];
+export function heatColour(t) {
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 1; i < HEAT_STOPS.length; i++) {
+    const [t1, c1] = HEAT_STOPS[i];
+    if (t <= t1) {
+      const [t0, c0] = HEAT_STOPS[i - 1];
+      const k = (t - t0) / (t1 - t0);
+      return c0.map((v, j) => v + (c1[j] - v) * k);
+    }
+  }
+  return HEAT_STOPS.at(-1)[1].slice();
+}
+const GRID_M = 1.5;     // spacing of the coloured grid lines
+const GRID_W = 0.13;    // their width, in metres on the ground
 const FRINGE = [0.20, 0.42, 0.22];
 const SAND = [0.89, 0.82, 0.62];
 
@@ -81,7 +104,8 @@ function levelSegments(grid, L) {
 //   from:  where the player looks from ({lat, lon}), for the starting view
 //   ball:  ball on the green ({lat, lon}), drawn as a marker
 //   exaggeration: vertical scale
-export function buildGreenMesh(h, { from, ball, exaggeration = 4 } = {}) {
+//   heatGrid: drape the height-coloured grid (and dim the grass under it)
+export function buildGreenMesh(h, { from, ball, exaggeration = 4, heatGrid = true } = {}) {
   const shape = h?.shape, grid = shape?.grid;
   if (!shape?.polygon || !grid) return null;
   const o = grid.origin;
@@ -153,7 +177,8 @@ export function buildGreenMesh(h, { from, ball, exaggeration = 4 } = {}) {
     pos.push(x, y, z);
     kinds.push(kind[i]);
     const t = Math.max(0, Math.min(1, (zz - zmin) / relief));
-    if (kind[i] === 2) col.push(...greenColour(t));
+    // Under the coloured grid the grass is darker and plainer, so the colours stand out.
+    if (kind[i] === 2) col.push(...(heatGrid ? greenColour(t).map((v) => v * 0.62) : greenColour(t)));
     else {
       // Collar and sand fade into the background towards the outer edge, so
       // the square grid cells don't show as a jagged border.
@@ -214,6 +239,48 @@ export function buildGreenMesh(h, { from, ball, exaggeration = 4 } = {}) {
     if (y != null) { const [x, z] = rot(q.x, q.y); ballAt = [x, y, z]; }
   }
 
+  // The coloured grid: lines every 1.5 m both ways, lined up with the view,
+  // draped on the green. Each is a thin flat strip (WebGL lines are a single
+  // pixel on phones) coloured by height at every point.
+  const heat = { positions: [], colours: [], indices: [] };
+  if (heatGrid) {
+    // viewer (x, z) back to local east/north metres
+    const unrot = (vx, vz) => { const a = vx, b = -vz; return { x: cx + a * cos + b * sin, y: cy - a * sin + b * cos }; };
+    const vr = ring.map((p) => rot(p.x, p.y));
+    const xs = vr.map((q) => q[0]), zs = vr.map((q) => q[1]);
+    const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    const GLIFT = 0.02;
+    const vtx = (vx, vz) => {
+      const p = unrot(vx, vz);
+      const zz = heightAt(grid, p.x, p.y);
+      if (zz == null) return null;
+      return { y: Y(zz) + GLIFT, c: heatColour((zz - zmin) / relief), inside: insideXY(p, ring) };
+    };
+    // one straight line of the grid, sampled every 0.5 m, kept where it's on the green
+    const run = (fixed, from, to, alongX) => {
+      const pts = [];
+      for (let u = from; u <= to + 1e-9; u += 0.5) {
+        const [vx, vz] = alongX ? [u, fixed] : [fixed, u];
+        pts.push({ vx, vz, v: vtx(vx, vz) });
+      }
+      const hw = GRID_W / 2;
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a = pts[k], b = pts[k + 1];
+        if (!a.v?.inside || !b.v?.inside) continue;
+        const base = heat.positions.length / 3;
+        // offsets across the strip (perpendicular, on the ground)
+        const [ox, oz] = alongX ? [0, hw] : [hw, 0];
+        for (const q of [a, b]) {
+          heat.positions.push(q.vx - ox, q.v.y, q.vz - oz, q.vx + ox, q.v.y, q.vz + oz);
+          heat.colours.push(...q.v.c, ...q.v.c);
+        }
+        heat.indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+    };
+    for (let gx = Math.ceil(x0 / GRID_M) * GRID_M; gx <= x1; gx += GRID_M) run(gx, z0, z1, false);
+    for (let gz = Math.ceil(z0 / GRID_M) * GRID_M; gz <= z1; gz += GRID_M) run(gz, x0, x1, true);
+  }
+
   // Size, for framing the camera.
   let rad = 0, greenRad = 0;
   for (let i = 0; i < pos.length; i += 3) {
@@ -225,6 +292,7 @@ export function buildGreenMesh(h, { from, ball, exaggeration = 4 } = {}) {
     positions: new Float32Array(pos), normals: nrm, colours: new Float32Array(col), indices: idx,
     kinds: Uint8Array.from(kinds), // per vertex: 1 collar, 2 green, 3 sand
     contours: new Float32Array(contour), edge: new Float32Array(edge), ball: ballAt,
+    heat: { positions: new Float32Array(heat.positions), colours: new Float32Array(heat.colours), indices: heat.indices },
     radius: rad, greenRadius: greenRad, height: relief * exaggeration, relief, exaggeration, requested, zmin, zmax, contourStep: step,
   };
 }
@@ -304,6 +372,14 @@ export function mountGreen3d(canvas, mesh) {
     buf.itype = big ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
     buf.count = big || m.positions.length / 3 <= 65535 ? m.indices.length : 0;
     buf.contour = arr(m.contours.length ? m.contours : new Float32Array(6));
+    const hv = m.heat?.positions.length ? m.heat : null;
+    buf.hp = hv ? arr(hv.positions) : null;
+    buf.hc = hv ? arr(hv.colours) : null;
+    buf.hn = hv ? arr(new Float32Array(hv.positions.length).map((_, i) => (i % 3 === 1 ? 1 : 0))) : null;
+    const hbig = hv && hv.positions.length / 3 > 65535 && ext;
+    buf.hi = hv ? arr(hbig ? new Uint32Array(hv.indices) : new Uint16Array(hv.indices), gl.ELEMENT_ARRAY_BUFFER) : null;
+    buf.htype = hbig ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+    buf.hcount = hv && (hbig || hv.positions.length / 3 <= 65535) ? hv.indices.length : 0;
     buf.edge = arr(m.edge.length ? m.edge : new Float32Array(6));
     buf.ball = m.ball ? arr(new Float32Array([...m.ball, m.ball[0], m.ball[1] + Math.max(0.6, m.height * 0.5), m.ball[2]])) : null;
   }
@@ -341,7 +417,15 @@ export function mountGreen3d(canvas, mesh) {
     gl.uniformMatrix4fv(gl.getUniformLocation(surf, 'm'), false, MV);
     gl.uniform3fv(gl.getUniformLocation(surf, 'l'), norm([-0.4, 1, 0.5]));
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.i);
+    // Push the ground back a touch so the grid strips lying on it always win.
+    gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(2, 2);
     gl.drawElements(gl.TRIANGLES, buf.count, buf.itype, 0);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    if (buf.hcount) {
+      at(surf, 'p', buf.hp); at(surf, 'n', buf.hn); at(surf, 'c', buf.hc);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.hi);
+      gl.drawElements(gl.TRIANGLES, buf.hcount, buf.htype, 0);
+    }
     // Free the surface attributes before the line program uses slot 0.
     for (const n of ['n', 'c']) { const loc = gl.getAttribLocation(surf, n); if (loc >= 0) gl.disableVertexAttribArray(loc); }
 
@@ -356,7 +440,7 @@ export function mountGreen3d(canvas, mesh) {
       gl.drawArrays(mode, 0, count);
     };
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    lines(buf.contour, M.contours.length / 3, [0.04, 0.12, 0.06, 0.55]);
+    lines(buf.contour, M.contours.length / 3, M.heat?.positions.length ? [0.02, 0.06, 0.03, 0.35] : [0.04, 0.12, 0.06, 0.55]);
     lines(buf.edge, M.edge.length / 3, [1, 1, 1, 0.95]);
     if (buf.ball) {
       lines(buf.ball, 2, [1, 1, 1, 1]);

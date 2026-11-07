@@ -489,6 +489,13 @@ button.sg-row { background: transparent; border: 0; padding: 2px 0; border-radiu
 .gp-mode { margin: 10px auto 0; max-width: 420px; }
 .gp-3d { margin: 10px auto 6px; max-width: 420px; }
 .gp-canvas { display: block; width: 100%; aspect-ratio: 4 / 3; max-height: 46dvh; border-radius: 16px; background: #24402b; touch-action: none; }
+.gp-heat { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.gp-heat-key { flex: 1; min-width: 0; }
+.gp-heat-key[hidden] { display: none; }
+.gp-heat-bar { display: block; height: 12px; border-radius: 6px; }
+.gp-heat-labels { display: flex; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 13px; color: var(--muted); }
+.gp-grid-btn { min-height: 44px; margin-left: auto; white-space: nowrap; }
+.gp-grid-btn.on { border-color: var(--turf); color: var(--turf-deep); }
 .gp-3d-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-weight: 600; color: var(--muted); }
 .gp-3d-bar .seg { flex: 1; margin: 0; }
 .gp-3d-bar .btn { min-height: 44px; }

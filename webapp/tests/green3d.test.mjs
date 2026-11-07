@@ -77,3 +77,38 @@ test('turning the view and stretching heights', () => {
   // No grid, no mesh.
   assert.equal(buildGreenMesh({ shape: { polygon: h.shape.polygon } }), null);
 });
+
+test('height colours run blue, green, yellow, orange, red', async () => {
+  const { heatColour } = await import('../js/green3d.js');
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.02);
+  assert.ok(near(heatColour(0), [0.16, 0.42, 0.98]));   // blue, lowest
+  assert.ok(near(heatColour(0.5), [0.18, 0.80, 0.30])); // green, middle
+  assert.ok(near(heatColour(0.67), [1, 0.9, 0.15]));    // yellow
+  assert.ok(near(heatColour(0.83), [1, 0.55, 0.1]));    // orange
+  assert.ok(near(heatColour(1), [0.93, 0.14, 0.12]));   // red, highest
+  assert.ok(near(heatColour(-1), heatColour(0)) && near(heatColour(2), heatColour(1)));
+  // fades smoothly: halfway between two colours is their blend, no jumps
+  assert.ok(near(heatColour(0.25), [0.17, 0.61, 0.64]));
+  const ts = Array.from({ length: 101 }, (_, i) => i / 100).map(heatColour);
+  for (let i = 1; i < ts.length; i++) assert.ok(Math.max(...ts[i].map((v, j) => Math.abs(v - ts[i - 1][j]))) < 0.06);
+});
+
+test('the coloured grid lies on the green, red at the top and blue at the bottom', () => {
+  const h = makeHole();
+  const m = buildGreenMesh(h, { from: at(0, -150) }); // uphill away from the player
+  const { positions: P, colours: C, indices: I } = m.heat;
+  assert.ok(I.length > 300 && I.length % 6 === 0);
+  // every strip point is on the green (within its 12 m radius, plus the strip width)
+  for (let i = 0; i < P.length; i += 3) assert.ok(Math.hypot(P[i], P[i + 2]) < 12.2);
+  // far (back, higher) points are red-ish, near (front, lower) are blue-ish
+  let back = null, front = null;
+  for (let i = 0; i < P.length; i += 3) {
+    if (!back || P[i + 2] < back.z) back = { z: P[i + 2], c: [C[i], C[i + 1], C[i + 2]] };
+    if (!front || P[i + 2] > front.z) front = { z: P[i + 2], c: [C[i], C[i + 1], C[i + 2]] };
+  }
+  assert.ok(back.c[0] > 0.8 && back.c[2] < 0.3, `back ${back.c}`);
+  assert.ok(front.c[2] > 0.8 && front.c[0] < 0.3, `front ${front.c}`);
+  // strips sit just above the surface at their spot
+  const off = buildGreenMesh(h, { from: at(0, -150), heatGrid: false });
+  assert.equal(off.heat.indices.length, 0);
+});

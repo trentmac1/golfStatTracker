@@ -98,7 +98,7 @@ test('possible shots: hidden swings and near-miss rejects, not next to a shot, n
   const swings = [w(2, 60000, at(0, 2))];                                     // the tee shot
   const hidden = [
     { ...w(3, 70000, at(1, 3)), why: 'same spot' },                           // practice swing next to it: not shown
-    { ...w(4, 400000, at(2, 210)), why: 'thud' },                             // second shot, hidden as a thud: shown
+    { ...w(4, 400000, at(2, 315)), why: 'thud' },                             // approach short of the green, hidden as a thud: shown
   ];
   const rejects = [
     w(5, 700000, at(0, 330), { reasons: REJECT.noImpact, impactLevel: 600, lowImpact: 1700, buildup: 160 }),  // chip with a quiet strike: shown
@@ -122,7 +122,7 @@ test('possible shots: hidden swings and near-miss rejects, not next to a shot, n
   const r2 = { ...round, trackerDismissed: [shotId(7, 4)] };
   assert.deepEqual(planTrackerShots({ round: r2, course, shots: [], swings, presses: [], hidden, rejects }).possible.map((p) => p.seq), [5]);
   // An accepted possible is a touched tracker shot: never removed by sync.
-  const accepted = { id: shotId(7, 4), roundId: 'r1', hole: 1, seq: 9, lat: at(2, 210).lat, lon: at(2, 210).lon, time: t0 + 400000, source: 'tracker', accepted: true };
+  const accepted = { id: shotId(7, 4), roundId: 'r1', hole: 1, seq: 9, lat: at(2, 315).lat, lon: at(2, 315).lon, time: t0 + 400000, source: 'tracker', accepted: true };
   const plan3 = planTrackerShots({ round, course, shots: [accepted], swings, presses: [], hidden, rejects });
   assert.equal(plan3.remove.length, 0);
   assert.deepEqual(plan3.possible.map((p) => p.seq), [5]);
@@ -137,6 +137,24 @@ test('possible shots: rehearsals up to 3 minutes after a shot and near a louder 
     { ...w(5, 420000, at(9, 205), { impactLevel: 1200 }), why: 'thud' },       // 2 min later, 10 m away, quieter: not shown
     { ...w(6, 500000, at(0, 2)), why: 'thud' },                                // back on the tee 7 min later: shown
   ];
-  const plan = planTrackerShots({ round, course, shots: [], swings, presses: [], hidden, rejects: [] });
+  const bare = { holes: course.holes.map(({ shape, ...h }) => h) };   // no green outlines: distance from the green unknown
+  const plan = planTrackerShots({ round, course: bare, shots: [], swings, presses: [], hidden, rejects: [] });
   assert.deepEqual(plan.possible.map((p) => p.seq), [4, 6]);
+});
+
+test('possible shots: hidden swings more than 40 m from every green are left out, rejects are not', async () => {
+  const { metresFromGreen, HIDDEN_GREEN_M } = await import('../js/trackerround.js');
+  const { REJECT } = await import('../js/capturelog.js');
+  assert.equal(metresFromGreen(course, at(0, 350)), 0);
+  assert.ok(Math.abs(metresFromGreen(course, at(0, 318)) - 20) < 0.5);
+  assert.equal(metresFromGreen({ holes: [{ n: 1 }] }, at(0, 0)), null);
+  assert.equal(HIDDEN_GREEN_M, 40);
+  const w = (seq, ms, p, extra = {}) => ({ logId: 7, seq, time: Math.floor((t0 + ms) / 1000), pos: p, hdop: 1, peakGyro: 600, impactLevel: 2000, ...extra });
+  const hidden = [
+    { ...w(3, 100000, at(0, 150)), why: 'thud' },     // 188 m out: not shown
+    { ...w(4, 400000, at(0, 305)), why: 'thud' },     // 33 m short: shown
+  ];
+  const rejects = [w(5, 200000, at(0, 200), { reasons: REJECT.noImpact, impactLevel: 600, lowImpact: 1700, buildup: 160 })];  // far out, but a reject: shown
+  const plan = planTrackerShots({ round, course, shots: [], swings: [], presses: [], hidden, rejects });
+  assert.deepEqual(plan.possible.map((p) => p.seq), [5, 4]);
 });

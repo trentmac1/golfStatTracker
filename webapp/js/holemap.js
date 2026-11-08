@@ -313,7 +313,15 @@ export function autoLie(p, courseHole) {
 // Returns true when the shot changed. The tee shot is left as 'tee'.
 export function applyAutoLie(shot, courseHole, isTee) {
   // Any lie the map didn't set is the player's (older rounds have no flag).
-  if (isTee || shot.lieByHand || (shot.lie && !shot.lieAuto)) return false;
+  if (shot.lieByHand || (shot.lie && !shot.lieAuto)) return false;
+  // A shot that became the hole's first (an earlier one was deleted, such as
+  // a practice swing by the tee) is the tee shot: the map's lie gives way.
+  if (isTee) {
+    if (shot.lie === 'tee') return false;
+    shot.lie = 'tee';
+    delete shot.lieAuto;
+    return true;
+  }
   const lie = autoLie({ lat: shot.lat, lon: shot.lon }, courseHole);
   if (lie === (shot.lie ?? null) && !!shot.lieAuto === !!lie) return false;
   if (!lie && !shot.lieAuto) return false; // nothing to say, and nothing of ours to clear

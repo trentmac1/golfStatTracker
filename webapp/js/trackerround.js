@@ -105,6 +105,26 @@ export function onGreen(course, p) {
     && pointInPolygon(p, h.shape.polygon.map(([lat, lon]) => ({ lat, lon }))));
 }
 
+// Metres from p to the nearest mapped green outline (0 on one), or null if
+// the course has none mapped.
+export function metresFromGreen(course, p) {
+  let best = null;
+  for (const h of course?.holes ?? []) {
+    const poly = h?.shape?.polygon;
+    if (!(poly?.length > 2)) continue;
+    const pts = poly.map(([lat, lon]) => ({ lat, lon }));
+    if (pointInPolygon(p, pts)) return 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = toLocal(p, pts[i]), b = toLocal(p, pts[(i + 1) % pts.length]);
+      const ex = b.x - a.x, ey = b.y - a.y, L2 = ex * ex + ey * ey;
+      const t = L2 ? Math.max(0, Math.min(1, -(a.x * ex + a.y * ey) / L2)) : 0;
+      const d = Math.hypot(a.x + t * ex, a.y + t * ey);
+      if (best == null || d < best) best = d;
+    }
+  }
+  return best;
+}
+
 // ---------- turning swings into shots ----------
 // Swings and short-game presses saved during the round, from capture rows
 // (any logs). Swings the app marks as not shots (thud, knock, same spot)
@@ -164,6 +184,12 @@ export const HIDDEN_WHY = { thud: 'it sounded like a thud', jolt: 'the tracker j
 // 1 in 5 of the empty ? pins on 31 Oct-6 Nov, with no shot lost.
 export const POSSIBLE_M = 15, POSSIBLE_MS = 180000;
 
+// A hidden swing (a thud or knock that didn't turn like a downswing) more
+// than HIDDEN_GREEN_M from every green isn't a ?: too far out for a chip,
+// and a full shot from there turns. 8 Nov 2026, five rounds: 0 of 47 real ?
+// shots, about 1 in 10 empty pins.
+export const HIDDEN_GREEN_M = 40;
+
 // A shot is the player's once they've changed it: then sync leaves it alone.
 const touched = (s) => s.edited || s.accepted || s.club || s.lieByHand || s.target || s.penalty || s.mishit;
 
@@ -211,6 +237,7 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
     ...hidden.map((w) => ({ w, why: HIDDEN_WHY[w.why] ?? w.why, kind: 'hidden' })),
     ...rejects.map((j) => ({ w: j, why: nearMiss(j), kind: 'reject' })).filter((c) => c.why),
   ].filter(({ w }) => w.pos && !onGreen(course, w.pos) && !dismissed.has(shotId(w.logId, w.seq)) && !have.has(shotId(w.logId, w.seq)))
+    .filter(({ w, kind }) => kind !== 'hidden' || !(metresFromGreen(course, w.pos) > HIDDEN_GREEN_M))
     .map(({ w, why, kind }) => ({ id: shotId(w.logId, w.seq), lat: w.pos.lat, lon: w.pos.lon, time: w.time * 1000, why, kind,
       peakGyro: w.peakGyro ?? null, impact: w.impactLevel ?? null, logId: w.logId, seq: w.seq, hdop: w.hdop }))
     .filter((c) => !final.some((s) => s.lat != null && near(c, s, POSSIBLE_M, POSSIBLE_MS)))

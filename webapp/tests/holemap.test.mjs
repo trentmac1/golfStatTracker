@@ -148,6 +148,15 @@ test('shots on a mapped hole are marked fairway or rough automatically', async (
   const tee = { ...at(0, 0), lie: 'tee' };
   assert.equal(applyAutoLie(tee, h, true), false);
   assert.equal(tee.lie, 'tee');
+  // A shot the map marked that becomes the hole's first (a practice swing
+  // before it was deleted) turns into the tee shot.
+  const was = { ...at(25, 0), lie: 'rough', lieAuto: true };
+  assert.equal(applyAutoLie(was, h, true), true);
+  assert.deepEqual([was.lie, was.lieAuto], ['tee', undefined]);
+  // ...but not one the player chose.
+  const chose = { ...at(25, 0), lie: 'rough' };
+  assert.equal(applyAutoLie(chose, h, true), false);
+  assert.equal(chose.lie, 'rough');
   // unmapped hole: left alone
   const un = { ...at(25, 200), lie: null };
   assert.equal(applyAutoLie(un, course.holes[1], false), false);

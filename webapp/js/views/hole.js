@@ -39,10 +39,13 @@ export async function holeView(root, { roundId, hole }) {
   const firstShotId = () => sortShots(holeShots())[0]?.id;
   const derived = () => deriveHole(ch(), hs(), holeShots());
 
-  // Shots marked before the hole map was downloaded get their lie now.
-  if (holeMapped(ch())) {
+  // Shots marked before the hole map was downloaded get their lie now, and
+  // the hole's first shot is the tee shot even if an earlier one was deleted.
+  {
     const tee = firstShotId();
-    for (const s of holeShots()) if (applyAutoLie(s, ch(), s.id === tee)) await db.put('shots', s);
+    for (const s of holeShots()) {
+      if ((s.id === tee || holeMapped(ch())) && applyAutoLie(s, ch(), s.id === tee)) await db.put('shots', s);
+    }
   }
 
   root.innerHTML = `
@@ -563,6 +566,8 @@ export async function holeView(root, { roundId, hole }) {
             shots = shots.filter((x) => x.id !== id);
             await dismissTrackerShot(round, raw);
             await db.del('shots', id);
+            const first = shots.find((x) => x.id === firstShotId());
+            if (first && applyAutoLie(first, ch(), true)) await db.put('shots', first);
             render();
             toast('Shot deleted');
           }

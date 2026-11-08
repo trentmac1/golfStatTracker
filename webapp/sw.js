@@ -1,10 +1,6 @@
 // Service worker: the app works with no signal once it has loaded once.
 // Bump VERSION when you deploy so phones pick up the new files.
-<<<<<<< Updated upstream
-const VERSION = 'v0.8.7';
-=======
-const VERSION = 'v0.8.5';
->>>>>>> Stashed changes
+const VERSION = 'v0.8.8';
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = 'runtime-v1';   // Leaflet, fonts
 const TILES = 'tiles-v1';       // satellite imagery you've looked at

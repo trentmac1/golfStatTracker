@@ -527,6 +527,9 @@ button.sg-row { background: transparent; border: 0; padding: 2px 0; border-radiu
 .ht-dot { fill: var(--flag); stroke: var(--ink); stroke-width: 1.5; }
 .ht-dot.pen { fill: var(--red); }
 .ht-empty { display: grid; place-items: center; height: 100%; color: #cfe3d4; font-size: 13px; }
+.ht-club { font-family: var(--num); font-weight: 700; fill: #fff; stroke: rgba(10,30,15,.85); paint-order: stroke; stroke-linejoin: round; }
+.ht-club.end { text-anchor: end; }
+.ht-putts { position: absolute; left: 6px; bottom: 5px; font: 700 13px/1 var(--num); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
 .ht-n { position: absolute; left: 6px; top: 4px; font: 700 22px/1 var(--num); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .ht-score { position: absolute; right: 6px; top: 6px; background: #fff; font: 700 15px/1 var(--num); width: 26px; height: 26px; color: var(--ink); }
 .ht-score.birdie, .ht-score.eagle { color: var(--red); }

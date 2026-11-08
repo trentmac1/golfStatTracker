@@ -40,6 +40,9 @@ export function holeThumb(dh, courseHole) {
   // keep a 3:4 tile shape with some margin
   const pad = Math.max(12, (y1 - y0) * 0.08);
   x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+  // Room at the top for the hole number and score, and at the bottom for the putts,
+  // so the green, tee and club labels sit clear of them.
+  { const h0 = y1 - y0; y0 -= h0 * 0.18; y1 += h0 * 0.14; }
   const w = x1 - x0, h = y1 - y0;
   if (w / h > 0.75) { const nh = w / 0.75; y0 -= (nh - h) / 2; y1 = y0 + nh; } else { const nw = h * 0.75; x0 -= (nw - w) / 2; x1 = x0 + nw; }
   // Hole map underneath: fairways (mapped or estimated), tees, water, bunkers.
@@ -49,7 +52,20 @@ export function holeThumb(dh, courseHole) {
   const r = ((x1 - x0) * 0.028).toFixed(2); // about 3 px on a phone tile
   // Each dot is where a shot was played from, coloured by its lie.
   const dots = sp.slice(0, dh.shots.length).map((p, i) => `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${r}" class="ht-dot${dh.shots[i].penalty ? ' pen' : ''}${dh.shots[i].startLie && i ? ` lie-${dh.shots[i].startLie}` : ''}"/>`).join('');
-  return `<svg viewBox="${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)}" class="ht-svg" aria-hidden="true">${layers.under}${greenShape}${path}${dots}</svg>`;
+  // Club beside each dot: to the right, or the left near the right edge, and
+  // flipped when it would sit on top of the previous shot's label.
+  const fs = (x1 - x0) * 0.1; // about 11 px on a phone tile
+  let prev = null;
+  const labels = sp.slice(0, dh.shots.length).map((p, i) => {
+    const club = dh.shots[i].club;
+    if (!club) return '';
+    let right = p[0] < x0 + (x1 - x0) * 0.6;
+    if (prev && Math.abs(prev.y - p[1]) < fs * 1.3 && prev.right === right && Math.abs(prev.x - p[0]) < fs * 3) right = !right;
+    prev = { x: p[0], y: p[1], right };
+    const dx = (right ? 1 : -1) * r * 1.9;
+    return `<text x="${f(p[0] + dx)}" y="${f(p[1] + fs * 0.36)}" font-size="${f(fs)}" stroke-width="${f(fs * 0.24)}" class="ht-club${right ? '' : ' end'}">${esc(club)}</text>`;
+  }).join('');
+  return `<svg viewBox="${f(x0)} ${f(y0)} ${f(x1 - x0)} ${f(y1 - y0)}" class="ht-svg" aria-hidden="true">${layers.under}${greenShape}${path}${dots}${labels}</svg>`;
 }
 
 // Grid of every hole in the round, for the round summary.
@@ -59,6 +75,7 @@ export function holeGrid(roundId, r, course) {
       ${holeThumb(dh, course.holes[dh.hole - 1])}
       <span class="ht-n">${dh.hole}</span>
       ${dh.complete ? `<span class="ht-score sc-mark ${scoreClass(dh.toPar)}">${dh.score}</span>` : ''}
+      ${dh.putts != null ? `<span class="ht-putts">${dh.putts} putt${dh.putts === 1 ? '' : 's'}</span>` : ''}
     </a>`).join('')}</div>`;
 }
 

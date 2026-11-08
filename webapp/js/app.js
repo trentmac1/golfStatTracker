@@ -12,6 +12,7 @@ import { captureView } from './views/capture.js';
 import * as share from './share.js';
 import { COURSE_SERVER } from './config.js';
 import { statsView } from './views/stats.js';
+import { conditionParts } from './conditions.js';
 import { coursesView, courseEditView, courseMapView } from './views/courses.js';
 import { $, esc, signed, fmtDate, toast, saveFile, pickFile, confirmSheet, sheet } from './ui.js';
 
@@ -158,6 +159,11 @@ async function homeView(root) {
   return {};
 }
 
+const conditionTags = (round) => {
+  const parts = conditionParts(round);
+  return parts.length ? `<span class="cond-tags">${parts.map((p) => `<i>${esc(p)}</i>`).join('')}</span>` : '';
+};
+
 async function roundsView(root) {
   const [rounds, courses] = await Promise.all([db.all('rounds'), db.all('courses')]);
   const courseById = new Map(courses.map((c) => [c.id, c]));
@@ -166,7 +172,7 @@ async function roundsView(root) {
     const course = courseById.get(round.courseId);
     if (!course) continue;
     const r = deriveRound(course, round, await db.shotsForRound(round.id));
-    rows.push(`<li><a href="#/round/${round.id}/card"><span>${fmtDate(round.date)}<small>${esc(course.name)}${round.holeList && (round.holeList.length !== 18 || round.holeList[0] !== 1) ? ` · ${esc(layoutLabel(course, round))}` : ''}${round.status !== 'done' ? ' · in progress' : ''}${round.entered ? ' · scorecard' : ''}</small></span>
+    rows.push(`<li><a href="#/round/${round.id}/card"><span>${fmtDate(round.date)}<small>${esc(course.name)}${round.holeList && (round.holeList.length !== 18 || round.holeList[0] !== 1) ? ` · ${esc(layoutLabel(course, round))}` : ''}${round.status !== 'done' ? ' · in progress' : ''}${round.entered ? ' · scorecard' : ''}</small>${conditionTags(round)}</span>
       <b>${r.holesPlayed ? r.score : '–'}</b><em>${r.holesPlayed ? signed(r.toPar) : ''}${r.holesPlayed && r.holesPlayed < 18 ? ` · ${r.holesPlayed} holes` : ''}</em></a></li>`);
   }
   root.innerHTML = `<section class="page"><header class="page-head"><h1>Rounds</h1></header>

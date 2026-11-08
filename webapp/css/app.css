@@ -681,3 +681,10 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .trk-hint { margin: 0 0 10px; font-size: 15px; color: var(--muted); }
 .pin.shot.possible { background: rgba(255,255,255,.75); color: var(--blue); border: 3px dashed var(--blue); }
 .gp-wrap[hidden], .gp-3d[hidden], .gp-legend[hidden] { display: none; }
+
+/* ---------- round conditions ---------- */
+.conditions { display: grid; gap: 10px; margin-bottom: 14px; }
+.cond-row > span { display: block; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.seg.cond button { min-height: 44px; font-size: 18px; padding: 0 2px; }
+.round-list .cond-tags, .page-head .cond-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; font-weight: 400; }
+.cond-tags i { font-style: normal; font-size: 13px; line-height: 1; padding: 4px 8px; border-radius: 10px; background: #e6ece2; color: var(--ink); }

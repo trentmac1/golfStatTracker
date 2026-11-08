@@ -4,6 +4,7 @@ import { deriveRound, layoutLabel } from '../stats.js';
 import { roundCsv } from '../export.js';
 import { sgSummary, CATEGORIES } from '../sg.js';
 import { holeGrid } from './review.js';
+import { CONDITIONS, setCondition } from '../conditions.js';
 import { esc, m, one, signed, pctText, fmtDate, toast, confirmSheet, saveFile } from '../ui.js';
 import { syncCaptures, reconcileTrackerShots, endTrackerRound } from '../trackerround.js';
 
@@ -37,6 +38,13 @@ function sgBlock(r, round) {
   const rows = CATEGORIES.map(([k, label]) => `<div class="tile"><b>${sg.by[k] > 0 ? '+' : sg.by[k] < 0 ? '−' : ''}${Math.abs(sg.by[k]).toFixed(1)}</b><span>${label}</span></div>`).join('');
   return `<h2>Strokes gained vs tour</h2><div class="tiles">${rows}</div>
     <p class="note">${sg.holes} of ${r.holesPlayed} holes counted (finished, with a green set and shots marked). Total ${sg.total.toFixed(1)}.</p>`;
+}
+
+// Weather, wind and green speed for the round. Tap an option again to clear it.
+function conditionsPicker(round) {
+  const c = round.conditions ?? {};
+  return CONDITIONS.map((g) => `<div class="cond-row"><span>${g.label}</span>
+    <div class="seg cond" role="group" aria-label="${g.label}">${g.options.map(([v, t]) => `<button data-cond="${g.key}" data-v="${v}" class="${c[g.key] === v ? 'on' : ''}" aria-pressed="${c[g.key] === v}">${t}</button>`).join('')}</div></div>`).join('');
 }
 
 export async function cardView(root, { roundId }) {
@@ -77,6 +85,8 @@ export async function cardView(root, { roundId }) {
         <b>${r.holesPlayed ? r.score : '–'}</b>
         <span>${r.holesPlayed ? `${signed(r.toPar)} · ${r.holesPlayed} ${r.holesPlayed === 1 ? 'hole' : 'holes'}` : 'No holes finished yet'}</span>
       </div>
+      <h2>Conditions</h2>
+      <div class="conditions">${conditionsPicker(round)}</div>
       <div class="card-scroll">${r.holes.length > 9 ? `${half(0, 9, 'Out')}${half(9, r.holes.length, 'In')}` : half(0, r.holes.length, 'Total')}</div>
       <p class="legend"><span class="sc-mark birdie">3</span> birdie or better <span class="sc-mark bogey">5</span> bogey <span class="sc-mark double">6</span> double+ · tap a hole number to open it</p>
       <h2 id="holeGrid">Hole by hole</h2>
@@ -93,6 +103,13 @@ export async function cardView(root, { roundId }) {
     </section>`;
 
   root.addEventListener('click', async (e) => {
+    const cb = e.target.closest('[data-cond]');
+    if (cb) {
+      setCondition(round, cb.dataset.cond, cb.dataset.v);
+      await db.put('rounds', round);
+      root.querySelector('.conditions').innerHTML = conditionsPicker(round);
+      return;
+    }
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (!a) return;
     if (a === 'finish') {

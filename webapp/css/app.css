@@ -688,3 +688,22 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .seg.cond button { min-height: 44px; font-size: 18px; padding: 0 2px; }
 .round-list .cond-tags, .page-head .cond-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; font-weight: 400; }
 .cond-tags i { font-style: normal; font-size: 13px; line-height: 1; padding: 4px 8px; border-radius: 10px; background: #e6ece2; color: var(--ink); }
+
+/* ---------- mark tee & green mid-round ---------- */
+.map-chip { position: absolute; z-index: 450; left: 10px; bottom: 10px; min-height: 44px; padding: 0 14px; border-radius: 22px; border: 0;
+  background: var(--flag); color: var(--ink); font: 700 17px/1 var(--body); box-shadow: 0 2px 8px rgba(0,0,0,.35); cursor: pointer; }
+.map-chip b { font-size: 20px; margin-right: 2px; }
+.hole.map-edit .measure-tip, .hole.map-edit .measure-card, .hole.map-edit [data-a="fullscreen"], .hole.map-edit [data-a="rotate"], .hole.map-edit [data-a="greenview"] { display: none !important; }
+.hole.map-edit .actions { display: none; }
+.hole.map-edit .map-wrap { bottom: calc(232px + var(--safe-b)); }
+.mark-tools { position: fixed; z-index: 910; left: 0; right: 0; bottom: 0; background: var(--paper);
+  padding: 10px 12px calc(10px + var(--safe-b)); box-shadow: 0 -2px 10px rgba(0,0,0,.15); }
+.mt-hint { margin: 0 0 8px; color: var(--muted); font-size: 15px; }
+.mt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.mt-col { display: grid; gap: 6px; }
+.mt-col h3 { margin: 0; font: 700 20px/1.1 var(--num); }
+.mt-col h3 span { font: 600 13px var(--body); margin-left: 4px; }
+.mt-col h3 .ok { color: var(--turf); } .mt-col h3 .no { color: var(--muted); }
+.mt-col .btn { min-height: 46px; font-size: 16px; padding: 0 6px; }
+.mark-tools .btn.wide { min-height: 46px; }
+body:has(.hole.map-edit) .toast { bottom: calc(244px + var(--safe-b)); } /* keep Done visible while marking */

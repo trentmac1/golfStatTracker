@@ -67,6 +67,8 @@ export async function holeView(root, { roundId, hole }) {
       <button class="map-btn third" data-a="rotate" aria-label="Map faces the hole" aria-pressed="true" hidden><span class="compass-n">N</span></button>
       <button class="map-btn second" data-a="fullscreen" aria-label="Full-screen map" aria-pressed="false"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="map-hint" id="mapHint" hidden></div>
+      <div class="crosshair" id="editCross" aria-hidden="true" hidden></div>
+      <button class="map-chip" data-a="markedit" id="markChip" hidden></button>
       <div class="measure-card" id="measure" hidden></div>
       <div class="measure-tip" id="measureTip">Tap the map to measure</div>
     </div>
@@ -74,6 +76,7 @@ export async function holeView(root, { roundId, hole }) {
       <button class="btn mark" data-a="mark"><span class="mark-label">Mark ball</span><small id="markSub">${round.tracker ? 'For a chip, or a shot the tracker missed' : 'Stand at your ball before you hit'}</small></button>
       <button class="btn on-green" data-a="ongreen">On green</button>
     </div>
+    <div class="mark-tools" id="markTools" hidden></div>
     <ol class="shot-list" id="shots"></ol>
     <div class="hole-stats" id="hstats"></div>
     <div class="hole-foot">
@@ -91,6 +94,8 @@ export async function holeView(root, { roundId, hole }) {
   let fittedToFix = false;
   let measure = null; // a tapped point: distance to it and on to the green
   let measureLayer = null;
+  let editing = false;      // marking the tee and green mid-round
+  let fullBeforeEdit = false;
 
   let autoRotate = await db.getSetting('mapRotate', true);
   let lastFrom = null;      // where the view was last aimed from
@@ -123,7 +128,7 @@ export async function holeView(root, { roundId, hole }) {
     }
     if (h.front) pin(h.front, 'edge', '').addTo(layer);
     if (h.back) pin(h.back, 'edge', '').addTo(layer);
-    if (h.tee && !d.shots.length) pin(h.tee, 'tee', 'T').addTo(layer);
+    if (h.tee && (!d.shots.length || editing)) pin(h.tee, 'tee', 'T').addTo(layer);
 
     const path = d.shots.map((s) => s.start);
     const last = d.shots[d.shots.length - 1];
@@ -170,7 +175,7 @@ export async function holeView(root, { roundId, hole }) {
   }
 
   function orient(from = aimPoint(), force = false) {
-    if (!map) return false;
+    if (!map || editing) return false;
     const g = ch().green;
     if (!from || !g) return false;
     if (!force && Date.now() - userMovedAt < 30000) return false; // don't fight a manual pan
@@ -203,6 +208,7 @@ export async function holeView(root, { roundId, hole }) {
   }
 
   function onMapTap(e) {
+    if (editing) return;
     if (!targetFor) {
       measure = { lat: e.latlng.lat, lon: e.latlng.lng };
       vibrate(10);
@@ -298,7 +304,7 @@ export async function holeView(root, { roundId, hole }) {
         meAcc = window.L.circle(ll(fix), { radius: fix.accuracy, className: 'me-acc', interactive: false }).addTo(map);
         me = window.L.circleMarker(ll(fix), { radius: 7, className: 'me', interactive: false }).addTo(map);
       } else { me.setLatLng(ll(fix)); meAcc.setLatLng(ll(fix)).setRadius(fix.accuracy); }
-      if (!fittedToFix) {
+      if (!fittedToFix && !editing) {
         fittedToFix = true;
         if (!orient(undefined, true)) {
           const h = ch();
@@ -317,7 +323,7 @@ export async function holeView(root, { roundId, hole }) {
     const fix = gps.latest();
     const h = ch();
     if (!h.green) {
-      el.innerHTML = `<div class="yd-note">No green for this hole yet. Tap <b>On green</b> when you reach it, or drag the map and set it under Courses.</div>`;
+      el.innerHTML = `<div class="yd-note">No green for this hole yet. ${map ? `Tap <b>Mark ${ch().tee ? 'green' : 'tee & green'}</b> on the map, or` : 'Tap'} <b>On green</b> when you reach it.</div>`;
       return;
     }
     if (!fix) { el.innerHTML = `<div class="yd-note">Finding GPS…</div>`; return; }
@@ -438,7 +444,89 @@ export async function holeView(root, { roundId, hole }) {
     $('#roundScore', root).textContent = r.holesPlayed ? `${signed(r.toPar)} thru ${r.holesPlayed}` : '';
   }
 
-  function render() { drawMap(); drawShots(); drawStats(); drawYardage(); drawMeasure(); drawRoundScore(); }
+  function render() { drawMap(); drawShots(); drawStats(); drawYardage(); drawMeasure(); drawRoundScore(); drawMarkChip(); }
+
+  // ---------- mark the tee and green mid-round ----------
+  // A hole with no tee or green gets a "Mark tee & green" chip on the map. It
+  // opens the map full screen with a cross in the middle: move the map so the
+  // cross sits on the spot (or stand on it) and tap Tee or Green.
+  function drawMarkChip() {
+    const chip = $('#markChip', root);
+    const h = ch();
+    const missing = [!h.tee && 'tee', !h.green && 'green'].filter(Boolean);
+    chip.hidden = editing || !map || !missing.length;
+    chip.innerHTML = `<b>＋</b> Mark ${missing.join(' & ')}`;
+  }
+
+  function drawMarkTools() {
+    const h = ch();
+    const fix = gps.latest();
+    const state = (p) => (p ? '<span class="ok">✓ set</span>' : '<span class="no">not set</span>');
+    $('#markTools', root).innerHTML = `
+      <p class="mt-hint">Move the map until the cross sits on the spot, or stand on it, then tap.</p>
+      <div class="mt-grid">
+        <div class="mt-col"><h3>Tee ${state(h.tee)}</h3>
+          <button class="btn primary" data-a="mk" data-p="tee" data-at="cross">At the cross</button>
+          <button class="btn ghost" data-a="mk" data-p="tee" data-at="me" ${fix ? '' : 'disabled'}>Where I'm standing</button></div>
+        <div class="mt-col"><h3>Green ${state(h.green)}</h3>
+          <button class="btn primary" data-a="mk" data-p="green" data-at="cross">At the cross</button>
+          <button class="btn ghost" data-a="mk" data-p="green" data-at="me" ${fix ? '' : 'disabled'}>Where I'm standing</button></div>
+      </div>
+      <button class="btn ghost wide" data-a="markdone">Done</button>`;
+  }
+
+  function startMarking() {
+    if (!map) return;
+    editing = true;
+    measure = null; targetFor = null;
+    $('#mapHint', root).hidden = true;
+    fullBeforeEdit = document.body.classList.contains('map-full');
+    root.querySelector('.hole').classList.add('map-edit');
+    setFull(true);
+    $('#editCross', root).hidden = false;
+    $('#markTools', root).hidden = false;
+    northUp(map);
+    // Start where the player is, or on what's already set, or the last green.
+    const h = ch(), fix = gps.latest(), prev = course.holes[n - 2];
+    const at = fix ?? h.tee ?? h.green ?? prev?.green ?? course.centre;
+    if (at) setTimeout(() => map.setView(ll(at), Math.max(map.getZoom(), 18)), 0);
+    drawMarkTools(); drawMarkChip(); drawMap(); drawMeasure();
+  }
+
+  function stopMarking() {
+    editing = false;
+    root.querySelector('.hole').classList.remove('map-edit');
+    $('#editCross', root).hidden = true;
+    $('#markTools', root).hidden = true;
+    setFull(fullBeforeEdit);
+    render();
+    if (!orient(undefined, true)) initialFit();
+  }
+
+  async function placeMark(what, at) {
+    let p;
+    if (at === 'me') {
+      const f = gps.latest();
+      if (!f) { toast('No GPS fix yet', 'warn'); return; }
+      p = { lat: f.lat, lon: f.lon };
+      map.setView(ll(p), map.getZoom());
+    } else {
+      const c = map.getCenter();
+      p = { lat: c.lat, lon: c.lng };
+    }
+    const h = ch();
+    if (what === 'green') {
+      h.green = { ...p, estimated: false };
+      markEdited(h, 'green');
+    } else {
+      h.tee = p;
+      markEdited(h, 'tee');
+    }
+    await db.put('courses', course);
+    vibrate();
+    toast(`${what === 'green' ? 'Green' : 'Tee'} saved for hole ${n}`);
+    drawMap(); drawMarkTools(); drawYardage(); drawStats();
+  }
 
   async function save() { await db.put('rounds', round); render(); }
 
@@ -623,6 +711,9 @@ export async function holeView(root, { roundId, hole }) {
       return;
     }
     if (a === 'trkstart') { await prepareTracker().catch((err) => toast(err.message, 'warn')); return; }
+    if (a === 'markedit') { startMarking(); return; }
+    if (a === 'markdone') { stopMarking(); return; }
+    if (a === 'mk') { await placeMark(b.dataset.p, b.dataset.at); return; }
     if (a === 'mark') markBall();
     else if (a === 'ongreen') onGreen();
     else if (a === 'prev') go(-1);

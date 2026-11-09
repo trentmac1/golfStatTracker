@@ -165,7 +165,7 @@ export async function statsView(root) {
         <button class="tile" data-metric="penalties"><b>${one(per18(sum((r) => r.penalties)))}</b><span>Penalties</span><small>per 18</small></button>
         <button class="tile" data-metric="parAvg"><b>${one(parAvg(3))} · ${one(parAvg(4))} · ${one(parAvg(5))}</b><span>Avg on par 3 · 4 · 5</span></button>
         <button class="tile" data-metric="driving"><b>${avgOf((r) => r.drivingDistance) ? `${m(avgOf((r) => r.drivingDistance))} m` : '–'}</b><span>Driving distance</span></button>
-        <button class="tile" data-metric="proximity"><b>${avgOf((r) => r.proximity) != null ? `${m(avgOf((r) => r.proximity))} m` : '–'}</b><span>Approach to centre</span></button>
+        <button class="tile" data-metric="proximity"><b>${avgOf((r) => r.proximity) != null ? `${m(avgOf((r) => r.proximity))} m` : '–'}</b><span>Approach proximity</span></button>
       </div>
 
       <h2>Strokes gained</h2>

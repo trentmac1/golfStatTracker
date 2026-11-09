@@ -29,7 +29,7 @@ export function statTiles(r) {
     ${tile(r.penalties, 'Penalties')}
     ${tile(r.chips, 'Chips & pitches')}
     ${tile(r.drivingDistance != null ? `${m(r.drivingDistance)} m` : '–', 'Driving', r.drivingDistance ? (r.drivingUsesDriverOnly ? 'driver only' : 'all tee shots, par 4–5') : '')}
-    ${tile(r.proximity != null ? `${m(r.proximity)} m` : '–', 'Approach to centre', 'ball on green')}`;
+    ${tile(r.proximity != null ? `${m(r.proximity)} m` : '–', 'Approach proximity', 'first putt length')}`;
 }
 
 function sgBlock(r, round) {

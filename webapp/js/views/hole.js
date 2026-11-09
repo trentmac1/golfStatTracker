@@ -415,7 +415,7 @@ export async function holeView(root, { roundId, hole }) {
       </div>
       ${(h.putts ?? 0) > 0 ? `
       <div class="stat-block">
-        <span class="sb-label">First putt length <small>(optional, for putting stats)</small></span>
+        <span class="sb-label">First putt length <small>(optional, for putting and approach stats)</small></span>
         <div class="seg fp" role="group" aria-label="First putt length in metres">
           ${FIRST_PUTT.map(([v, t]) => `<button data-a="fp" data-v="${v}" class="${h.firstPutt === v ? 'on' : ''}">${t}</button>`).join('')}
         </div>

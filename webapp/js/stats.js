@@ -6,6 +6,7 @@ import { lieAt } from './holemap.js';
 
 export const DEFAULT_GREEN_RADIUS = 12; // m, used until front/back are known
 export const FAIRWAY_HALF_WIDTH = 15;   // m, for auto fairway result from a tee target
+export const CHIP_MAX_M = 30;           // m, a shot onto the green shorter than this is a chip, not an approach
 export const APPROACH_RANGE = 50;       // m, a shot ending this close to the green was aimed at it
 
 export function greenRadius(courseHole) {
@@ -148,9 +149,13 @@ export function deriveHole(courseHole, holeStat = {}, holeShots = []) {
     threePutt = (putts ?? 0) >= 3;
   }
 
-  // Skip when the green centre was itself estimated from a ball position.
-  const lastOnGreen = out.length && out[n - 1].endKind === 'ball-on-green' && green && !green.estimated ? out[n - 1] : null;
-  const proximity = lastOnGreen ? distance(hs.greenPos, green) : null;
+  // Approach proximity: the first putt's length, on greens reached by the
+  // approach itself, so it's a distance to the hole rather than the green centre.
+  // Not when a chip or bunker shot came before the putts (shot-based: the last
+  // shot must finish on the green and be longer than a chip; scorecard only: GIR).
+  const last = out[n - 1];
+  const approachOnGreen = n ? last.endKind === 'ball-on-green' && (last.dist == null || last.dist >= CHIP_MAX_M) : gir === true;
+  const proximity = hs.firstPutt && (putts ?? 0) > 0 && !(hs.chips > 0) && !(hs.bunker > 0) && approachOnGreen ? hs.firstPutt : null;
 
   return {
     hole: courseHole?.n, par, green, radius, shots: out, putts, score, started, complete,

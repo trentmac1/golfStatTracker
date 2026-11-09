@@ -38,7 +38,7 @@ export const METRICS = {
     series: [['Par 3', (x) => parAvg(x.r, 3)], ['Par 4', (x) => parAvg(x.r, 4)], ['Par 5', (x) => parAvg(x.r, 5)]] },
   driving: { label: 'Driving distance', unit: ' m', better: 'up', fmt: mFmt,
     value: (x) => x.r.drivingDistance ?? null },
-  proximity: { label: 'Approach to centre', unit: ' m', better: 'down', fmt: mFmt, min: 0,
+  proximity: { label: 'Approach proximity', sub: 'first putt length after an approach onto the green', unit: ' m', better: 'down', fmt: mFmt, min: 0,
     value: (x) => x.r.proximity ?? null },
   ...Object.fromEntries(CATEGORIES.map(([k, label]) => [`sg-${k}`, {
     label: `Strokes gained: ${label}`, sub: 'per 18 holes, against a tour pro', better: 'up', fmt: signedOne, zero: true,

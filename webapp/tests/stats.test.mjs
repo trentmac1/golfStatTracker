@@ -55,7 +55,8 @@ test('par 4: drive, approach finishing short-left, chip, two putts', () => {
   assert.match(ap.result, /^Short/);
   // chip ends at ball-on-green => hit
   assert.equal(h.shots[2].result, 'Green');
-  assert.ok(Math.abs(h.proximity - Math.hypot(1, 3)) < 0.5);
+  assert.equal(h.proximity, null); // putts came after a chip, so not an approach
+  assert.equal(deriveHole(par4, { ...hs, firstPutt: 3 }, shots).proximity, null);
   assert.equal(h.shots[0].result, 'Fairway');
 });
 
@@ -131,4 +132,18 @@ test('round totals and club distances', () => {
   const clubs = clubDistances(r.holes);
   const dr = clubs.find((c) => c.club === 'Dr');
   assert.ok(Math.abs(dr.median - Math.hypot(20, 240)) < 0.5);
+});
+
+test('approach proximity is the first putt length on greens reached by the approach', () => {
+  const shots = [
+    { id: 'a', seq: 1, lat: at(0, 0).lat, lon: at(0, 0).lon, club: 'Dr' },
+    { id: 'b', seq: 2, lat: at(10, 230).lat, lon: at(10, 230).lon, club: '8i' },
+  ];
+  const hs = { putts: 2, firstPutt: 5, greenPos: at(4, 330) };
+  assert.equal(deriveHole(par4, hs, shots).proximity, 5);
+  assert.equal(deriveHole(par4, { ...hs, firstPutt: null }, shots).proximity, null); // not entered
+  assert.equal(deriveHole(par4, { ...hs, bunker: 1 }, shots).proximity, null);
+  // Scorecard only: counts on greens in regulation.
+  assert.equal(deriveHole(par4, { putts: 2, score: 4, firstPutt: 8 }, []).proximity, 8);
+  assert.equal(deriveHole(par4, { putts: 1, score: 4, firstPutt: 8 }, []).proximity, null);
 });

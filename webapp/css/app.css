@@ -707,3 +707,10 @@ body[data-view="full"] .toast { bottom: calc(16px + var(--safe-b)); }
 .mt-col .btn { min-height: 46px; font-size: 16px; padding: 0 6px; }
 .mark-tools .btn.wide { min-height: 46px; }
 body:has(.hole.map-edit) .toast { bottom: calc(244px + var(--safe-b)); } /* keep Done visible while marking */
+
+/* ---------- round notes ---------- */
+.round-notes { display: block; width: 100%; box-sizing: border-box; min-height: 110px; padding: 12px; border: 2px solid var(--line); border-radius: var(--r);
+  background: var(--card); color: var(--ink); font: 18px/1.4 var(--body); resize: vertical; }
+.round-notes:focus { outline: none; border-color: var(--turf); }
+.notes-state { min-height: 1.2em; margin: 4px 0 12px; }
+.hc-out { margin: 0 0 8px; }

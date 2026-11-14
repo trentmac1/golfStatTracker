@@ -82,17 +82,21 @@ export async function statsView(root) {
         <b>${c}</b><span>${isGreen ? 'Green' : cap(k)}</span>${approaches && c ? `<small>${p}%</small>` : ''}</div>`;
     }).join('')).join('');
     // ---------- handicap estimate ----------
-    const hcRounds = items.map((x) => ({
+    // Rounds the player removed from the handicap estimate (round screen) don't count.
+    const hcItems = items.filter((x) => !x.round.noHandicap);
+    const hcRounds = hcItems.map((x) => ({
       ...roundRating(x.round, x.course),
       holes: x.r.holes.map((h) => ({ par: h.par, si: x.course.holes[h.hole - 1]?.si ?? null, score: h.complete ? h.score : null })),
     }));
     const hc = estimate(hcRounds);
-    const noRating = [...new Set(items.filter((x) => { const t = roundRating(x.round, x.course); return !t.rating || !t.slope; }).map((x) => x.course))];
+    const noRating = [...new Set(hcItems.filter((x) => { const t = roundRating(x.round, x.course); return !t.rating || !t.slope; }).map((x) => x.course))];
     const hcNote = hc.index != null
-      ? `Average of your best ${hc.used} of ${hc.of} score differentials${hc.of < items.length ? ' (most recent 20)' : ''}, World Handicap System method. An estimate, not an official Golf Australia handicap.`
+      ? `Average of your best ${hc.used} of ${hc.of} score differentials${hc.of < hcItems.length ? ' (most recent 20)' : ''}, World Handicap System method. An estimate, not an official Golf Australia handicap.`
       : hc.usable ? `A handicap estimate needs 3 rated rounds: ${3 - hc.usable} more to go. A differential is what that round would count as towards a handicap.`
       : 'Needs rounds of 14 or more holes on a course with its rating and slope entered.';
-    const nineHole = items.filter((x) => x.r.holes.length <= 13).length;
+    const nineHole = hcItems.filter((x) => x.r.holes.length <= 13).length;
+    const removed = items.length - hcItems.length;
+    const hcRemoved = removed ? `<p class="note">${removed} round${removed === 1 ? ' is' : 's are'} left out because ${removed === 1 ? 'it was' : 'they were'} removed from the handicap estimate on the round screen.</p>` : '';
     const hcNine = nineHole ? `<p class="note">${nineHole} 9-hole round${nineHole === 1 ? ' isn\'t' : 's aren\'t'} counted in the handicap estimate yet.</p>` : '';
     const hcMissing = noRating.length
       ? `<p class="note warn-note">Add the rating and slope for ${noRating.map((c) => `<a href="#/course/${c.id}">${esc(c.name)}</a>`).join(', ')} (on the scorecard) so ${noRating.length === 1 ? 'its rounds count' : 'their rounds count'}.</p>` : '';
@@ -145,7 +149,7 @@ export async function statsView(root) {
           : hc.usable ? `<b>${hc.diffs.at(-1).toFixed(1)}</b><span>Latest differential</span>` : '<b class="none">–</b><span>Handicap estimate</span>'}</div>
         <p>${hcNote}</p>
       </button>
-      ${hcMissing}${hcNine}
+      ${hcMissing}${hcNine}${hcRemoved}
 
       <h2>Score to par, per 18</h2>
       <svg class="trend tappable" data-metric="toPar" viewBox="0 0 ${W} ${H}" role="img" aria-label="Score to par by round">
@@ -206,9 +210,9 @@ export async function statsView(root) {
   // Score differential per rated round, using the index the current rounds give.
   function hcMetric(items) {
     const rated = (x) => ({ ...roundRating(x.round, x.course), holes: x.r.holes.map((h) => ({ par: h.par, si: x.course.holes[h.hole - 1]?.si ?? null, score: h.complete ? h.score : null })) });
-    const idx = estimate(items.map(rated)).index;
+    const idx = estimate(items.filter((x) => !x.round.noHandicap).map(rated)).index;
     return { label: 'Score differential', sub: 'what each round counts as towards a handicap', better: 'down', fmt: (v) => (v == null ? '–' : v.toFixed(1)),
-      value: (x) => differential(rated(x), idx)?.diff ?? null,
+      value: (x) => (x.round.noHandicap ? null : differential(rated(x), idx)?.diff ?? null),
       empty: 'Differentials need rounds of 14 or more holes on a course with its rating and slope entered.' };
   }
 

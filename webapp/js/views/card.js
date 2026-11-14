@@ -85,6 +85,7 @@ export async function cardView(root, { roundId }) {
         <b>${r.holesPlayed ? r.score : '–'}</b>
         <span>${r.holesPlayed ? `${signed(r.toPar)} · ${r.holesPlayed} ${r.holesPlayed === 1 ? 'hole' : 'holes'}` : 'No holes finished yet'}</span>
       </div>
+      ${round.noHandicap ? '<p class="note hc-out">Removed from the handicap estimate.</p>' : ''}
       <h2>Conditions</h2>
       <div class="conditions">${conditionsPicker(round)}</div>
       <div class="card-scroll">${r.holes.length > 9 ? `${half(0, 9, 'Out')}${half(9, r.holes.length, 'In')}` : half(0, r.holes.length, 'Total')}</div>
@@ -95,12 +96,34 @@ export async function cardView(root, { roundId }) {
       <h2>This round</h2>
       <div class="tiles">${statTiles(r)}</div>
       ${sgBlock(r, round)}
+      <h2>Notes</h2>
+      <textarea class="round-notes" id="roundNotes" rows="4" placeholder="How it went, what to work on, anything about the course…">${esc(round.notes ?? '')}</textarea>
+      <p class="note notes-state" id="notesState" aria-live="polite"></p>
       <div class="btn-col">
+        <button class="btn ghost" data-a="hc">${round.noHandicap ? 'Add back to handicap estimate' : 'Remove from handicap estimate'}</button>
         ${active ? `<button class="btn primary" data-a="finish">Finish round</button>` : round.entered ? '' : `<button class="btn ghost" data-a="reopen">Reopen round</button>`}
         <button class="btn ghost" data-a="csv">Export round (CSV)</button>
         <button class="btn ghost danger-text" data-a="delete">Delete round</button>
       </div>
     </section>`;
+
+  // Notes save as you type (after a short pause) and when you leave the box.
+  const notesEl = root.querySelector('#roundNotes');
+  let notesTimer = null;
+  const saveNotes = async () => {
+    clearTimeout(notesTimer);
+    const v = notesEl.value.trim();
+    if ((round.notes ?? '') === v) return;
+    if (v) round.notes = v; else delete round.notes;
+    await db.put('rounds', round);
+    root.querySelector('#notesState').textContent = 'Notes saved';
+  };
+  notesEl.addEventListener('input', () => {
+    root.querySelector('#notesState').textContent = '';
+    clearTimeout(notesTimer);
+    notesTimer = setTimeout(saveNotes, 800);
+  });
+  notesEl.addEventListener('blur', saveNotes);
 
   root.addEventListener('click', async (e) => {
     const cb = e.target.closest('[data-cond]');
@@ -129,6 +152,15 @@ export async function cardView(root, { roundId }) {
       round.status = 'active';
       await db.put('rounds', round);
       location.hash = `#/round/${roundId}/hole/${round.currentHole ?? 1}`;
+    } else if (a === 'hc') {
+      round.noHandicap = !round.noHandicap;
+      if (!round.noHandicap) delete round.noHandicap;
+      await db.put('rounds', round);
+      toast(round.noHandicap ? 'Removed from the handicap estimate' : 'Added back to the handicap estimate');
+      e.target.closest('[data-a]').textContent = round.noHandicap ? 'Add back to handicap estimate' : 'Remove from handicap estimate';
+      const head = root.querySelector('.hc-out');
+      if (round.noHandicap && !head) root.querySelector('.total').insertAdjacentHTML('afterend', '<p class="note hc-out">Removed from the handicap estimate.</p>');
+      if (!round.noHandicap) head?.remove();
     } else if (a === 'csv') {
       await saveFile(`round-${round.date.slice(0, 10)}.csv`, roundCsv(course, round, shots), 'text/csv');
     } else if (a === 'delete') {

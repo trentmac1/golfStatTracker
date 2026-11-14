@@ -161,6 +161,7 @@ async function homeView(root) {
 
 const conditionTags = (round) => {
   const parts = conditionParts(round);
+  if (round.noHandicap) parts.push('Not in handicap');
   return parts.length ? `<span class="cond-tags">${parts.map((p) => `<i>${esc(p)}</i>`).join('')}</span>` : '';
 };
 

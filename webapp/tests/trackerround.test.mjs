@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { holeFor, distanceToHole, planTrackerShots, roundTrackerData, shotId } from '../js/trackerround.js';
+import { holeFor, planTrackerShots, roundTrackerData, shotId } from '../js/trackerround.js';
 import { encodeLogStart, encodeSession, encodeSwing, encodeLabel, decodeRecord } from '../js/capturelog.js';
 import { fromLocal } from '../js/geo.js';
 import { sortShots } from '../js/stats.js';
@@ -32,16 +32,42 @@ test('nothing on a green is a shot or a possible shot', async () => {
   assert.equal(plan.possible.length, 0);
 });
 
-test('distance to a hole is to its line of play', () => {
-  assert.ok(distanceToHole(at(5, 200), course.holes[0]) < 6);
-  assert.ok(distanceToHole(at(5, 200), course.holes[1]) > 40);
-});
-
-test('a swing goes to the hole on screen, or the next one when it is clearly there', () => {
+test('a swing goes to the hole on screen, wherever it was hit from', () => {
   assert.equal(holeFor(course, round, at(2, 5), t0 + 60000), 1);          // tee shot on 1
   assert.equal(holeFor(course, round, at(0, 330), t0 + 600000), 1);       // chip near 1's green
-  assert.equal(holeFor(course, round, at(41, 355), t0 + 900000), 2);      // hit off 2's tee before moving the app on
+  assert.equal(holeFor(course, round, at(58, 200), t0 + 300000), 1);      // sliced onto 2's fairway: still hole 1
   assert.equal(holeFor(course, round, null, t0 + 900000), 1);             // no position: the hole on screen
+  // On hole 2, hooked back onto 1's fairway (the hole just played) or pushed towards 3.
+  const on2 = { ...round, holeLog: [{ hole: 1, at: t0 }, { hole: 2, at: t0 + 900000 }] };
+  assert.equal(holeFor(course, on2, at(3, 200), t0 + 1200000), 2);
+  assert.equal(holeFor(course, on2, at(120, 45), t0 + 1200000), 2);
+});
+
+test('teeing off on the next hole before moving the app on moves play to that hole', () => {
+  assert.equal(holeFor(course, round, at(41, 355), t0 + 900000), 2);      // off 2's tee, app still on 1
+  assert.equal(holeFor(course, round, at(25, 350), t0 + 700000), 1);      // chip beside 1's green, 18 m from 2's tee
+  // The shots after that tee shot are on 2 as well, even from 1's fairway.
+  const tee2 = { pos: at(41, 355), time: t0 + 900000 };
+  assert.equal(holeFor(course, round, at(5, 150), t0 + 1100000, [tee2]), 2);
+  assert.equal(holeFor(course, round, at(5, 150), t0 + 800000, [tee2]), 1);   // before it: still hole 1
+  // Once the app is moved on, the hole on screen decides again.
+  const on2 = { ...round, holeLog: [{ hole: 1, at: t0 }, { hole: 2, at: t0 + 1000000 }] };
+  assert.equal(holeFor(course, on2, at(5, 150), t0 + 1100000, [tee2]), 2);
+  // Mapped tee boxes are used instead of the tee point: on or within 5 m of one.
+  const box = [at(36, 352), at(46, 352), at(46, 372), at(36, 372)].map((p) => [p.lat, p.lon]);
+  const mapped = { holes: course.holes.map((h) => (h.n === 2 ? { ...h, features: { tees: [box] } } : h)) };
+  assert.equal(holeFor(mapped, round, at(44, 370), t0 + 900000), 2);
+  assert.equal(holeFor(mapped, round, at(30, 355), t0 + 900000), 1);
+  // The last hole has no next hole.
+  const on3 = { ...round, holeLog: [{ hole: 3, at: t0 }] };
+  assert.equal(holeFor(course, on3, at(2, 5), t0 + 60000), 3);
+});
+
+test('planning: a shot from the next fairway stays on the hole in play', () => {
+  const swings = [swing(7, 2, 60000, at(0, 2)), swing(7, 3, 300000, at(60, 220)), swing(7, 4, 600000, at(20, 320))];
+  const plan = planTrackerShots({ round, course, shots: [], swings, presses: [] });
+  assert.deepEqual(plan.add.map((s) => s.hole), [1, 1, 1]);
+  assert.deepEqual(plan.add.map((s) => s.lie), ['tee', null, null]);
 });
 
 const swing = (logId, seq, ms, p, extra = {}) => ({ logId, seq, time: Math.floor((t0 + ms) / 1000), pos: p, hdop: 1, peakGyro: 700, impactLevel: 9000, ...extra });

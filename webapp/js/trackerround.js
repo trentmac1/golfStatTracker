@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { tracker, OP } from './transport.js';
 import { decodeRecord, sessions, notShots, REJECT } from './capturelog.js';
 import { distance, toLocal } from './geo.js';
-import { holeLine, applyAutoLie } from './holemap.js';
+import { applyAutoLie } from './holemap.js';
 import { playOrder } from './stats.js';
 import { pointInPolygon } from './greens.js';
 
@@ -60,39 +60,48 @@ export async function endTrackerRound() {
 }
 
 // ---------- which hole a swing belongs to ----------
-function toSegment(p, a, b) {
-  const v = toLocal(a, b), w = toLocal(a, p);
-  const len2 = v.x * v.x + v.y * v.y;
-  const t = len2 ? Math.max(0, Math.min(1, (w.x * v.x + w.y * v.y) / len2)) : 0;
-  return Math.hypot(w.x - t * v.x, w.y - t * v.y);
-}
-export function distanceToHole(p, courseHole) {
-  const line = holeLine(courseHole);
-  if (line) {
-    let best = Infinity;
-    for (let i = 1; i < line.length; i++) best = Math.min(best, toSegment(p, line[i - 1], line[i]));
-    return best;
+// Metres from p to a polygon of {lat, lon} points (0 inside it).
+function metresFromPolygon(p, pts) {
+  if (pointInPolygon(p, pts)) return 0;
+  let best = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const a = toLocal(p, pts[i]), b = toLocal(p, pts[(i + 1) % pts.length]);
+    const ex = b.x - a.x, ey = b.y - a.y, L2 = ex * ex + ey * ey;
+    const t = L2 ? Math.max(0, Math.min(1, -(a.x * ex + a.y * ey) / L2)) : 0;
+    best = Math.min(best, Math.hypot(a.x + t * ex, a.y + t * ey));
   }
-  const pts = [courseHole?.tee, courseHole?.green].filter(Boolean);
-  return pts.length ? Math.min(...pts.map((q) => distance(p, q))) : Infinity;
+  return best;
 }
 
-// The hole on screen at the time of the swing, unless the swing is clearly
-// on the next (or previous) hole: players often walk to the next tee and hit
-// before moving the app on, or finish entering putts afterwards.
-export function holeFor(course, round, p, timeMs) {
+// On a hole's tee: on or within TEE_BOX_M of one of its mapped tee boxes,
+// or, with none mapped, within TEE_POINT_M of its tee point. Kept tight so a
+// ball that finishes near a tee isn't taken for a tee shot.
+export const TEE_BOX_M = 5, TEE_POINT_M = 15;
+export function onTee(courseHole, p) {
+  if (!p || !courseHole) return false;
+  const boxes = (courseHole.features?.tees ?? []).filter((r) => r?.length > 2);
+  if (boxes.length) return boxes.some((r) => metresFromPolygon(p, r.map(([lat, lon]) => ({ lat, lon }))) <= TEE_BOX_M);
+  return !!courseHole.tee && distance(p, courseHole.tee) <= TEE_POINT_M;
+}
+
+// The hole in play at the time of a swing: the hole on screen. A ball hit
+// into another hole's fairway is still played on this hole, so where the
+// swing was doesn't move it (until 14 Nov 2026 a swing nearer the next or
+// previous hole's line went to that hole, which put shots from a neighbouring
+// fairway on the wrong hole). The one exception is teeing off on the next
+// hole before moving the app on: from that swing play has moved to the next
+// hole, until the hole on screen changes. `earlier` is the round's other
+// swings ({ pos, time } with time in ms, any order), used to see that.
+export function holeFor(course, round, p, timeMs, earlier = []) {
   const order = playOrder(course, round);
-  const log = round.holeLog ?? [];
-  let h = order[0];
-  for (const e of log) if (e.at <= timeMs) h = e.hole;
-  if (!p) return h;
-  const i = order.indexOf(h);
-  const cands = [order[i - 1], h, order[i + 1]].filter((x) => x != null);
-  const d = (n) => distanceToHole(p, course.holes[n - 1]);
-  const here = d(h);
-  let best = h, bestD = here;
-  for (const n of cands) if (d(n) + 15 < bestD) { best = n; bestD = d(n); }
-  return bestD < 80 || here === Infinity ? best : h;
+  let h = order[0], since = -Infinity;
+  for (const e of round.holeLog ?? []) if (e.at <= timeMs) { h = e.hole; since = e.at; }
+  const seen = earlier.filter((w) => w.pos && w.time > since && w.time < timeMs).sort((a, b) => a.time - b.time);
+  for (const w of [...seen, { pos: p }]) {
+    const next = order[order.indexOf(h) + 1];
+    if (next != null && onTee(course.holes[next - 1], w.pos)) h = next;
+  }
+  return h;
 }
 
 // On a green (inside any hole's mapped green outline): putting, picking the
@@ -112,15 +121,8 @@ export function metresFromGreen(course, p) {
   for (const h of course?.holes ?? []) {
     const poly = h?.shape?.polygon;
     if (!(poly?.length > 2)) continue;
-    const pts = poly.map(([lat, lon]) => ({ lat, lon }));
-    if (pointInPolygon(p, pts)) return 0;
-    for (let i = 0; i < pts.length; i++) {
-      const a = toLocal(p, pts[i]), b = toLocal(p, pts[(i + 1) % pts.length]);
-      const ex = b.x - a.x, ey = b.y - a.y, L2 = ex * ex + ey * ey;
-      const t = L2 ? Math.max(0, Math.min(1, -(a.x * ex + a.y * ey) / L2)) : 0;
-      const d = Math.hypot(a.x + t * ex, a.y + t * ey);
-      if (best == null || d < best) best = d;
-    }
+    const d = metresFromPolygon(p, poly.map(([lat, lon]) => ({ lat, lon })));
+    if (best == null || d < best) best = d;
   }
   return best;
 }
@@ -211,6 +213,8 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
     const marked = shots.some((s) => s.source !== 'tracker' && s.lat != null && distance(s, w.pos) < 10 && t - s.time >= -60000 && t - s.time < 180000);
     if (!marked) want.set(id, w);
   }
+  // Where play has got to, for holeFor(): every swing that counts.
+  const played = [...want.values()].map((w) => ({ pos: w.pos, time: w.time * 1000 }));
   const remove = shots.filter((s) => s.source === 'tracker' && !want.has(s.id) && !touched(s)).map((s) => s.id);
   const kept = shots.filter((s) => !remove.includes(s.id));
   const have = new Set(shots.map((s) => s.id));
@@ -219,7 +223,7 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
   for (const [id, w] of want) {
     if (have.has(id)) continue;
     const t = w.time * 1000;
-    const hole = holeFor(course, round, w.pos, t);
+    const hole = holeFor(course, round, w.pos, t, played);
     const first = ![...kept, ...add].some((s) => s.hole === hole && s.time < t);
     const shot = {
       id, roundId: round.id, hole, seq: ++seq, lat: w.pos.lat, lon: w.pos.lon,
@@ -244,12 +248,12 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
     .sort((a, b) => (b.impact ?? 0) - (a.impact ?? 0));
   const possible = [];
   for (const c of cands) if (!possible.some((p) => near(c, p, POSSIBLE_M, POSSIBLE_MS))) possible.push(c);
-  for (const p of possible) p.hole = holeFor(course, round, p, p.time);
+  for (const p of possible) p.hole = holeFor(course, round, p, p.time, played);
   possible.sort((a, b) => a.time - b.time);
 
   const pressHoles = {};
   for (const p of presses) {
-    const h = holeFor(course, round, p.pos, p.time * 1000);
+    const h = holeFor(course, round, p.pos, p.time * 1000, played);
     pressHoles[h] = (pressHoles[h] ?? 0) + 1;
   }
   return { add, remove, presses: pressHoles, possible };

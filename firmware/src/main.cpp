@@ -15,6 +15,7 @@
 #include "link.h"
 #include "store.h"
 #include "capture.h"
+#include "motion.h"
 #include <InternalFileSystem.h>
 using namespace Adafruit_LittleFS_Namespace;
 
@@ -40,6 +41,7 @@ static volatile uint8_t lockRequest = 0;        // 1 lock, 2 unlock
 static volatile int32_t syncRequest = -1;       // seq to sync from
 static volatile bool stopSyncRequest = false;
 static volatile bool eraseRequest = false;
+static volatile uint8_t recordRequest = 0;      // 0.6.0: 1 start, 2 stop a practice recording
 static volatile bool sleepRequest = false;     // 0.5.0: the app's "sleep now"
 static volatile uint32_t eraseLogId = 0;
 static volatile uint16_t lastAck = 0;
@@ -87,8 +89,9 @@ static void updateLeds() {
   bool r = !fix, g = fix || data;
   bool flash1 = t < 40;
   bool flash2 = roundActive && t >= 200 && t < 240;
+  bool flash3 = motion::recording() && t >= 320 && t < 360;   // three flashes: practice recording
   bool blue = blelink::connected() && t >= 450 && t < 490;
-  if (flash1 || flash2) leds(r, g, false);
+  if (flash1 || flash2 || flash3) leds(r, g, false);
   else leds(false, false, blue);
 }
 
@@ -195,6 +198,7 @@ static void onControl(const uint8_t* d, uint16_t len) {
       break;
     case OP_IDENTIFY: identifyUntil = millis() + 3000; break;
     case OP_SLEEP: sleepRequest = true; break;
+    case OP_SET_RECORDING: if (len >= 2) recordRequest = d[1] ? 1 : 2; break;
   }
 }
 
@@ -254,6 +258,10 @@ static void handleRequests() {
     sleepRequest = false;
     if (!roundActive) { delay(300); goToSleep("asked by the app"); }   // let the write's reply go out
   }
+  if (recordRequest) {
+    motion::setRecording(recordRequest == 1);
+    recordRequest = 0;
+  }
   if (lockRequest) {
     bool on = lockRequest == 1;
     lockRequest = 0;
@@ -283,7 +291,8 @@ static CapturePacket capturePacket() {
   CapturePacket c = {};
   c.version = 1;
   c.flags = (capture::enabled() ? C_ENABLED : 0) | (roundActive ? C_SESSION : 0)
-          | (capture::full() ? C_FULL : 0) | (syncState.active ? C_SYNCING : 0) | (store::ok() ? C_FLASH_OK : 0) | (roundLocked ? C_LOCKED : 0);
+          | (capture::full() ? C_FULL : 0) | (syncState.active ? C_SYNCING : 0) | (store::ok() ? C_FLASH_OK : 0) | (roundLocked ? C_LOCKED : 0)
+          | (motion::recording() ? C_RECORDING : 0);
   c.triggerDps = capture::trigger();
   c.logId = store::logId();
   c.nextSeq = store::nextSeq();
@@ -445,6 +454,7 @@ void loop() {
   gnss::poll(echoNmea ? &Serial : nullptr);
   handleRequests();
   capture::poll();
+  motion::poll();
   syncPoll();
   static uint32_t changedAt = 0;
   if (capture::takeSettingsChanged() || stateChanged) { stateChanged = false; changedAt = millis() | 1; }

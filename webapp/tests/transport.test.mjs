@@ -69,3 +69,23 @@ test('sleep: firmware 0.5.0 and later; the pretend tracker drops the connection,
   assert.notEqual(tracker.state, 'connected');
   await tracker.disconnect();
 });
+
+test('practice recording: firmware 0.6.0, the capture flag, and the pretend tracker', async () => {
+  const { canRecord, decodeCapture, encodeCapture } = await import('../js/transport.js');
+  assert.equal(canRecord({ firmware: '0.5.0' }), false);
+  assert.equal(canRecord({ firmware: '0.6.0' }), true);
+  assert.deepEqual([...encodeControl(OP.setRecording, 1)], [8, 1]);
+  const c = { enabled: true, session: true, flashOk: true, locked: false, recording: true, trigger: 250, logId: 1, nextSeq: 2, swings: 0, labels: 0, usedKb: 1, totalKb: 2048, soundGate: 1000 };
+  assert.equal(decodeCapture(encodeCapture(c)).recording, true);
+  assert.equal(decodeCapture(encodeCapture({ ...c, recording: false })).recording, false);
+
+  await tracker.connect('fake', { tick: 20 });
+  await tracker.send(OP.setRecording, 1);
+  await tracker.send(OP.startRound);
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(tracker.capture.recording, true);
+  await tracker.send(OP.endRound);
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(tracker.capture.recording, false);
+  await tracker.disconnect();
+});

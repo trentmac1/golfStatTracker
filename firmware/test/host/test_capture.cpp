@@ -1,4 +1,5 @@
 #include "capture.h"
+#include "motion.h"
 #include "sensors.h"
 #include "store.h"
 #include <vector>
@@ -48,11 +49,17 @@ gnss::Fix fx; const gnss::Fix& gnss::fix(){ return fx; }
 uint8_t battery::percent(){ return 80; }
 uint32_t clk(){ return 1790000000u + millis() / 1000; }
 
-void run(double untilMs) { while (nowMs < untilMs) { nowMs += 1; pumpImu(); if ((int)nowMs % 10 == 0) capture::poll(); } }
+void run(double untilMs) { while (nowMs < untilMs) { nowMs += 1; pumpImu(); if ((int)nowMs % 10 == 0) { capture::poll(); motion::poll(); } } }
 
-std::vector<std::vector<uint8_t>> records() {
+// The log's records. The motion records (track and recording, 0.6.0) are
+// left out unless asked for, so the swing tests read as before.
+std::vector<std::vector<uint8_t>> records(bool motionToo = false) {
   std::vector<std::vector<uint8_t>> out; store::Header h; uint32_t a = 0;
-  while (store::header(a, &h)) { std::vector<uint8_t> r(h.len); store::read(a, r.data(), h.len); out.push_back(r); a += h.len; }
+  while (store::header(a, &h)) {
+    std::vector<uint8_t> r(h.len); store::read(a, r.data(), h.len);
+    if (motionToo || (h.kind != store::K_TRACK && h.kind != store::K_STREAM)) out.push_back(r);
+    a += h.len;
+  }
   return out;
 }
 int16_t s16(const uint8_t* p){ return (int16_t)(p[0] | p[1] << 8); }
@@ -219,6 +226,90 @@ int main() {
     FILE* f = fopen(out, "wb");
     for (auto& rec : records()) fwrite(rec.data(), 1, rec.size(), f);
     fclose(f);
+  }
+  // ---- motion records (0.6.0): the track in a round, and a practice recording ----
+  {
+    store::eraseAll(0);
+    swingPeakMs = impactMs = -1; busyFrom = busyTo = -1; vertical = false;
+    capture::setSoundGate(capture::ROUND_GATE); capture::setTrigger(capture::ROUND_TRIGGER);
+    fx.speed_cms = 123;
+    double t0 = nowMs;
+    capture::setSession(true);
+    vertical = true;
+    swingPeakMs = t0 + 5500; impactMs = t0 + 5520;      // a swing in the 6th second
+    run(t0 + 20000);
+    capture::setSession(false);
+    auto all = records(true);
+    int tracks = 0, entries = 0, peakEntry = -1; uint16_t peak = 0;
+    for (auto& r : all) if (r[0] == store::K_TRACK) {
+      CHECK(r.size() == 8 + motion::TRACK_BODY && store::crc16(r.data() + 8, motion::TRACK_BODY) == u16(r.data() + 6));
+      const uint8_t* b = r.data() + 8;
+      CHECK(u16(b + 20) == 123 && b[23] == 12);
+      CHECK(u16(b + 24) > 990 && u16(b + 24) < 1015);   // 208 samples at 207.3 Hz
+      for (int i = 0; i < b[22]; i++, entries++) {
+        const uint8_t* e = b + 28 + i * 12;
+        if (u16(e) > peak) { peak = u16(e); peakEntry = entries; }
+        CHECK((int8_t)e[8] == 100 && e[6] == 0 && e[5] == 0);   // 1 g along z, no jolts
+        if (u16(e) < 100) { CHECK(u16(e + 2) >= 76 && u16(e + 2) <= 110); CHECK(e[10] == 10 && e[11] == 7); }   // about 20 deg/s (plus the index tag on gy), x4; sqrt(100), sqrt(50)
+      }
+      tracks++;
+    }
+    printf("track: %d records, %d seconds, peak %u deg/s in second %d\n", tracks, entries, peak, peakEntry);
+    CHECK(tracks == 3 && entries >= 18 && entries <= 20);     // two full records and the rest at the end
+    CHECK(peak > 850 && peakEntry == 5);
+    {                                                       // the swing's second: loud, and a turn about the vertical
+      const uint8_t* e = all[0].data(); int n = 0;
+      for (auto& r : all) if (r[0] == store::K_TRACK) { if (n == 0) e = r.data() + 8 + 28 + 5 * 12; n++; }
+      CHECK(e[10] == 200 && (int8_t)e[9] > 80);             // sqrt(40000); about 94 degrees plus the baseline
+    }
+
+    // A practice recording: a record a second, the IMU at a quarter rate.
+    store::eraseAll(0);
+    swingPeakMs = impactMs = -1; vertical = false;
+    motion::setRecording(true);                             // asked for before the session starts
+    t0 = nowMs;
+    capture::setSession(true);
+    CHECK(motion::recording());
+    impactMs = t0 + 2500;
+    run(t0 + 3000); capture::buttonPress(millis());         // one press: a putt
+    run(t0 + 8000); capture::buttonPress(millis()); run(t0 + 8300); capture::buttonPress(millis());   // double: a chip
+    run(t0 + 12300);
+    capture::setSession(false);
+    CHECK(!motion::recording());
+    all = records(true);
+    int streams = 0, labels = 0, doubles = 0, loud = -1; uint32_t lastIdx = 0;
+    for (auto& r : all) {
+      if (r[0] == store::K_LABEL) { labels++; if (r[8 + 19] & 16) doubles++; }
+      if (r[0] == store::K_TRACK) CHECK(false);             // no track while recording
+      if (r[0] != store::K_STREAM) continue;
+      CHECK(r.size() == 8 + motion::STREAM_BODY && store::crc16(r.data() + 8, motion::STREAM_BODY) == u16(r.data() + 6));
+      const uint8_t* x = r.data() + 8 + 20;
+      uint32_t first = x[0] | x[1] << 8 | x[2] << 16 | (uint32_t)x[3] << 24;
+      CHECK(u16(x + 4) == 20730 && x[6] == 4 && x[7] == 52 && x[8] == 50 && x[9] == 0 && u16(x + 10) == 0);
+      if (streams) CHECK(first == lastIdx + 208);           // no gaps
+      lastIdx = first;
+      const uint8_t* imu = x + 12;
+      CHECK(s16(imu) == 285 && s16(imu + 10) == 2049);      // 20 deg/s on gx; 1 g on az
+      // gy carries the sample index (mod 256): the mean of four in a row
+      int want = ((first & 0xFF) + ((first + 1) & 0xFF) + ((first + 2) & 0xFF) + ((first + 3) & 0xFF)) / 4;
+      CHECK(s16(imu + 2) == want);
+      const uint8_t* hi = imu + 52 * 12;
+      for (int j = 0; j < 50; j++) if (hi[j] == 200) { CHECK(loud < 0); loud = streams * 50 + j; }
+      CHECK(hi[50] == 7 || hi[50] == 54);                   // low band: sqrt(50), or sqrt(3000) at the click
+      streams++;
+    }
+    printf("recording: %d records, click in bin %d, %d labels (%d double)\n", streams, loud, labels, doubles);
+    CHECK(streams >= 11 && streams <= 12 && labels == 2 && doubles == 1);
+    CHECK(loud >= 122 && loud <= 127);                      // 2.5 s in, 50 bins a second
+    if (const char* out = getenv("CAPTURE_FIXTURE_MOTION")) {
+      FILE* f = fopen(out, "wb");
+      for (auto& rec : all) fwrite(rec.data(), 1, rec.size(), f);
+      // ...and the track records from a short round after it
+      store::eraseAll(0);
+      capture::setSession(true); run(nowMs + 9000); capture::setSession(false);
+      for (auto& rec : records(true)) if (rec[0] == store::K_TRACK) fwrite(rec.data(), 1, rec.size(), f);
+      fclose(f);
+    }
   }
   printf("capture tests passed\n");
 }

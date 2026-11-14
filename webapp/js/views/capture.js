@@ -1,7 +1,7 @@
 // Training data (Phase 3): the tracker's capture mode, syncing its log of
 // swing snippets and button labels to the phone, and exporting it as JSON for
 // the Phase 4 analysis.
-import { tracker, OP } from '../transport.js';
+import { tracker, OP, canRecord, RECORDING_KB_PER_MIN } from '../transport.js';
 import * as db from '../db.js';
 import { decodeRecord, sessions, exportJson, swingTraces, impactOffsetMs, NOT_SHOT_TEXT } from '../capturelog.js';
 import { APP_VERSION } from '../config.js';
@@ -89,7 +89,7 @@ export async function captureView(root) {
           <button class="btn ${c.soundGate ? 'primary' : 'ghost'}" data-a="mode-round">Round</button>
         </div>
         <p class="note">${c.soundGate
-          ? `<b>Round mode:</b> a swing is saved only if you were still at address, the rotation built up through a downswing, and an impact is heard at the strike, so walking, knocks and reaching for the button don't fill the tracker. Chips and putts are usually too quiet: give the button a press after them, and the press is saved with its GPS position.${c.gatedOut ? ` ${c.gatedOut} silent swing${c.gatedOut === 1 ? '' : 's'} skipped since the tracker started.` : ''}`
+          ? `<b>Round mode:</b> a swing is saved only if you were still at address, the rotation built up through a downswing, and an impact is heard at the strike, so walking, knocks and reaching for the button don't fill the tracker. Chips and putts are usually too quiet for this; from firmware 0.6.0 a motion track of the whole round is kept as well, for learning them.${c.gatedOut ? ` ${c.gatedOut} silent swing${c.gatedOut === 1 ? '' : 's'} skipped since the tracker started.` : ''}`
           : '<b>Range mode:</b> every swing that reaches the trigger is saved, practice swings and chips included. Use it at the range; it fills the tracker quickly if you walk around.'}</p>` : ''}
         <div class="trigger-row">
           <span>Swing trigger <b>${c.trigger} °/s</b></span>
@@ -105,6 +105,14 @@ export async function captureView(root) {
         ${!c.flashOk ? '<p class="note warn-note">The tracker can\'t use its flash storage, so nothing is being saved. Send Claude the serial log.</p>' : ''}
         ${c.locked != null ? `<p class="note">Round ${c.locked ? '<b>locked by the app</b> (the button hold does nothing)' : 'not locked (a 2 s hold starts or ends it)'} · ${c.ignoredPresses} press${c.ignoredPresses === 1 ? '' : 'es'} ignored as walking · ${c.rejects} rejected swing${c.rejects === 1 ? '' : 's'} logged since the tracker started.</p>` : ''}
         ${c.imuOverruns ? `<p class="note warn-note">The motion sensor overflowed ${c.imuOverruns} time${c.imuOverruns === 1 ? '' : 's'}; some swings may have gaps (they're flagged in the export).</p>` : ''}
+        ${canRecord(t.status) ? `
+        <h2>Short-game practice</h2>
+        ${c.recording
+          ? `<p class="note"><b>Recording.</b> The tracker is saving all its motion and sound (three flashes every 2 s). About ${Math.max(0, Math.floor((c.totalKb - c.usedKb) / RECORDING_KB_PER_MIN))} min of room left. Press the button <b>once after each putt</b> and <b>twice quickly after each chip</b>, standing still. Don't press after practice strokes.</p>
+             <div class="btn-col"><button class="btn primary" data-a="rec-stop">Stop recording</button></div>`
+          : `<p class="note">For the practice green: the tracker records everything, so chips and putts can be learned from it. Room for about ${Math.max(0, Math.floor((c.totalKb - c.usedKb) / RECORDING_KB_PER_MIN))} min${c.usedKb > 64 ? ' (sync, export and clear the tracker first for the full 45)' : ''}. The phone can go back in the bag once it's started.</p>
+             <div class="btn-col"><button class="btn ghost" data-a="rec-start" ${c.session || c.full || !c.enabled ? 'disabled' : ''}>Start a practice recording</button></div>
+             ${c.session ? '<p class="note">End the round on the tracker first.</p>' : ''}`}` : ''}
         <h2>Sync</h2>
         ${sync ? `<p class="note">Syncing… ${sync.records} record${sync.records === 1 ? '' : 's'} (${Math.round(sync.got / 1024)} KB)${sync.errors ? `, ${sync.errors} chunk${sync.errors === 1 ? '' : 's'} lost` : ''}.</p>`
           : `<p class="note">${newCount ? `${newCount} record${newCount === 1 ? '' : 's'} on the tracker ${newCount === 1 ? 'isn\'t' : 'aren\'t'} on this phone yet.` : 'Everything on the tracker is on this phone.'} Log ${hex(c.logId)}.</p>`}
@@ -139,7 +147,7 @@ export async function captureView(root) {
       }).join('') : '';
       return `<details class="capture-session" data-key="${esc(s.key)}" ${open ? 'open' : ''}>
         <summary><span><b>${dateText(s.start)}</b> ${timeText(s.start)}${s.end ? `–${timeText(s.end)}` : s.ended ? '' : ' (still on)'}</span>
-          <small>${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.notShot.size ? `${s.notShot.size} not shot${s.notShot.size === 1 ? '' : 's'} · ` : ''}${s.swings.length - s.real - s.pressSeqs.size - s.notShot.size} ${s.soundGate ? (s.swings.length - s.real - s.pressSeqs.size - s.notShot.size === 1 ? 'full shot' : 'full shots') : 'other'}${s.missed ? ` · ${s.missed} missed` : ''}${s.rejects?.length ? ` · ${s.rejects.length} rejected` : ''}</small></summary>
+          <small>${s.practice ? `practice recording ${Math.round(s.recordedMs / 60000)} min · ${s.labels.filter((l) => !l.double).length} putts · ${s.labels.filter((l) => l.double).length} chips · ` : ''}${s.tracks?.length ? `motion track ${Math.round((s.tracks.length * 8) / 60)} min · ` : ''}${s.swings.length} swing${s.swings.length === 1 ? '' : 's'} · ${s.real} labelled shot${s.real === 1 ? '' : 's'} · ${s.pressSeqs.size ? `${s.pressSeqs.size} button · ` : ''}${s.notShot.size ? `${s.notShot.size} not shot${s.notShot.size === 1 ? '' : 's'} · ` : ''}${s.swings.length - s.real - s.pressSeqs.size - s.notShot.size} ${s.soundGate ? (s.swings.length - s.real - s.pressSeqs.size - s.notShot.size === 1 ? 'full shot' : 'full shots') : 'other'}${s.missed ? ` · ${s.missed} missed` : ''}${s.rejects?.length ? ` · ${s.rejects.length} rejected` : ''}</small></summary>
         ${open ? `<ul class="swing-list">${swingRows || '<li class="note">No swings in this session.</li>'}</ul>
           ${s.missed ? `<p class="note">${s.missed} button press${s.missed === 1 ? '' : 'es'} had no swing 1.5–8 s before: shots the trigger missed.</p>` : ''}` : ''}
       </details>`;
@@ -166,6 +174,14 @@ export async function captureView(root) {
         <li>After each <b>real shot</b>, once the follow-through is done, give the button one short press (white blink), 2–5 s after the shot. Don't press for practice swings.</li>
         <li>End the round (hold 2 s), sync here, export, then clear the tracker. It holds about 270 swings; on the course, sync and clear at the turn if it's over half full.</li>
       </ol>
+      <h2>Short-game practice (firmware 0.6.0)</h2>
+      <ol class="how-list">
+        <li>Sync, export and clear the tracker first, so there's room for about 45 minutes.</li>
+        <li>On the practice green, tap <b>Start a practice recording</b>, then put the phone away. Tracker in the same pocket as always.</li>
+        <li>After each <b>putt</b>, stand still and press the button <b>once</b>. After each <b>chip</b>, press <b>twice quickly</b>. Wait until the stroke is finished; 2–5 s after is right.</li>
+        <li>Mix in what happens on a course: practice strokes (no press), walking to the ball, marking and picking it up, waiting. Those teach it what isn't a stroke.</li>
+        <li>Aim for about 50 putts and 50 chips. Then <b>Stop recording</b> (or hold the button 2 s), sync, export and send Claude the file.</li>
+      </ol>
     </section>`;
   };
 
@@ -190,6 +206,15 @@ export async function captureView(root) {
       if (a === 'connect') await tracker.connect('ble');
       else if (a === 'fake') await tracker.connect('fake');
       else if (a === 'round') await tracker.send(c.session ? OP.endRound : OP.startRound);
+      else if (a === 'rec-start') {
+        await tracker.send(OP.setRecording, 1);
+        await tracker.send(OP.startRound);
+        toast('Recording. One press after a putt, two after a chip.');
+      } else if (a === 'rec-stop') {
+        await tracker.send(OP.endRound);
+        await tracker.send(OP.setRecording, 0);
+        toast('Recording stopped. Sync it to the phone.');
+      }
       else if (a === 'capture') await tracker.send(OP.setCapture, !c.enabled);
       else if (a === 'mode-round') { await tracker.send(OP.setTrigger, ROUND.trigger); await tracker.send(OP.setSoundGate, ROUND.gate); toast('Round mode: only swings with an impact are saved'); }
       else if (a === 'mode-range') { await tracker.send(OP.setSoundGate, 0); toast('Range mode: every swing is saved'); }

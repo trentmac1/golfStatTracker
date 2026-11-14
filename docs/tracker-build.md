@@ -91,6 +91,25 @@ The separate charge LED by the USB socket is wired to the charger, not the firmw
 | yellow | microphone | send me the serial log |
 | magenta | flash storage (capture log) | send me the serial log |
 
+## Short-game practice recording (firmware 0.6.0)
+
+Chips and putts are too gentle for the swing trigger, so the tracker used to keep nothing about them. Two things change that:
+
+- **Every round** now also keeps a motion track: a small summary of each second (how much the tracker turned and shook, which way up it was, how loud it was). Nothing to do; it syncs with the swings and is in the training-data export. Together with the putts you enter per hole, it shows what a green looks like to the tracker.
+- **A practice recording** keeps everything the tracker senses, for about 45 minutes, with your button presses saying which moments were strokes.
+
+A practice session (20–30 minutes on the practice green and chipping area):
+
+1. In Bluefy: **Settings → Tracker → Training data**. Sync, export and clear the tracker so it has room.
+2. Tap **Start a practice recording**. The tracker shows three flashes every 2 s. Put the phone away; tracker in the usual pocket.
+3. After each **putt**, stand still and press the button **once**. After each **chip**, press **twice quickly**. Press 2–5 s after the stroke, once you've finished watching the ball.
+4. Do the other things that happen around a green without pressing: practice strokes, walking to the ball, bending to mark or pick it up, standing and waiting.
+5. About 50 putts and 50 chips is plenty. **Stop recording** in the app (or hold the button 2 s), then sync, **Export training data** and send the file.
+
+| Every 2 s | Meaning |
+|---|---|
+| three flashes | practice recording running |
+
 ## Sleep between rounds (firmware 0.5.0)
 
 The tracker sleeps by itself after **an hour with no phone connected and no round on**: GPS in standby, Bluetooth, motion sensor and microphone off. It shows three slow purple flashes, then the LED stays dark. Asleep it draws tens of µA (GPS standby about 20 µA), so a charge lasts months instead of a day or two.

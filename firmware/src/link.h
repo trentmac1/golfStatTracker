@@ -55,11 +55,12 @@ static_assert(sizeof(CapturePacket) == 28, "capture is 28 bytes");
 enum CaptureFlag : uint8_t {
   C_ENABLED = 1 << 0, C_SESSION = 1 << 1, C_FULL = 1 << 2, C_SYNCING = 1 << 3, C_FLASH_OK = 1 << 4,
   C_LOCKED = 1 << 5,           // the app owns the round: the 2 s hold does nothing (0.4.0)
+  C_RECORDING = 1 << 6,        // a practice recording is running (0.6.0)
 };
 
 enum ControlOp : uint8_t {
   OP_START_ROUND = 0x01, OP_END_ROUND = 0x02, OP_SET_TIME = 0x03, OP_IDENTIFY = 0x04,
-  OP_SET_CAPTURE = 0x05, OP_LOCK_ROUND = 0x06, OP_SLEEP = 0x07,
+  OP_SET_CAPTURE = 0x05, OP_LOCK_ROUND = 0x06, OP_SLEEP = 0x07, OP_SET_RECORDING = 0x08,
   OP_SYNC_FROM = 0x10, OP_ERASE_LOG = 0x11, OP_STOP_SYNC = 0x12,
   OP_SET_TRIGGER = 0x20, OP_SET_SOUND_GATE = 0x21,
 };

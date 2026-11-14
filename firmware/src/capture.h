@@ -10,6 +10,7 @@ namespace capture {
 
   void begin(Clock unixNow);       // after store::begin and imu::begin
   void poll();                     // from loop(): finishes snippets, writes records
+  void writeContext(uint8_t* p, uint32_t atMs);   // the 20-byte record context (time, position), for motion.cpp
 
   void setSession(bool active);    // writes session start / end records
   // A press of the button (on release). Presses are decided PRESS_WAIT_MS

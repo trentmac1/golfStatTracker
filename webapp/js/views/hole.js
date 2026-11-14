@@ -3,7 +3,7 @@ import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
 import { deriveHole, deriveRound, emptyHoleStat, playOrder, sortShots } from '../stats.js';
-import { tracker } from '../transport.js';
+import { tracker, canRecord } from '../transport.js';
 import { syncCaptures, prepareTracker, reconcileTrackerShots, dismissTrackerShot, logHole, acceptPossible, dismissPossible } from '../trackerround.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
@@ -850,9 +850,13 @@ export async function holeView(root, { roundId, hole }) {
       }
       if (!now) prepared = false;
       // A new record on the tracker: fetch it (and turn it into a shot).
-      if (now && t.capture && t.capture.nextSeq !== trk.seenSeq && !t.sync) {
+      // Firmware 0.6.0 also writes a motion-track record every 8 s: those wait
+      // for the next swing, press or rejected swing (or the end of the round).
+      const c = t.capture;
+      const mark = !c ? null : canRecord(t.status) ? `${c.logId}-${c.swings}-${c.labels}-${c.rejects}` : c.nextSeq;
+      if (now && c && mark !== trk.seenSeq && !t.sync) {
         const first = trk.seenSeq == null;
-        trk.seenSeq = t.capture.nextSeq;
+        trk.seenSeq = mark;
         if (!first) trackerRefresh();
       }
       drawTracker();

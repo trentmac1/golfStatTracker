@@ -61,6 +61,7 @@ Fits in one default-MTU notification.
 | 0x05 | set capture | uint8, 0 off / 1 on | Phase 3; on by default |
 | 0x06 | lock round | uint8, 1 lock / 0 unlock | Firmware 0.4.0. While locked, the 2 s button hold doesn't start or end the round (the leg can hold the button while walking). The lock and a running round survive a restart. End round (0x02) also unlocks |
 | 0x07 | sleep | – | Firmware 0.5.0. Ignored during a round. Otherwise the tracker goes to sleep at once (System OFF, GPS standby; the connection drops) and wakes on a button press. It also sleeps by itself after an hour with no phone connected and no round on, unless on USB, and after two hours of a round with no swing, press or connection (ending the round first) |
+| 0x08 | set recording | uint8, 1 on / 0 off | Firmware 0.6.0. A practice recording: while a session is on, a Recording record (kind 7) is written every second instead of the track. Sent before or after start round; ends with the session or when the log is full |
 | 0x10 | sync from seq | uint16 seq | Phase 3; streams the capture log from that seq (see Sync) |
 | 0x11 | erase log | uint32 log_id | Phase 3; only if log_id matches the tracker's current log |
 | 0x12 | stop sync | – | Phase 3 |
@@ -76,7 +77,7 @@ Unknown ops are ignored, so an older tracker doesn't break a newer app.
 | Offset | Field | Type | Notes |
 |---|---|---|---|
 | 0 | version | uint8 | 1 |
-| 1 | flags | uint8 | bit0 capture enabled, bit1 session (round) active, bit2 log full, bit3 syncing, bit4 flash ok, bit5 round locked by the app (0.4.0) |
+| 1 | flags | uint8 | bit0 capture enabled, bit1 session (round) active, bit2 log full, bit3 syncing, bit4 flash ok, bit5 round locked by the app (0.4.0), bit6 practice recording running (0.6.0) |
 | 2 | trigger | uint16 | deg/s |
 | 4 | log_id | uint32 | changes every time the log is erased |
 | 8 | next_seq | uint16 | seq the next record will get |
@@ -162,6 +163,36 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 | 37 | flags | uint8 | as a swing's flags |
 | 38 | trigger | uint16 | deg/s |
 | 40 | turn | int16 | firmware 0.4.2: degrees turned about the vertical through the downswing (the gyro along gravity, from 40 samples before the peak to 14 after; gravity from the accelerometer 300–150 samples before), × 10. Positive is a right-hander's downswing, whichever way up the tracker sits. 0x8000 = unknown. The app works out the same value for saved swings from their IMU snippet (`turnDeg`) |
+
+**Recording** (kind 7, 764 bytes; firmware 0.6.0), one for each second (208 IMU samples) of a practice recording. Chips and putts don't reach the swing trigger, so this keeps everything: the labels are button presses, one after a putt and a double press after a chip, and whatever isn't labelled isn't a stroke. About 45 minutes fills the log.
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | context | 20 bytes | time and position at the start of the second |
+| 20 | first_index | uint32 | IMU sample index of the first sample; +208 from one record to the next when nothing was lost |
+| 24 | imu_rate | uint16 | the IMU's measured rate, Hz × 100 |
+| 26 | decim | uint8 | 4: each stored sample is the mean of 4 IMU samples in a row (about 52 Hz) |
+| 27 | count | uint8 | 52 stored samples |
+| 28 | bins | uint8 | 50 sound levels in each band |
+| 29 | flags | uint8 | bit0 the IMU overflowed in this second, bit1 some sound was missing |
+| 30 | dropped | uint16 | seconds lost since start-up (the record before wasn't written in time) |
+| 32 | imu | 52 × 6 int16 | gx, gy, gz, ax, ay, az in raw counts, as in a swing |
+| 656 | high | 50 × uint8 | √ of the peak envelope level in each fiftieth of the second |
+| 706 | low | 50 × uint8 | the same for the low band |
+
+**Track** (kind 8, 132 bytes; firmware 0.6.0), written through every session that isn't a recording: eight one-second summaries, about 240 KB for a 4-hour round. It stops when under 64 KB of the log is left, so swings get the last of it. The last record of a session can hold fewer than eight.
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | context | 20 bytes | time and position at the start of the first second |
+| 20 | speed | uint16 | ground speed then, cm/s; 0xFFFF no fix |
+| 22 | entries | uint8 | seconds in this record (up to 8) |
+| 23 | entry_size | uint8 | 12 |
+| 24 | second_ms | uint16 | length of each entry, ms (208 IMU samples, about 1000) |
+| 26 | reserved | uint16 | 0 |
+| 28 | entries | 8 × 12 bytes | below |
+
+Each entry: gyro_peak uint16 (deg/s); gyro_mean uint16 (deg/s × 4); accel_sd uint8 (spread of the acceleration's size, g × 100); jolts uint8 (times it left 1 g by more than 0.25 g: heel strikes); gravity int8 × 3 (mean acceleration, g × 100: which way up the tracker was, so standing, crouching and sitting differ); turn int8 (degrees turned about the vertical, signed as the swing turn); sound_high uint8 and sound_low uint8 (√ of the loudest level in each band).
 
 ## Sync — Phase 3
 

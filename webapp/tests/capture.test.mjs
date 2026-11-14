@@ -27,7 +27,9 @@ test('decodes records written by the firmware', () => {
   const recs = split(fixture).map((b) => decodeRecord(b, { full: true }));
   assert.deepEqual(recs.map((r) => r.kind), [1, 2, 4, 5, 5, 3]);
   assert.ok(recs.every((r) => r.crcOk));
-  assert.deepEqual(recs.map((r) => r.seq), [0, 1, 2, 3, 4, 5]);
+  // Increasing, with gaps where the track records (firmware 0.6.0) were left out of this fixture.
+  assert.equal(recs[0].seq, 0);
+  assert.ok(recs.every((r, i) => i === 0 || r.seq > recs[i - 1].seq));
   const [start, , swing, label, missed] = recs;
   assert.equal(start.firmware, '0.2.0');
   assert.equal(swing.len, 7548);
@@ -214,7 +216,7 @@ test('reject records from firmware 0.4.2 carry the turn', () => {
 });
 
 test('capture packet and the new control ops', () => {
-  const c = { enabled: true, session: true, full: false, syncing: true, flashOk: true, trigger: 150, logId: 0xdeadbeef,
+  const c = { enabled: true, recording: false, session: true, full: false, syncing: true, flashOk: true, trigger: 150, logId: 0xdeadbeef,
     nextSeq: 42, swings: 30, labels: 10, usedKb: 210, totalKb: 2048, imuOverruns: 0 };
   assert.deepEqual(decodeCapture(encodeCapture(c)), { version: 1, ...c, soundGate: null, gatedOut: 0, locked: null, ignoredPresses: 0, rejects: 0 });   // 20-byte (0.2.x) packet
   const c3 = { ...c, soundGate: 1000, gatedOut: 7 };
@@ -269,4 +271,46 @@ test('pretend tracker: capture a round, sync it, clear it', async () => {
   assert.notEqual(tracker.capture.logId, oldId);
   assert.equal(tracker.capture.swings, 0);
   await tracker.disconnect();
+});
+
+test('motion records from firmware 0.6.0: a practice recording and a round track', async () => {
+  const { exportJson } = await import('../js/capturelog.js');
+  const bin = new Uint8Array(readFileSync(new URL('./fixtures/capture-log-motion.bin', import.meta.url)));
+  const recs = split(bin).map((b) => ({ ...decodeRecord(b), bytes: b }));
+  assert.ok(recs.every((r) => r.crcOk));
+  const streams = recs.filter((r) => r.kind === KIND.stream), tracks = recs.filter((r) => r.kind === KIND.track);
+  assert.ok(streams.length >= 11 && tracks.length >= 1);
+  const d = decodeRecord(streams[0].bytes, { full: true });
+  assert.equal(d.imuRateHz, 207.3); assert.equal(d.decim, 4); assert.equal(d.imuCount, 52); assert.equal(d.bins, 50);
+  assert.ok(Math.abs(d.durationMs - 1003.4) < 0.1);
+  assert.equal(d.imu.length, 52); assert.equal(d.imu[0][0], 285); assert.equal(d.imu[0][5], 2049);
+  assert.equal(d.high.length, 50); assert.equal(d.high[0], 10); assert.equal(d.low[0], 7);
+  assert.equal(streams[1].firstIndex, streams[0].firstIndex + 208);
+  // The click 2.5 s in: √40000 in one bin of the third block.
+  assert.equal(decodeRecord(streams[2].bytes, { full: true }).high.filter((v) => v === 200).length, 1);
+
+  const t = tracks[0];
+  assert.equal(t.speed, 1.23); assert.equal(t.entries, 8); assert.equal(t.seconds.length, 8);
+  assert.ok(t.secondMs > 990 && t.secondMs < 1015);
+  const e = t.seconds[1];
+  assert.deepEqual(e.gravity, [0, 0, 1]); assert.equal(e.jolts, 0); assert.equal(e.high, 100); assert.equal(e.low, 49);
+  assert.ok(e.gyroMean > 19 && e.gyroMean < 28 && e.gyroPeak < 30);
+  assert.equal(e.deviceMs, t.deviceMs + t.secondMs);
+
+  // Sessions and export: the recording's labels are strokes (one press a putt, two a chip).
+  const rows = recs.map((r) => ({ ...r, logId: 9 }));
+  const ss = sessions(rows);
+  const practice = ss.find((s) => s.practice);
+  assert.ok(practice && Math.abs(practice.recordedMs - streams.length * 1003.4) < 5);
+  const out = exportJson(rows);
+  assert.equal(out.version, 8);
+  const xs = out.logs[0].sessions.find((s) => s.recording);
+  assert.deepEqual(xs.labels.map((l) => l.stroke), ['putt', 'chip']);
+  assert.equal(xs.recording.imu.raw.length, streams.length * 52);
+  assert.equal(xs.recording.sound.high.length, streams.length * 50);
+  assert.ok(Math.abs(xs.recording.imu.rate_hz - 51.825) < 0.001);
+  assert.equal(xs.recording.blocks.length, streams.length);
+  const xt = out.logs[0].sessions.find((s) => s.track);
+  assert.equal(xt.track.rows[0].length, xt.track.columns.length);
+  assert.equal(xt.track.rows.length, xt.track.fixes.reduce((n, f) => n + f.seconds, 0));
 });

@@ -2,8 +2,8 @@
 // reassembly for sync, grouping into sessions, and the JSON export.
 // Format: docs/ble-protocol.md, "Capture log" and "Sync".
 
-export const KIND = { logStart: 1, sessionStart: 2, sessionEnd: 3, swing: 4, label: 5, reject: 6, pad: 0xfe };
-export const KIND_NAME = { 1: 'log-start', 2: 'session-start', 3: 'session-end', 4: 'swing', 5: 'label', 6: 'reject' };
+export const KIND = { logStart: 1, sessionStart: 2, sessionEnd: 3, swing: 4, label: 5, reject: 6, stream: 7, track: 8, pad: 0xfe };
+export const KIND_NAME = { 1: 'log-start', 2: 'session-start', 3: 'session-end', 4: 'swing', 5: 'label', 6: 'reject', 7: 'stream', 8: 'track' };
 // Reject reasons (firmware 0.4.0).
 export const REJECT = { noImpact: 1, noBuildup: 2, moving: 4 };
 export const GYRO_DPS_PER_LSB = 0.07;
@@ -75,6 +75,51 @@ export function decodeRecord(bytes, { full = false } = {}) {
     r.trigger = dv.getUint16(x + 18, true);
     // Firmware 0.4.2: the downswing turn (turnDeg), degrees × 10; 0x8000 = unknown.
     if (len >= HEADER + CTX + 22) { const t = dv.getInt16(x + 20, true); r.turn = t === -32768 ? null : t / 10; }
+  } else if (kind === KIND.stream) {
+    // Firmware 0.6.0, a practice recording: about a second of the IMU at a
+    // quarter rate (each sample the mean of `decim` in a row) and the sound
+    // levels (√ of the peak of each bin, high band then low band).
+    r.firstIndex = dv.getUint32(x, true);
+    r.imuRateHz = dv.getUint16(x + 4, true) / 100;         // the IMU's own rate
+    r.decim = dv.getUint8(x + 6);
+    r.imuCount = dv.getUint8(x + 7);
+    r.bins = dv.getUint8(x + 8);
+    const f = dv.getUint8(x + 9);
+    r.flags = { imuOverrun: !!(f & 1), audioMissing: !!(f & 2) };
+    r.dropped = dv.getUint16(x + 10, true);                // seconds lost since start-up
+    r.durationMs = (r.imuCount * r.decim * 1000) / r.imuRateHz;
+    if (full) {
+      const at = x + 12;
+      r.imu = [];
+      for (let i = 0; i < r.imuCount; i++) {
+        const o = at + i * 12;
+        r.imu.push([0, 2, 4, 6, 8, 10].map((k) => dv.getInt16(o + k, true)));
+      }
+      const s0 = at + r.imuCount * 12;
+      r.high = Array.from(bytes.subarray(s0, s0 + r.bins));
+      r.low = Array.from(bytes.subarray(s0 + r.bins, s0 + 2 * r.bins));
+    }
+  } else if (kind === KIND.track) {
+    // Firmware 0.6.0, every round: a summary of each second (see TRACK_COLUMNS).
+    const speed = dv.getUint16(x, true);
+    r.speed = speed === 0xffff ? null : speed / 100;       // m/s when the record was started
+    r.entries = dv.getUint8(x + 2);
+    const size = dv.getUint8(x + 3);
+    r.secondMs = dv.getUint16(x + 4, true);
+    r.seconds = [];
+    for (let i = 0; i < r.entries; i++) {
+      const o = x + 8 + i * size;
+      r.seconds.push({
+        deviceMs: r.deviceMs + i * r.secondMs,
+        gyroPeak: dv.getUint16(o, true),                   // deg/s
+        gyroMean: dv.getUint16(o + 2, true) / 4,           // deg/s
+        accelSd: dv.getUint8(o + 4) / 100,                 // g, spread of |acceleration|
+        jolts: dv.getUint8(o + 5),                         // times |acceleration| left 1 g by over 0.25 g
+        gravity: [dv.getInt8(o + 6) / 100, dv.getInt8(o + 7) / 100, dv.getInt8(o + 8) / 100],   // g, which way up
+        turn: dv.getInt8(o + 9),                           // degrees about the vertical
+        high: dv.getUint8(o + 10) ** 2, low: dv.getUint8(o + 11) ** 2,   // loudest level, each band
+      });
+    }
   } else if (kind === KIND.swing) {
     r.peakGyro = dv.getUint16(x, true);
     r.trigger = dv.getUint16(x + 2, true);
@@ -430,7 +475,7 @@ export function sessions(rows) {
   let cur = null;
   const open = (r) => {
     cur = { logId: r.logId, startSeq: r.seq, start: r.time ?? null, end: null, trigger: r.trigger ?? null, soundGate: r.soundGate ?? 0,
-      swings: [], labels: [], rejects: [], ended: false };
+      swings: [], labels: [], rejects: [], streams: [], tracks: [], ended: false };
     out.push(cur);
   };
   for (const r of sorted) {
@@ -441,6 +486,8 @@ export function sessions(rows) {
     if (r.kind === KIND.swing) cur.swings.push(r);
     if (r.kind === KIND.label) cur.labels.push(r);
     if (r.kind === KIND.reject) cur.rejects.push(r);
+    if (r.kind === KIND.stream) cur.streams.push(r);
+    if (r.kind === KIND.track) cur.tracks.push(r);
   }
   for (const s of out) {
     const labelled = new Map();
@@ -454,8 +501,46 @@ export function sessions(rows) {
     s.real = s.swings.filter((w) => labelled.has(w.seq)).length;
     s.missed = s.labels.filter((l) => l.swingSeq == null).length;
     s.start ??= s.swings[0]?.time ?? s.labels[0]?.time ?? null;
+    // A practice recording: one press after a putt, a double press after a chip.
+    s.practice = s.streams.length > 0;
+    s.recordedMs = s.streams.reduce((t, b) => t + (b.durationMs ?? 0), 0);
   }
   return out;
+}
+
+// A practice recording as columns. Each block is about a second; `imu.raw`
+// runs on from block to block (a gap shows as a jump in first_index).
+function exportRecording(streams) {
+  const blocks = [], raw = [], high = [], low = [];
+  let rate = null, decim = null;
+  for (const b of streams) {
+    const d = decodeRecord(b.bytes, { full: true });
+    rate ??= d.imuRateHz; decim ??= d.decim;
+    blocks.push({ seq: b.seq, time: b.time ? new Date(b.time * 1000).toISOString() : null, device_ms: b.deviceMs, first_index: d.firstIndex,
+      samples: d.imuCount, bins: d.bins, lat: b.pos?.lat ?? null, lon: b.pos?.lon ?? null, hdop: b.hdop,
+      imu_overrun: d.flags.imuOverrun, audio_missing: d.flags.audioMissing });
+    raw.push(...d.imu); high.push(...d.high); low.push(...d.low);
+  }
+  return {
+    labels: 'one press after a putt, a double press after a chip; everything unlabelled is not a stroke',
+    imu: { rate_hz: rate != null ? rate / decim : null, source_rate_hz: rate, averaged: decim,
+      scale: { gyro_dps: GYRO_DPS_PER_LSB, accel_g: ACC_G_PER_LSB }, columns: ['gx', 'gy', 'gz', 'ax', 'ay', 'az'], raw },
+    sound: { bins_per_block: streams.length ? blocks[0].bins : null, note: 'sqrt of the peak level in each bin (level = value squared, 0-65535)', high, low },
+    blocks,
+  };
+}
+
+// A round's track as columns, one row a second.
+export const TRACK_COLUMNS = ['device_ms', 'gyro_peak_dps', 'gyro_mean_dps', 'accel_sd_g', 'jolts', 'gx', 'gy', 'gz', 'turn_deg', 'sound_high', 'sound_low'];
+function exportTrack(tracks) {
+  const rows = [], fixes = [];
+  for (const t of tracks) {
+    fixes.push({ seq: t.seq, time: t.time ? new Date(t.time * 1000).toISOString() : null, device_ms: t.deviceMs,
+      lat: t.pos?.lat ?? null, lon: t.pos?.lon ?? null, hdop: t.hdop, speed_ms: t.speed, seconds: t.entries });
+    for (const e of t.seconds) rows.push([e.deviceMs, e.gyroPeak, e.gyroMean, e.accelSd, e.jolts, ...e.gravity, e.turn, e.high, e.low]);
+  }
+  return { note: 'one row a second while a round is on; gx/gy/gz is the mean acceleration (g), i.e. which way up the tracker was; a position every 8 seconds in fixes',
+    columns: TRACK_COLUMNS, rows, fixes };
 }
 
 // ---------- export ----------
@@ -496,7 +581,10 @@ export function exportJson(rows, { appVersion } = {}) {
           };
         }),
         labels: s.labels.map((l) => ({ seq: l.seq, time: l.time ? new Date(l.time * 1000).toISOString() : null,
-          device_ms: l.deviceMs, swing_seq: l.swingSeq ?? null, tracker_ref_seq: l.refSeq, tracker_gap_ms: l.gapMs, double: l.double, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
+          device_ms: l.deviceMs, swing_seq: l.swingSeq ?? null, tracker_ref_seq: l.refSeq, tracker_gap_ms: l.gapMs, double: l.double,
+          stroke: s.practice ? (l.double ? 'chip' : 'putt') : null, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
+        recording: s.practice ? exportRecording(s.streams) : null,
+        track: s.tracks.length ? exportTrack(s.tracks) : null,
         rejects: (s.rejects ?? []).map((j) => ({ seq: j.seq, time: j.time ? new Date(j.time * 1000).toISOString() : null, device_ms: j.deviceMs,
           lat: j.pos?.lat ?? null, lon: j.pos?.lon ?? null, peak_gyro_dps: j.peakGyro, impact_level: j.impactLevel, low_impact: j.lowImpact,
           audio_peak: j.audioPeak, buildup_dps: j.buildup, still_dps: j.still, jolt_g: j.jolt, impact_ms: j.impactMs, turn_deg: j.turn ?? null,
@@ -504,7 +592,7 @@ export function exportJson(rows, { appVersion } = {}) {
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 7, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+  return { app: 'golftracker-capture', version: 8, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
     format: 'docs/ble-protocol.md, Capture log',
     label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq); a swing peaking under ${PRESS_SNIPPET_MS} ms before a press is the press itself (button_press)`, logs };
 }

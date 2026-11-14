@@ -1,4 +1,5 @@
 #include "capture.h"
+#include "motion.h"
 #include "sensors.h"
 #include "store.h"
 
@@ -72,6 +73,7 @@ namespace {
 
   void onSample(const int16_t raw[6], uint32_t idx) {
     memcpy(ring[idx % RING], raw, 12);
+    motion::onSample(raw, idx);
     if (!session || !isEnabled) { cand.active = false; return; }
     float gx = raw[0] * imu::GYRO_DPS_PER_LSB, gy = raw[1] * imu::GYRO_DPS_PER_LSB, gz = raw[2] * imu::GYRO_DPS_PER_LSB;
     float g = sqrtf(gx * gx + gy * gy + gz * gz);
@@ -342,6 +344,8 @@ namespace {
   }
 }
 
+void capture::writeContext(uint8_t* p, uint32_t atMs) { context(p, atMs); }
+
 void capture::begin(Clock unixNow) {
   unixClock = unixNow;
   imu::setSink(onSample);
@@ -370,6 +374,7 @@ void capture::setSession(bool active) {
   if (!active) {                  // ending mid-candidate: drop the candidate, decide any presses now
     cand.active = false;
     resolvePresses(true);
+    motion::sessionChanged(false);   // writes what's left of the track before the session-end record
   }
   session = active;
   if (!isEnabled) return;
@@ -378,7 +383,7 @@ void capture::setSession(bool active) {
   put16(b + CTX, triggerDps);
   put16(b + CTX + 2, gateLevel);
   store::append(active ? store::K_SESSION_START : store::K_SESSION_END, b, sizeof(b));
-  if (active) { haveLast = false; cooldownUntil = imu::count() + 208; }
+  if (active) { haveLast = false; cooldownUntil = imu::count() + 208; motion::sessionChanged(true); }
 }
 
 void capture::buttonPress(uint32_t ms) {

@@ -22,8 +22,17 @@ export function canSleep(status) {
   return a > 0 || b >= 5;
 }
 
+// Firmware 0.6.0 and later keep a motion track of every round and can make
+// a practice recording (0x08).
+export function canRecord(status) {
+  const [a = 0, b = 0] = String(status?.firmware ?? '').split('.').map(Number);
+  return a > 0 || b >= 6;
+}
+// A practice recording writes about 764 bytes a second.
+export const RECORDING_KB_PER_MIN = (764 * 60) / 1024;
+
 export const OP = {
-  startRound: 0x01, endRound: 0x02, setTime: 0x03, identify: 0x04, setCapture: 0x05, lockRound: 0x06, sleep: 0x07,
+  startRound: 0x01, endRound: 0x02, setTime: 0x03, identify: 0x04, setCapture: 0x05, lockRound: 0x06, sleep: 0x07, setRecording: 0x08,
   syncFrom: 0x10, eraseLog: 0x11, stopSync: 0x12, setTrigger: 0x20, setSoundGate: 0x21,
 };
 
@@ -118,6 +127,7 @@ export function decodeCapture(dv) {
     gatedOut: dv.byteLength >= 24 ? dv.getUint16(22, true) : 0,
     // Firmware 0.4.0+: round lock, ignored presses, reject records (null = not supported).
     locked: dv.byteLength >= 28 ? !!(f & 32) : null,
+    recording: !!(f & 64),                       // firmware 0.6.0: a practice recording is running
     ignoredPresses: dv.byteLength >= 28 ? dv.getUint16(24, true) : 0,
     rejects: dv.byteLength >= 28 ? dv.getUint16(26, true) : 0,
   };
@@ -126,7 +136,7 @@ export function decodeCapture(dv) {
 export function encodeCapture(c) {
   const dv = new DataView(new ArrayBuffer(c.locked != null ? 28 : c.soundGate == null ? 20 : 24));
   dv.setUint8(0, 1);
-  dv.setUint8(1, (c.enabled ? 1 : 0) | (c.session ? 2 : 0) | (c.full ? 4 : 0) | (c.syncing ? 8 : 0) | (c.flashOk ? 16 : 0) | (c.locked ? 32 : 0));
+  dv.setUint8(1, (c.enabled ? 1 : 0) | (c.session ? 2 : 0) | (c.full ? 4 : 0) | (c.syncing ? 8 : 0) | (c.flashOk ? 16 : 0) | (c.locked ? 32 : 0) | (c.recording ? 64 : 0));
   dv.setUint16(2, c.trigger, true); dv.setUint32(4, c.logId >>> 0, true); dv.setUint16(8, c.nextSeq, true);
   dv.setUint16(10, c.swings, true); dv.setUint16(12, c.labels, true); dv.setUint16(14, c.usedKb, true);
   dv.setUint16(16, c.totalKb, true); dv.setUint16(18, c.imuOverruns ?? 0, true);
@@ -136,7 +146,7 @@ export function encodeCapture(c) {
 }
 
 // Control: op byte, then the op's argument.
-const ARG_BYTES = { [OP.setTime]: 4, [OP.eraseLog]: 4, [OP.syncFrom]: 2, [OP.setTrigger]: 2, [OP.setSoundGate]: 2, [OP.setCapture]: 1, [OP.lockRound]: 1 };
+const ARG_BYTES = { [OP.setTime]: 4, [OP.eraseLog]: 4, [OP.syncFrom]: 2, [OP.setTrigger]: 2, [OP.setSoundGate]: 2, [OP.setCapture]: 1, [OP.lockRound]: 1, [OP.setRecording]: 1 };
 export function encodeControl(op, arg) {
   const n = ARG_BYTES[op] ?? 0;
   const dv = new DataView(new ArrayBuffer(1 + n));
@@ -289,8 +299,9 @@ export class FakeTransport {
   async control(bytes) {
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const op = bytes[0];
-    if (op === OP.startRound) this.setRound(true);
-    else if (op === OP.endRound) { this.setRound(false); this.capture.locked = false; }
+    if (op === OP.startRound) { this.setRound(true); this.capture.recording = !!this.wantRecording; }
+    else if (op === OP.endRound) { this.setRound(false); this.capture.locked = false; this.capture.recording = this.wantRecording = false; }
+    else if (op === OP.setRecording) { this.wantRecording = !!bytes[1]; this.capture.recording = this.wantRecording && this.s.roundActive; }
     else if (op === OP.setTime) this.time = dv.getUint32(1, true);
     else if (op === OP.setCapture) this.capture.enabled = !!bytes[1];
     else if (op === OP.setTrigger) this.capture.trigger = dv.getUint16(1, true);

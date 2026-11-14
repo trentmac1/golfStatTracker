@@ -28,12 +28,7 @@ uint16_t store::crc16(const uint8_t* d, uint32_t n, uint16_t crc) {
 void store::sleep() {
   if (!good) return;
   transport.runCommand(0xB9);
-  // Hand the pins back from the QSPI peripheral and hold chip-select high
-  // (deselected), so the chip stays in deep power-down through System OFF.
-  transport.end();
-  pinMode(PIN_QSPI_CS, OUTPUT);
-  digitalWrite(PIN_QSPI_CS, HIGH);
-  good = false;
+  good = false;   // main.cpp then releases the QSPI pins and holds chip-select high
 }
 
 bool store::read(uint32_t addr, uint8_t* buf, uint32_t len) {

@@ -160,6 +160,13 @@ static void goToSleep(const char* why) {
   imu::end();
   gnss::standby();
   store::sleep();
+  // Release the QSPI pins and hold the flash's chip-select high (deselected),
+  // so the chip stays in deep power-down through System OFF.
+  NRF_QSPI->TASKS_DEACTIVATE = 1;
+  delay(2);
+  NRF_QSPI->ENABLE = 0;
+  pinMode(PIN_QSPI_CS, OUTPUT);
+  digitalWrite(PIN_QSPI_CS, HIGH);
   leds(false, false, false);
   delay(20);
   systemOff(BUTTON_PIN, LOW);                  // doesn't return

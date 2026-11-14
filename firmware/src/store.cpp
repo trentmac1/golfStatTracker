@@ -26,7 +26,14 @@ uint16_t store::crc16(const uint8_t* d, uint32_t n, uint16_t crc) {
 // Deep power-down (0xB9, P25Q16H datasheet): about 1 µA instead of the
 // chip's standby current. A reset releases it (begin() wakes the chip).
 void store::sleep() {
-  if (good) transport.runCommand(0xB9);
+  if (!good) return;
+  transport.runCommand(0xB9);
+  // Hand the pins back from the QSPI peripheral and hold chip-select high
+  // (deselected), so the chip stays in deep power-down through System OFF.
+  transport.end();
+  pinMode(PIN_QSPI_CS, OUTPUT);
+  digitalWrite(PIN_QSPI_CS, HIGH);
+  good = false;
 }
 
 bool store::read(uint32_t addr, uint8_t* buf, uint32_t len) {

@@ -60,6 +60,7 @@ Fits in one default-MTU notification.
 | 0x04 | identify | – | Phase 2; LEDs blink white for 3 s |
 | 0x05 | set capture | uint8, 0 off / 1 on | Phase 3; on by default |
 | 0x06 | lock round | uint8, 1 lock / 0 unlock | Firmware 0.4.0. While locked, the 2 s button hold doesn't start or end the round (the leg can hold the button while walking). The lock and a running round survive a restart. End round (0x02) also unlocks |
+| 0x07 | sleep | – | Firmware 0.5.0. Ignored during a round. Otherwise the tracker goes to sleep at once (System OFF, GPS standby; the connection drops) and wakes on a button press. It also sleeps by itself after an hour with no phone connected and no round on, unless on USB, and after two hours of a round with no swing, press or connection (ending the round first) |
 | 0x10 | sync from seq | uint16 seq | Phase 3; streams the capture log from that seq (see Sync) |
 | 0x11 | erase log | uint32 log_id | Phase 3; only if log_id matches the tracker's current log |
 | 0x12 | stop sync | – | Phase 3 |

@@ -76,6 +76,8 @@ The XIAO has two pads on the **back**, marked **BAT+** and **BAT−**.
 | fast white blinking | "Flash the tracker's lights" from the app |
 | short magenta flash | a swing was saved (capture mode, during a round) |
 | short white blink | button press counted (and labelled, during a round) |
+| three slow purple flashes | going to sleep (firmware 0.5.0) |
+| two green flashes after a button press | woken from sleep |
 
 The separate charge LED by the USB socket is wired to the charger, not the firmware.
 
@@ -88,6 +90,16 @@ The separate charge LED by the USB socket is wired to the charger, not the firmw
 | blue | motion sensor | send me the serial log |
 | yellow | microphone | send me the serial log |
 | magenta | flash storage (capture log) | send me the serial log |
+
+## Sleep between rounds (firmware 0.5.0)
+
+The tracker sleeps by itself after **an hour with no phone connected and no round on**: GPS in standby, Bluetooth, motion sensor and microphone off. It shows three slow purple flashes, then the LED stays dark. Asleep it draws tens of µA (GPS standby about 20 µA), so a charge lasts months instead of a day or two.
+
+- **To wake it:** press the button once. Two green flashes, then the usual heartbeat. The GPS keeps its almanac on the board's backup cell, so the first fix is usually quick. The wake-up press isn't counted as a label.
+- **Not while on USB:** plugged in (charging or the serial log) it stays awake. It still charges while asleep.
+- **Rounds:** it doesn't sleep during a round, even with the phone in the bag for hours. A round left on with nothing at all for two hours (no swing, press or connection) is taken as over: the tracker ends it and sleeps.
+- **Sleep now:** on Settings → Tracker, **Put the tracker to sleep** (not during a round).
+- Asleep, the tracker can't be found from the phone. Press its button, then connect.
 
 ## Optional: the serial log
 
@@ -148,12 +160,13 @@ Then the sessions themselves: send me each exported JSON file (or tell me where 
 
 ## Playing a round with the tracker
 
-1. In Bluefy, tap a course on Home, pick the holes, choose **Shot tracker** under Shots, and tee off.
-2. On the hole screen, tap **Connect** in the blue tracker bar and pick Golf Tracker. The app puts the tracker in Round mode (trigger 250 °/s, impact needed), starts its round and (firmware 0.4.0) locks it, so the 2 s button hold can't end the round while the button rubs against your leg. If the tracker restarts, it carries on with the round. Finish round on the scorecard unlocks it. The bar shows battery, GPS and how many shots it has found. If the connection drops, it reconnects by itself when the phone is back in range.
-3. Play. Each full swing the tracker saves appears within a few seconds as a shot with a blue number, on the map and in the shot list. Practice swings, knocks and thuds are left out (see Range and Round mode above). A swing is put on the hole on screen, or on the next one if it was clearly hit there (for example, off the next tee before you moved the app on).
-4. Dashed blue **?** dots are possible shots: swings the tracker felt but didn't count (a thud, a quiet strike, a louder swing nearby). Tap one and choose **Add as shot** or **Not a shot**. Both answers are kept on the round and used to tune the detection.
-5. Fix anything wrong as with any shot: drag its dot on the map, set the club and lie, or delete it. A deleted tracker shot isn't added back, and a shot you've changed is never touched by a later sync.
-6. After each hole, enter chips and putts in the hole's stats. Keep pressing the tracker button 2–5 s after each chip and putt (firmware 0.4.0 ignores presses that come in a walking rhythm, so press once and stand still for a moment): the hole screen shows how many presses it counted, to help you count. For a chip you want on the map, use **Mark ball**; a swing within 10 m and 3 minutes of a marked shot isn't added twice.
-7. **Finish round** on the scorecard fetches the last swings and ends the tracker's round.
+1. Wake the tracker with one press of its button (two green flashes) if it has been sitting for more than an hour. Check the battery on Settings → Tracker; a full round needs a full charge (about 11 hours from flat at 100 mA).
+2. In Bluefy, tap a course on Home, pick the holes, choose **Shot tracker** under Shots, and tee off.
+3. On the hole screen, tap **Connect** in the blue tracker bar and pick Golf Tracker. The app puts the tracker in Round mode (trigger 250 °/s, impact needed), starts its round and (firmware 0.4.0) locks it, so the 2 s button hold can't end the round while the button rubs against your leg. If the tracker restarts, it carries on with the round. Finish round on the scorecard unlocks it. The bar shows battery, GPS and how many shots it has found. If the connection drops, it reconnects by itself when the phone is back in range.
+4. Play. Each full swing the tracker saves appears within a few seconds as a shot with a blue number, on the map and in the shot list. Practice swings, knocks and thuds are left out (see Range and Round mode above). A swing is put on the hole on screen, or on the next one if it was clearly hit there (for example, off the next tee before you moved the app on).
+5. Dashed blue **?** dots are possible shots: swings the tracker felt but didn't count (a thud, a quiet strike, a louder swing nearby). Tap one and choose **Add as shot** or **Not a shot**. Both answers are kept on the round and used to tune the detection.
+6. Fix anything wrong as with any shot: drag its dot on the map, set the club and lie, or delete it. A deleted tracker shot isn't added back, and a shot you've changed is never touched by a later sync.
+7. After each hole, enter chips and putts in the hole's stats. The button isn't needed during rounds (14 Nov 2026): short-game training data will come from practice-green sessions. For a chip you want on the map, use **Mark ball**; a swing within 10 m and 3 minutes of a marked shot isn't added twice.
+8. **Finish round** on the scorecard fetches the last swings and ends the tracker's round.
 
 The swings also stay in Training data, so the same session can still be exported for the analysis.

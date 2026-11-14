@@ -59,7 +59,7 @@ enum CaptureFlag : uint8_t {
 
 enum ControlOp : uint8_t {
   OP_START_ROUND = 0x01, OP_END_ROUND = 0x02, OP_SET_TIME = 0x03, OP_IDENTIFY = 0x04,
-  OP_SET_CAPTURE = 0x05, OP_LOCK_ROUND = 0x06,
+  OP_SET_CAPTURE = 0x05, OP_LOCK_ROUND = 0x06, OP_SLEEP = 0x07,
   OP_SYNC_FROM = 0x10, OP_ERASE_LOG = 0x11, OP_STOP_SYNC = 0x12,
   OP_SET_TRIGGER = 0x20, OP_SET_SOUND_GATE = 0x21,
 };
@@ -70,6 +70,7 @@ typedef void (*AckHandler)(uint16_t seq);
 namespace blelink {
   void begin(ControlHandler onControl, AckHandler onAck);
   bool connected();
+  void stop();                 // stop advertising (before sleep)
   void publish(const StatusPacket& s, const LivePacket& l);  // set values, notify if subscribed
   void publishCapture(const CapturePacket& c);
   bool dataSubscribed();       // connected, with Data notifications on

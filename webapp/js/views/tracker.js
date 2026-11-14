@@ -1,6 +1,6 @@
 // Tracker screen: connect to the tracker and watch its battery, GPS and
 // sensors live. Phase 2 bring-up; shot sync builds on the same connection.
-import { tracker, OP } from '../transport.js';
+import { tracker, OP, canSleep } from '../transport.js';
 import { distance } from '../geo.js';
 import { esc, toast } from '../ui.js';
 
@@ -30,7 +30,7 @@ export async function trackerView(root) {
       connecting: 'Connecting…',
       connected: `Connected to ${esc(t.name ?? 'tracker')}${t.kind === 'fake' ? ' (pretend)' : ''}${stale ? ' · no update for a few seconds' : ''}.`,
       lost: 'Connection lost. Bring the phone closer and reconnect.',
-    }[t.state];
+    }[t.state] + (t.state === 'connected' ? '' : ' If the tracker is asleep, press its button once to wake it first.');
 
     let body = '';
     if (s) {
@@ -65,7 +65,9 @@ export async function trackerView(root) {
         ${t.state === 'connected' ? `<div class="btn-col">
           <button class="btn ghost" data-a="identify">Flash the tracker's lights</button>
           <button class="btn ghost" data-a="round">${s.roundActive ? 'End round on tracker' : 'Start round on tracker'}</button>
-        </div>` : ''}`;
+          ${canSleep(s) && !s.roundActive ? '<button class="btn ghost" data-a="sleep">Put the tracker to sleep</button>' : ''}
+        </div>
+        ${canSleep(s) ? '<p class="note">The tracker sleeps by itself after an hour with no phone connected and no round on (not while on USB). Press its button once to wake it: two green flashes.</p>' : ''}` : ''}`;
     }
 
     root.innerHTML = `
@@ -104,6 +106,11 @@ export async function trackerView(root) {
       }
       else if (a === 'disconnect') await tracker.disconnect();
       else if (a === 'identify') { await tracker.send(OP.identify); toast('Tracker lights flashing'); }
+      else if (a === 'sleep') {
+        await tracker.send(OP.sleep);
+        await tracker.disconnect();
+        toast('Tracker asleep. Press its button to wake it.');
+      }
       else if (a === 'round') await tracker.send(tracker.status?.roundActive ? OP.endRound : OP.startRound);
       else if (a === 'phone') {
         if (!navigator.geolocation) throw new Error('No location on this browser');

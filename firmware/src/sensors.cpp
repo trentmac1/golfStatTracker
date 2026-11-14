@@ -237,11 +237,27 @@ namespace {
   }
 }
 
+void imu::end() {
+  if (imuOk) { imuWrite(CTRL1_XL, 0x00); imuWrite(CTRL2_G, 0x00); }   // power-down modes first
+  Wire1.end();
+  pinMode(PIN_WIRE1_SDA, INPUT); pinMode(PIN_WIRE1_SCL, INPUT);
+  digitalWrite(PIN_LSM6DS3TR_C_POWER, LOW);   // the IMU and its I2C pull-ups
+  imuOk = false;
+}
+
 bool mic::begin() {
   PDM.onReceive(onPdm);
   micOk = PDM.begin(1, 16000) == 1;
   envT0 = millis();
   return micOk;
+}
+void mic::end() {
+  PDM.end();
+#ifdef PIN_PDM_PWR
+  pinMode(PIN_PDM_PWR, OUTPUT);
+  digitalWrite(PIN_PDM_PWR, LOW);
+#endif
+  micOk = false;
 }
 bool mic::ok() { return micOk && micBlocks > 0; }
 uint16_t mic::takePeak() {
@@ -414,6 +430,12 @@ void gnss::begin() {
   pinMode(GNSS_CTRL_A, OUTPUT); digitalWrite(GNSS_CTRL_A, HIGH);
   pinMode(GNSS_CTRL_B, OUTPUT); digitalWrite(GNSS_CTRL_B, HIGH);
   Serial1.begin(GNSS_BAUD);
+}
+
+void gnss::standby() {
+  digitalWrite(GNSS_CTRL_A, LOW);    // WAKE_UP low: standby
+  digitalWrite(GNSS_CTRL_B, HIGH);   // RESET_N stays released
+  Serial1.end();
 }
 
 void gnss::poll(Stream* echo) {

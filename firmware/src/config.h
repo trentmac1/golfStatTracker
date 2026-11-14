@@ -23,8 +23,8 @@
 #define PROTOCOL_VERSION 1
 
 // GNSS board
-static const uint8_t GNSS_CTRL_A = 0;   // D0, held HIGH (Seeed example)
-static const uint8_t GNSS_CTRL_B = 2;   // D2, held HIGH (Seeed example)
+static const uint8_t GNSS_CTRL_A = 0;   // D0, held HIGH (Seeed example): L76K WAKE_UP, low = standby
+static const uint8_t GNSS_CTRL_B = 2;   // D2, held HIGH (Seeed example): L76K RESET_N, low = reset
 static const uint32_t GNSS_BAUD = 9600;
 
 // Shot / round button: one leg to this pin, the other to GND.
@@ -41,3 +41,11 @@ static const uint8_t LED_R = LED_RED, LED_G = LED_GREEN, LED_B = LED_BLUE;
 
 // Battery: ADC with the 3.0 V internal reference, 12-bit.
 static const float VBAT_SCALE = 3000.0f / 4096.0f * 1510.0f / 510.0f; // mV per count
+
+// Sleep (firmware 0.5.0): the tracker turns everything off (System OFF, GPS
+// in standby) and a button press wakes it. It sleeps after SLEEP_IDLE_MS
+// with no phone connected, no round on, no button press and not on USB. A
+// round with nothing at all (no swing, press or connection) for
+// SLEEP_ROUND_IDLE_MS is taken as over: it's ended and the tracker sleeps.
+static const uint32_t SLEEP_IDLE_MS = 60UL * 60 * 1000;          // 1 hour
+static const uint32_t SLEEP_ROUND_IDLE_MS = 2UL * 60 * 60 * 1000; // 2 hours

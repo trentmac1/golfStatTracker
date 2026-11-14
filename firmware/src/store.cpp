@@ -23,6 +23,12 @@ uint16_t store::crc16(const uint8_t* d, uint32_t n, uint16_t crc) {
   return crc;
 }
 
+// Deep power-down (0xB9, P25Q16H datasheet): about 1 µA instead of the
+// chip's standby current. A reset releases it (begin() wakes the chip).
+void store::sleep() {
+  if (good) transport.runCommand(0xB9);
+}
+
 bool store::read(uint32_t addr, uint8_t* buf, uint32_t len) {
   return good && flash.readBuffer(addr, buf, len) == len;
 }

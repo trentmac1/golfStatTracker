@@ -99,6 +99,7 @@ void blelink::begin(ControlHandler onControl, AckHandler onAck) {
 }
 
 bool blelink::connected() { return isConnected; }
+void blelink::stop() { Bluefruit.Advertising.restartOnDisconnect(false); Bluefruit.Advertising.stop(); }
 
 void blelink::publish(const StatusPacket& s, const LivePacket& l) {
   chrStatus.write(&s, sizeof(s));

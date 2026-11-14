@@ -20,6 +20,7 @@ namespace imu {
   float rateHz();               // measured output rate (nominally 208)
   uint32_t overruns();          // times the FIFO filled before it was read
   uint32_t realigns();          // times the read had to skip to a sample boundary
+  void end();                   // power the IMU off (before sleep)
 }
 
 // ---- PDM microphone ----
@@ -28,6 +29,7 @@ namespace imu {
 // second, in a ring of the last 2.5 s.
 namespace mic {
   bool begin();
+  void end();                   // stop the PDM and power the mic off (before sleep)
   bool ok();
   uint16_t takePeak();          // peak |sample| since the last call (0-32767)
   uint32_t envCount();          // envelope values produced since start-up
@@ -68,6 +70,10 @@ namespace gnss {
     uint32_t sentences = 0, badChecksums = 0;
   };
   void begin();
+  // Standby (before sleep): WAKE_UP (D0) held low, about 20 µA (L76K
+  // Hardware Design 1.0; Seeed's board puts WAKE_UP on D0, RESET_N on D2).
+  // The pin keeps its level through System OFF; begin() drives it high again.
+  void standby();
   void poll(Stream* echo);      // read and parse; echo raw NMEA if non-null
   const Fix& fix();
   bool hasData();               // valid NMEA in the last 3 s

@@ -46,5 +46,7 @@ namespace store {
   bool read(uint32_t addr, uint8_t* buf, uint32_t len);  // addr and len multiples of 4
   uint32_t findSeq(uint16_t seq);           // first record with seq >= `seq`, or endAddr()
 
+  void sleep();                  // flash into deep power-down (before System OFF)
+
   uint16_t crc16(const uint8_t* d, uint32_t n, uint16_t crc = 0xFFFF);
 }

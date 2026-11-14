@@ -3,6 +3,9 @@
 // saved to flash as a 2 s snippet, short button presses label real shots, and
 // the app syncs the log over BLE.
 //
+// Sleep (0.5.0): after an hour with no phone connected and no round on, the
+// tracker switches everything off and a button press wakes it (goToSleep()).
+//
 // Serial monitor (USB, 115200): a status line every second.
 //   n  toggle raw NMEA echo   p  re-run the pin check   c  capture on/off
 //   l  capture log summary    h  help
@@ -27,6 +30,8 @@ static bool echoNmea = false;
 static uint32_t phoneUnix = 0, phoneUnixAtMs = 0;  // time set by the app
 static uint32_t identifyUntil = 0;
 static uint32_t flashUntil = 0;       // short solid flash: button / swing feedback
+static uint32_t lastActive = 0;       // millis() of the last connection, press or swing (for sleep)
+static bool wokeFromSleep = false;
 static bool flashR = true, flashG = true, flashB = true;
 
 // Requests from the app arrive on the Bluetooth task; the loop acts on them.
@@ -35,6 +40,7 @@ static volatile uint8_t lockRequest = 0;        // 1 lock, 2 unlock
 static volatile int32_t syncRequest = -1;       // seq to sync from
 static volatile bool stopSyncRequest = false;
 static volatile bool eraseRequest = false;
+static volatile bool sleepRequest = false;     // 0.5.0: the app's "sleep now"
 static volatile uint32_t eraseLogId = 0;
 static volatile uint16_t lastAck = 0;
 
@@ -99,6 +105,7 @@ static void updateButton() {
   if (raw != last) { last = raw; lastChange = now; }
   if (now - lastChange < 25) return;         // debounce
   bool pressed = (raw == LOW);
+  if (pressed) lastActive = now;
   if (pressed && !down) { down = true; held = false; since = now; }
   if (pressed && down && !held && now - since > 2000) {
     held = true;
@@ -112,6 +119,51 @@ static void updateButton() {
 }
 
 static bool buttonDown() { return digitalRead(BUTTON_PIN) == LOW; }
+
+// ---------- sleep ----------
+static bool onUsb() { return NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk; }
+
+static void saveSettings();
+static void goToSleep(const char* why);
+
+// Called every loop. Never while on USB (charging or the serial monitor) or
+// while a sync is running.
+static void sleepCheck(bool syncing) {
+  uint32_t now = millis();
+  if (blelink::connected() || syncing || onUsb()) { lastActive = now; return; }
+  uint32_t idle = now - lastActive;
+  if (!roundActive && idle >= SLEEP_IDLE_MS) goToSleep("no phone connected for an hour");
+  else if (roundActive && idle >= SLEEP_ROUND_IDLE_MS) {
+    // Two hours with no swing, press or connection: the round is over (the
+    // app ended it out of range, or it was left on). End it here too.
+    roundLocked = false;
+    setRound(false);
+    goToSleep("round left on for two hours with nothing happening");
+  }
+}
+
+// Everything off, then System OFF. The button (pull-up, sense low) wakes the
+// nRF52, which starts again from reset: setup() runs as at power-on, the GPS
+// leaves standby with its backup cell's data (a hot start) and the phone can
+// connect again. Charging still works while asleep (the charger is hardware).
+// Asleep: the nRF52 a few µA, GPS standby about 20 µA, flash about 1 µA.
+static void goToSleep(const char* why) {
+  if (Serial) { Serial.print("sleep: "); Serial.println(why); Serial.flush(); }
+  if (roundActive) setRound(false);            // writes the session-end record
+  saveSettings();
+  for (int i = 0; i < 3; i++) {                // three slow purple flashes
+    leds(true, false, true); delay(150);
+    leds(false, false, false); delay(350);
+  }
+  blelink::stop();
+  mic::end();
+  imu::end();
+  gnss::standby();
+  store::sleep();
+  leds(false, false, false);
+  delay(20);
+  systemOff(BUTTON_PIN, LOW);                  // doesn't return
+}
 
 // ---------- control from the app ----------
 static uint16_t u16(const uint8_t* p) { return p[0] | (p[1] << 8); }
@@ -135,6 +187,7 @@ static void onControl(const uint8_t* d, uint16_t len) {
       }
       break;
     case OP_IDENTIFY: identifyUntil = millis() + 3000; break;
+    case OP_SLEEP: sleepRequest = true; break;
   }
 }
 
@@ -190,6 +243,10 @@ static void syncPoll() {
 }
 
 static void handleRequests() {
+  if (sleepRequest) {
+    sleepRequest = false;
+    if (!roundActive) { delay(300); goToSleep("asked by the app"); }   // let the write's reply go out
+  }
   if (lockRequest) {
     bool on = lockRequest == 1;
     lockRequest = 0;
@@ -328,6 +385,11 @@ static void stage(bool r, bool g, bool b, const char* what) {
 }
 
 void setup() {
+  // Woken from sleep by the button? (RESETREAS OFF bit: wake from System
+  // OFF by a GPIO.) Read and clear before the SoftDevice starts.
+  uint32_t reas = NRF_POWER->RESETREAS;
+  NRF_POWER->RESETREAS = reas;
+  wokeFromSleep = reas & POWER_RESETREAS_OFF_Msk;
   leds(true, false, false);
   Serial.begin(115200);
   uint32_t t0 = millis();
@@ -338,6 +400,8 @@ void setup() {
   gnss::begin();                        // holds the GNSS control lines HIGH
   busyPins = probePins();               // before the button pin gets its pull-up
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  // The press that woke it isn't a label: wait for it to be let go.
+  if (wokeFromSleep) { uint32_t w = millis(); while (buttonDown() && millis() - w < 3000) delay(10); }
 
   // Bluetooth before the sensors, so the phone can connect even if one fails.
   stage(false, true, false, "Bluetooth");
@@ -359,8 +423,13 @@ void setup() {
   if (flashOk) Serial.printf("capture log %08lx: %u swings, %u labels, %lu KB used\n",
     (unsigned long)store::logId(), store::swings(), store::labels(), (unsigned long)(store::used() / 1024));
   printBusy();
+  if (wokeFromSleep) Serial.println("woke from sleep (button)");
   Serial.println("Type h for commands.");
   leds(false, false, false);
+  if (wokeFromSleep) {                         // two green flashes: awake
+    for (int i = 0; i < 2; i++) { leds(false, true, false); delay(150); leds(false, false, false); delay(150); }
+  }
+  lastActive = millis();
 }
 
 void loop() {
@@ -375,11 +444,13 @@ void loop() {
   if (changedAt && millis() - changedAt > 2000) { changedAt = 0; saveSettings(); }   // after the taps stop
   if (capture::lastSavedMs() != lastSaved) {      // a swing was saved: short magenta flash
     lastSaved = capture::lastSavedMs();
+    lastActive = millis();
     flash(150, true, false, true);
   }
   updateButton();
   updateLeds();
   handleSerial();
+  sleepCheck(syncState.active);
 
   uint32_t now = millis();
   if (now - lastBattery >= 5000) { lastBattery = now; battery::update(); }

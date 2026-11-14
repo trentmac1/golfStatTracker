@@ -49,3 +49,23 @@ test('pretend tracker drives the shared connection', async () => {
   off();
   assert.ok(seen.includes('connecting'));
 });
+
+test('sleep: firmware 0.5.0 and later; the pretend tracker drops the connection, but not mid-round', async () => {
+  const { canSleep } = await import('../js/transport.js');
+  assert.equal(canSleep({ firmware: '0.4.2' }), false);
+  assert.equal(canSleep({ firmware: '0.5.0' }), true);
+  assert.equal(canSleep({ firmware: '1.0.0' }), true);
+  assert.equal(canSleep(null), false);
+  assert.deepEqual([...encodeControl(OP.sleep)], [7]);
+
+  await tracker.connect('fake', { tick: 20 });
+  await tracker.send(OP.startRound);
+  await tracker.send(OP.sleep);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(tracker.state, 'connected');            // a round is on: stays awake
+  await tracker.send(OP.endRound);
+  await tracker.send(OP.sleep);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.notEqual(tracker.state, 'connected');
+  await tracker.disconnect();
+});

@@ -15,8 +15,15 @@ export const UUID = {
   capture: '7a1e0007-3c5b-4f0e-9a52-6b8d2f4c1e90',
 };
 
+// Firmware 0.5.0 and later sleep after an hour with no phone and no round,
+// and take the sleep command (0x07).
+export function canSleep(status) {
+  const [a = 0, b = 0] = String(status?.firmware ?? '').split('.').map(Number);
+  return a > 0 || b >= 5;
+}
+
 export const OP = {
-  startRound: 0x01, endRound: 0x02, setTime: 0x03, identify: 0x04, setCapture: 0x05, lockRound: 0x06,
+  startRound: 0x01, endRound: 0x02, setTime: 0x03, identify: 0x04, setCapture: 0x05, lockRound: 0x06, sleep: 0x07,
   syncFrom: 0x10, eraseLog: 0x11, stopSync: 0x12, setTrigger: 0x20, setSoundGate: 0x21,
 };
 
@@ -289,6 +296,7 @@ export class FakeTransport {
     else if (op === OP.setTrigger) this.capture.trigger = dv.getUint16(1, true);
     else if (op === OP.setSoundGate) this.capture.soundGate = dv.getUint16(1, true);
     else if (op === OP.lockRound) this.capture.locked = !!bytes[1];
+    else if (op === OP.sleep) { if (!this.s.roundActive) setTimeout(() => this.disconnect(), 300); }
     else if (op === OP.eraseLog) {
       if (dv.getUint32(1, true) === this.logId) {
         const was = this.s.roundActive;

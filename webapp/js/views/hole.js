@@ -700,6 +700,8 @@ export async function holeView(root, { roundId, hole }) {
     if (i >= 0) location.hash = `#/round/${roundId}/hole/${order[i]}`;
   }
 
+  const clearedToast = (r) => { if (r?.cleared) toast('Tracker storage copied to this phone and cleared for the round'); };
+
   root.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-a]');
     if (!b || !root.contains(b)) return;
@@ -710,7 +712,7 @@ export async function holeView(root, { roundId, hole }) {
       if (tracker.error) toast(tracker.error, 'warn');
       return;
     }
-    if (a === 'trkstart') { await prepareTracker().catch((err) => toast(err.message, 'warn')); return; }
+    if (a === 'trkstart') { await prepareTracker(round).then(clearedToast, (err) => toast(err.message, 'warn')); return; }
     if (a === 'markedit') { startMarking(); return; }
     if (a === 'markdone') { stopMarking(); return; }
     if (a === 'mk') { await placeMark(b.dataset.p, b.dataset.at); return; }
@@ -845,7 +847,7 @@ export async function holeView(root, { roundId, hole }) {
       // round mode on and its round started, then catch up on its swings.
       if (now && t.capture && !prepared) {
         prepared = true;
-        await prepareTracker().catch(() => {});
+        await prepareTracker(round).then(clearedToast, (err) => toast(err.message, 'warn'));
         trackerRefresh();
       }
       if (!now) prepared = false;

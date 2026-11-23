@@ -123,6 +123,34 @@ static void updateButton() {
 
 static bool buttonDown() { return digitalRead(BUTTON_PIN) == LOW; }
 
+// Release from deep power-down (0xAB), sent on plain pins before the QSPI
+// peripheral starts. A chip left in deep power-down (firmware 0.5.0-0.6.0
+// did that before sleep) stops the QSPI start-up from completing, so the
+// command can't go through the peripheral. Harmless when the chip is awake.
+// SPI mode 0, MSB first on IO0; WP (IO2) and HOLD (IO3) held high.
+static void flashRelease() {
+  pinMode(PIN_QSPI_CS, OUTPUT);  digitalWrite(PIN_QSPI_CS, HIGH);
+  pinMode(PIN_QSPI_SCK, OUTPUT); digitalWrite(PIN_QSPI_SCK, LOW);
+  pinMode(PIN_QSPI_IO0, OUTPUT);
+  pinMode(PIN_QSPI_IO1, INPUT);
+  pinMode(PIN_QSPI_IO2, OUTPUT); digitalWrite(PIN_QSPI_IO2, HIGH);
+  pinMode(PIN_QSPI_IO3, OUTPUT); digitalWrite(PIN_QSPI_IO3, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_QSPI_CS, LOW);
+  delayMicroseconds(1);
+  for (int8_t b = 7; b >= 0; b--) {
+    digitalWrite(PIN_QSPI_IO0, (0xAB >> b) & 1);
+    delayMicroseconds(1);
+    digitalWrite(PIN_QSPI_SCK, HIGH);
+    delayMicroseconds(1);
+    digitalWrite(PIN_QSPI_SCK, LOW);
+  }
+  delayMicroseconds(1);
+  digitalWrite(PIN_QSPI_CS, HIGH);
+  delayMicroseconds(100);          // tRES1 (P25Q16H: well under 100 µs)
+  pinMode(PIN_QSPI_IO0, INPUT);
+}
+
 // ---------- sleep ----------
 static bool onUsb() { return NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk; }
 
@@ -149,7 +177,7 @@ static void sleepCheck(bool syncing) {
 // nRF52, which starts again from reset: setup() runs as at power-on, the GPS
 // leaves standby with its backup cell's data (a hot start) and the phone can
 // connect again. Charging still works while asleep (the charger is hardware).
-// Asleep: the nRF52 a few µA, GPS standby about 20 µA, flash about 1 µA.
+// Asleep: the nRF52 a few µA, GPS standby about 20 µA, flash standby about 10 µA.
 static void goToSleep(const char* why) {
   if (Serial) { Serial.print("sleep: "); Serial.println(why); Serial.flush(); }
   if (roundActive) setRound(false);            // writes the session-end record
@@ -164,7 +192,7 @@ static void goToSleep(const char* why) {
   gnss::standby();
   store::sleep();
   // Release the QSPI pins and hold the flash's chip-select high (deselected),
-  // so the chip stays in deep power-down through System OFF.
+  // so the chip stays in standby through System OFF.
   NRF_QSPI->TASKS_DEACTIVATE = 1;
   delay(2);
   NRF_QSPI->ENABLE = 0;
@@ -430,6 +458,7 @@ void setup() {
   bool micOk = mic::begin();            // after BLE: PDM asks the SoftDevice for the HF clock
 
   stage(true, false, true, "flash storage");
+  flashRelease();
   bool flashOk = store::begin(nowUnix());
   capture::begin(nowUnix);
   loadSettings();

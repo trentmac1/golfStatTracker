@@ -23,11 +23,13 @@ uint16_t store::crc16(const uint8_t* d, uint32_t n, uint16_t crc) {
   return crc;
 }
 
-// Deep power-down (0xB9, P25Q16H datasheet): about 1 µA instead of the
-// chip's standby current. A reset releases it (begin() wakes the chip).
+// Before sleep. Firmware 0.5.0-0.6.0 put the chip into deep power-down (0xB9)
+// here, and after a wake from sleep the flash couldn't be used: with the chip
+// in deep power-down the nRF52's QSPI start-up doesn't complete, so the
+// release command (0xAB) in begin() never reached it. A pin reset could get
+// it back. 0.6.1 leaves the chip in standby instead: about 10 µA more, still
+// years of battery. main.cpp also releases it with plain pins at every start.
 void store::sleep() {
-  if (!good) return;
-  transport.runCommand(0xB9);
   good = false;   // main.cpp then releases the QSPI pins and holds chip-select high
 }
 

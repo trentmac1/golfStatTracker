@@ -41,18 +41,66 @@ export async function syncCaptures() {
   return n;
 }
 
-// Round mode on the tracker (trigger 250, impact needed) and a session open.
-// A gate the player has already tuned is kept.
-export async function prepareTracker() {
-  if (tracker.state !== 'connected' || !tracker.hasCapture) return;
+// ---------- a clear tracker for every round ----------
+// Once per round, when the tracker first connects to it: copy everything on
+// the tracker to the phone, check every record arrived, then clear the
+// tracker's storage so a long round (or a practice recording left on it)
+// can't fill it mid-round. Nothing is cleared unless the phone has every
+// record; the phone keeps its copy (the Training data screen exports it).
+// Returns { cleared } once done for this round, or null if it can't be done
+// yet (no tracker); throws if the copy didn't complete, and tries again at
+// the next connection.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let clearing = null;
+export function clearTrackerForRound(round, deps) {
+  clearing ??= clearOnce(round, deps).finally(() => { clearing = null; });
+  return clearing;
+}
+async function clearOnce(round, {
+  sync = syncCaptures,
+  have = async (logId) => cursor(await db.capturesForLog(logId)),
+  save = (r) => db.put('rounds', r),
+  waitMs = 5000,
+} = {}) {
+  if (!round || round.trackerCleared) return null;
+  if (tracker.state !== 'connected' || !tracker.hasCapture || !tracker.capture) return null;
+  const logId = tracker.capture.logId;
+  const used = tracker.capture.nextSeq > 1;   // seq 0 is the log-start record
+  if (used) {
+    let copied = false;
+    for (let i = 0; i < 3 && !copied; i++) {
+      for (let t = 0; tracker.sync && t < 60000; t += 200) await sleep(200);   // a sync already running
+      await sync();
+      const c = tracker.capture;
+      copied = c?.logId === logId && (await have(logId)) >= c.nextSeq;
+    }
+    if (!copied) throw new Error("Couldn't copy everything off the tracker, so its storage wasn't cleared. It tries again when the tracker reconnects.");
+    await tracker.send(OP.eraseLog, logId);
+    for (let t = 0; tracker.capture?.logId === logId && t < waitMs; t += 100) await sleep(100);
+    if (tracker.capture?.logId === logId) throw new Error("The tracker didn't confirm its storage was cleared. It tries again when the tracker reconnects.");
+  }
+  round.trackerCleared = true;
+  await save(round);
+  return { cleared: used };
+}
+
+// Round mode on the tracker (trigger 250, impact needed) and a session open,
+// after clearing its storage for a new round (clearTrackerForRound).
+// A gate the player has already tuned is kept. Returns what the clear did.
+export async function prepareTracker(round) {
+  if (tracker.state !== 'connected' || !tracker.hasCapture) return null;
+  let cleared = null, clearError = null;
+  try { cleared = await clearTrackerForRound(round); } catch (err) { clearError = err; }
   const c = tracker.capture;
-  if (!c) return;
+  if (!c) return null;
   if (!c.enabled) await tracker.send(OP.setCapture, true);
   if (c.soundGate != null && !c.soundGate) await tracker.send(OP.setSoundGate, ROUND_GATE);
   if (c.trigger !== ROUND_TRIGGER) await tracker.send(OP.setTrigger, ROUND_TRIGGER);
   if (!c.session) await tracker.send(OP.startRound);
   // Firmware 0.4.0+: the app owns the round, so the button can't end it.
   if (c.locked === false) await tracker.send(OP.lockRound, true);
+  if (clearError) throw clearError;
+  return cleared;
 }
 
 export async function endTrackerRound() {

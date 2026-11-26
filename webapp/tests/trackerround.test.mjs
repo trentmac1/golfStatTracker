@@ -184,3 +184,40 @@ test('possible shots: hidden swings more than 40 m from every green are left out
   const plan = planTrackerShots({ round, course, shots: [], swings: [], presses: [], hidden, rejects });
   assert.deepEqual(plan.possible.map((p) => p.seq), [5, 4]);
 });
+
+test('a new round copies the tracker to the phone, then clears it, once', async () => {
+  const { clearTrackerForRound, cursor } = await import('../js/trackerround.js');
+  const { tracker, OP } = await import('../js/transport.js');
+  await tracker.connect('fake', { tick: 10 });
+  for (let t = 0; !tracker.capture && t < 2000; t += 10) await new Promise((r) => setTimeout(r, 10));
+  // Leave a round's worth of records on the tracker.
+  await tracker.send(OP.startRound);
+  await new Promise((r) => setTimeout(r, 300));
+  await tracker.send(OP.endRound);
+  await new Promise((r) => setTimeout(r, 30));
+  const oldLog = tracker.capture.logId;
+  assert.ok(tracker.capture.nextSeq > 1);
+
+  const phone = [];
+  const sync = () => tracker.syncLog(cursor(phone.filter((r) => r.logId === oldLog)), (b) => { phone.push({ logId: oldLog, seq: b[4] | (b[5] << 8) }); });
+  const have = async (id) => cursor(phone.filter((r) => r.logId === id));
+  let saved = 0;
+  const r = { id: 'r9', tracker: true };
+
+  // A copy that never completes: nothing is cleared.
+  await assert.rejects(clearTrackerForRound(r, { sync: async () => {}, have, save: () => saved++ }), /wasn't cleared/);
+  assert.equal(tracker.capture.logId, oldLog);
+  assert.equal(r.trackerCleared, undefined);
+
+  const res = await clearTrackerForRound(r, { sync, have, save: () => saved++ });
+  assert.deepEqual(res, { cleared: true });
+  assert.notEqual(tracker.capture.logId, oldLog);
+  assert.ok(phone.length >= 3 && (await have(oldLog)) >= 3);
+  assert.equal(r.trackerCleared, true);
+  assert.equal(saved, 1);
+  // Reconnecting mid-round doesn't clear again.
+  const now = tracker.capture.logId;
+  assert.equal(await clearTrackerForRound(r, { sync, have, save: () => saved++ }), null);
+  assert.equal(tracker.capture.logId, now);
+  await tracker.disconnect();
+});

@@ -93,7 +93,7 @@ Unknown ops are ignored, so an older tracker doesn't break a newer app.
 
 ## Capture log — Phase 3
 
-While a round (session) is active and capture is on, the tracker appends records to the 2 MB QSPI flash. Nothing is overwritten: when it's full, swings stop being saved until the app erases the log. About 270 swings fit (290 before firmware 0.3.3). Since app 0.8.15 the app syncs and erases the log when a tracker round starts (the first connection to each round), so every round starts with an empty log.
+While a round (session) is active and capture is on, the tracker appends records to the 2 MB QSPI flash. Nothing is overwritten: when it's full, swings stop being saved until the app erases the log. About 270 swings fit (290 before firmware 0.3.3). Since app 0.8.16 the app syncs and erases the log when a tracker round starts (the first connection to each round), so every round starts with an empty log.
 
 Every record starts with an 8-byte header and is a whole number of 4-byte words long (padding is 0xFF):
 

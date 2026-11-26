@@ -56,19 +56,21 @@ async function seed() {
   await db.setSetting('seededCourses', [...seeded]);
 }
 
-async function startRound(courseId, holeList, useTracker = false) {
+async function startRound(courseId, holeList, useTracker = false, shortGame = false) {
   const round = {
     id: db.uid(), courseId, date: new Date().toISOString(), status: 'active', holes: {}, holeList, currentHole: holeList[0],
     ...(useTracker ? { tracker: true, holeLog: [{ hole: holeList[0], at: Date.now() }], trackerDismissed: [] } : {}),
+    ...(useTracker && shortGame ? { shortGame: true } : {}),
   };
   await db.put('rounds', round);
   location.hash = `#/round/${round.id}/hole/${holeList[0]}`;
 }
 
 // Pick 18 or 9 holes and which nines. Remembers the last choice per course.
-function chooseLayout(course, trackerDefault = false) {
+function chooseLayout(course, trackerDefault = false, shortGameDefault = false) {
   return new Promise((resolve) => {
     let useTracker = trackerDefault;
+    let shortGame = shortGameDefault;   // chips and putts from the tracker (beta, firmware 0.7.0+)
     const nines = ninesOf(course);
     const full = nines.filter((nn) => nn.length === 9);
     const last = course.lastLayout ?? {};
@@ -91,7 +93,11 @@ function chooseLayout(course, trackerDefault = false) {
         <p class="sheet-note">${esc(summary())}</p>
         <p class="sheet-label">Shots</p>
         <div class="seg lay-trk">${[[false, 'Mark by hand'], [true, 'Shot tracker']].map(([v, t]) => `<button data-trk="${v}" class="${useTracker === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-        <p class="sheet-note">${useTracker ? 'Full shots come from the tracker and appear on the map. Enter chips and putts after each hole. Connect it in Bluefy on the first hole.' : 'Tap Mark ball at your ball before each shot.'}</p>`;
+        ${useTracker ? `<p class="sheet-label">Chips and putts</p>
+        <div class="seg lay-sg">${[[false, 'Enter them'], [true, 'From the tracker (beta)']].map(([v, t]) => `<button data-sg="${v}" class="${shortGame === v ? 'on' : ''}">${t}</button>`).join('')}</div>` : ''}
+        <p class="sheet-note">${!useTracker ? 'Tap Mark ball at your ball before each shot.'
+          : shortGame ? 'Full shots come from the tracker and appear on the map. Chips are added as shots and putts are counted from the tracker (tracker firmware 0.7.0 or later). It\'s a beta: check each hole and correct anything wrong. Connect it in Bluefy on the first hole.'
+          : 'Full shots come from the tracker and appear on the map. Enter chips and putts after each hole. Connect it in Bluefy on the first hole.'}</p>`;
     };
     // A nine played a second time gets its own hole numbers in the round
     // (10 -> 110), so the two scores on each hole stay apart.
@@ -113,6 +119,7 @@ function chooseLayout(course, trackerDefault = false) {
         const b = e.target.closest('button');
         if (!b) return;
         if (b.dataset.trk) useTracker = b.dataset.trk === 'true';
+        else if (b.dataset.sg) shortGame = b.dataset.sg === 'true';
         else if (b.dataset.len) len = Number(b.dataset.len);
         else if (b.dataset.first) {
           // Keep "same nine twice" if that was chosen; otherwise move the second nine off the first.
@@ -126,7 +133,7 @@ function chooseLayout(course, trackerDefault = false) {
           picked = true;
           course.lastLayout = { len, first, second };
           await db.put('courses', course);
-          resolve({ holes: order(), useTracker }); close(); return;
+          resolve({ holes: order(), useTracker, shortGame: useTracker && shortGame }); close(); return;
         }
         draw(el);
       });
@@ -165,10 +172,11 @@ async function homeView(root) {
     if (!b) return;
     if (active && !(await confirmSheet('A round is already in progress. Start another one? The current round stays saved.', 'Start new round', false))) return;
     const course = courses.find((c) => c.id === b.dataset.start);
-    const picked = await chooseLayout(course, await db.getSetting('roundTracker', false));
+    const picked = await chooseLayout(course, await db.getSetting('roundTracker', false), await db.getSetting('roundShortGame', false));
     if (!picked) return;
     await db.setSetting('roundTracker', picked.useTracker);
-    startRound(course.id, picked.holes, picked.useTracker);
+    if (picked.useTracker) await db.setSetting('roundShortGame', picked.shortGame);
+    startRound(course.id, picked.holes, picked.useTracker, picked.shortGame);
   });
   return {};
 }

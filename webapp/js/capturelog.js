@@ -2,8 +2,8 @@
 // reassembly for sync, grouping into sessions, and the JSON export.
 // Format: docs/ble-protocol.md, "Capture log" and "Sync".
 
-export const KIND = { logStart: 1, sessionStart: 2, sessionEnd: 3, swing: 4, label: 5, reject: 6, stream: 7, track: 8, pad: 0xfe };
-export const KIND_NAME = { 1: 'log-start', 2: 'session-start', 3: 'session-end', 4: 'swing', 5: 'label', 6: 'reject', 7: 'stream', 8: 'track' };
+export const KIND = { logStart: 1, sessionStart: 2, sessionEnd: 3, swing: 4, label: 5, reject: 6, stream: 7, track: 8, stroke: 9, pad: 0xfe };
+export const KIND_NAME = { 1: 'log-start', 2: 'session-start', 3: 'session-end', 4: 'swing', 5: 'label', 6: 'reject', 7: 'stream', 8: 'track', 9: 'stroke' };
 // Reject reasons (firmware 0.4.0).
 export const REJECT = { noImpact: 1, noBuildup: 2, moving: 4 };
 export const GYRO_DPS_PER_LSB = 0.07;
@@ -99,6 +99,20 @@ export function decodeRecord(bytes, { full = false } = {}) {
       r.high = Array.from(bytes.subarray(s0, s0 + r.bins));
       r.low = Array.from(bytes.subarray(s0 + r.bins, s0 + 2 * r.bins));
     }
+  } else if (kind === KIND.stroke) {
+    // Firmware 0.7.0: a chip or putt candidate (firmware/src/stroke.h). The
+    // context's time and position are at the turn's peak.
+    r.peak = dv.getUint16(x, true) / 10;                   // deg/s, turn about the vertical
+    r.area = dv.getInt16(x + 2, true) / 10;                // degrees turned over half the peak
+    r.durMs = dv.getUint16(x + 4, true);
+    r.pre = dv.getUint8(x + 6) / 4;                        // deg/s, median |gyro| before (stillness)
+    r.post = dv.getUint8(x + 7) / 4;
+    r.high = dv.getUint8(x + 8);                           // √ of the loudest sound, high band
+    r.low = dv.getUint8(x + 9);
+    r.gravity = [dv.getInt8(x + 10) / 100, dv.getInt8(x + 11) / 100, dv.getInt8(x + 12) / 100];
+    r.other = dv.getUint8(x + 13);
+    r.neg = dv.getUint8(x + 14);
+    r.inRecording = !!(dv.getUint8(x + 15) & 1);
   } else if (kind === KIND.track) {
     // Firmware 0.6.0, every round: a summary of each second (see TRACK_COLUMNS).
     const speed = dv.getUint16(x, true);
@@ -475,7 +489,7 @@ export function sessions(rows) {
   let cur = null;
   const open = (r) => {
     cur = { logId: r.logId, startSeq: r.seq, start: r.time ?? null, end: null, trigger: r.trigger ?? null, soundGate: r.soundGate ?? 0,
-      swings: [], labels: [], rejects: [], streams: [], tracks: [], ended: false };
+      swings: [], labels: [], rejects: [], streams: [], tracks: [], strokes: [], ended: false };
     out.push(cur);
   };
   for (const r of sorted) {
@@ -488,6 +502,7 @@ export function sessions(rows) {
     if (r.kind === KIND.reject) cur.rejects.push(r);
     if (r.kind === KIND.stream) cur.streams.push(r);
     if (r.kind === KIND.track) cur.tracks.push(r);
+    if (r.kind === KIND.stroke) cur.strokes.push(r);
   }
   for (const s of out) {
     const labelled = new Map();
@@ -585,6 +600,10 @@ export function exportJson(rows, { appVersion } = {}) {
           stroke: s.practice ? (l.double ? 'chip' : 'putt') : null, lat: l.pos?.lat ?? null, lon: l.pos?.lon ?? null })),
         recording: s.practice ? exportRecording(s.streams) : null,
         track: s.tracks.length ? exportTrack(s.tracks) : null,
+        strokes: s.strokes.map((c) => ({ seq: c.seq, time: c.time ? new Date(c.time * 1000).toISOString() : null, device_ms: c.deviceMs,
+          lat: c.pos?.lat ?? null, lon: c.pos?.lon ?? null, hdop: c.hdop, peak_dps: c.peak, turn_deg: c.area, dur_ms: c.durMs,
+          still_before_dps: c.pre, still_after_dps: c.post, sound_high: c.high, sound_low: c.low, gravity: c.gravity,
+          other_dps: c.other, back_dps: c.neg })),
         rejects: (s.rejects ?? []).map((j) => ({ seq: j.seq, time: j.time ? new Date(j.time * 1000).toISOString() : null, device_ms: j.deviceMs,
           lat: j.pos?.lat ?? null, lon: j.pos?.lon ?? null, peak_gyro_dps: j.peakGyro, impact_level: j.impactLevel, low_impact: j.lowImpact,
           audio_peak: j.audioPeak, buildup_dps: j.buildup, still_dps: j.still, jolt_g: j.jolt, impact_ms: j.impactMs, turn_deg: j.turn ?? null,
@@ -592,7 +611,7 @@ export function exportJson(rows, { appVersion } = {}) {
       })),
     });
   }
-  return { app: 'golftracker-capture', version: 8, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
+  return { app: 'golftracker-capture', version: 9, appVersion: appVersion ?? null, exportedAt: new Date().toISOString(),
     format: 'docs/ble-protocol.md, Capture log',
     label_rule: `a press labels the latest swing whose peak was ${LABEL_MIN_MS}-${LABEL_MAX_MS} ms before it (swing_seq); a swing peaking under ${PRESS_SNIPPET_MS} ms before a press is the press itself (button_press)`, logs };
 }

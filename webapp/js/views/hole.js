@@ -3,7 +3,7 @@ import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
 import { deriveHole, deriveRound, emptyHoleStat, playOrder, sortShots, holeFor, holeLabel, baseHoleN } from '../stats.js';
-import { tracker, canRecord } from '../transport.js';
+import { tracker, canRecord, canDetectStrokes } from '../transport.js';
 import { syncCaptures, prepareTracker, reconcileTrackerShots, dismissTrackerShot, logHole, acceptPossible, dismissPossible } from '../trackerround.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
 import { openGreenSheet, viewPoint } from './green.js';
@@ -396,9 +396,9 @@ export async function holeView(root, { roundId, hole }) {
     const d = derived();
     const h = hs();
     const par = ch().par;
-    const stepper = (key, label, val) => `
-      <div class="stepper">
-        <span class="st-label">${label}</span>
+    const stepper = (key, label, val, auto = false) => `
+      <div class="stepper${auto ? ' auto' : ''}">
+        <span class="st-label">${label}${auto ? ' <small>(tracker)</small>' : ''}</span>
         <button class="st-btn" data-a="dec" data-k="${key}" aria-label="Less ${label}">−</button>
         <span class="st-val">${val}</span>
         <button class="st-btn" data-a="inc" data-k="${key}" aria-label="More ${label}">+</button>
@@ -406,11 +406,12 @@ export async function holeView(root, { roundId, hole }) {
     const name = d.toPar != null ? SCORE_NAMES[d.toPar] ?? (d.toPar > 0 ? `+${d.toPar}` : `${d.toPar}`) : '';
     const pressN = trk.presses[n] ?? 0;
     $('#hstats', root).innerHTML = `
-      ${round.tracker ? `<p class="trk-hint">${pressN ? `The tracker counted <b>${pressN}</b> button press${pressN === 1 ? '' : 'es'} on this hole (your chips and putts). ` : ''}Enter chips and putts here after the hole.</p>` : ''}
+      ${round.tracker && round.shortGame ? `<p class="trk-hint">Chips and putts from the tracker <b>(beta)</b>. A value with a dashed outline came from it: tap it to confirm, or tap the right one. A wrong chip on the map can be deleted.</p>`
+        : round.tracker ? `<p class="trk-hint">${pressN ? `The tracker counted <b>${pressN}</b> button press${pressN === 1 ? '' : 'es'} on this hole (your chips and putts). ` : ''}Enter chips and putts here after the hole.</p>` : ''}
       <div class="stat-block">
         <span class="sb-label">Putts</span>
         <div class="seg putts" role="group" aria-label="Putts">
-          ${[0, 1, 2, 3, 4].map((p) => `<button data-a="putts" data-v="${p}" class="${h.putts === p ? 'on' : ''}">${p === 4 && (h.putts ?? 0) > 4 ? h.putts : p}${p === 4 ? '+' : ''}</button>`).join('')}
+          ${[0, 1, 2, 3, 4].map((p) => `<button data-a="putts" data-v="${p}" class="${h.putts === p || (p === 4 && (h.putts ?? 0) > 4) ? (h.puttsAuto ? 'auto' : 'on') : ''}">${p === 4 && (h.putts ?? 0) > 4 ? h.putts : p}${p === 4 ? '+' : ''}</button>`).join('')}
         </div>
       </div>
       ${(h.putts ?? 0) > 0 ? `
@@ -428,7 +429,7 @@ export async function holeView(root, { roundId, hole }) {
         </div>
       </div>` : ''}
       <div class="steppers">
-        ${stepper('chips', 'Chips', h.chips)}
+        ${stepper('chips', 'Chips', h.chips, !!h.chipsAuto)}
         ${stepper('bunker', 'Bunker', h.bunker)}
         ${stepper('penalties', 'Penalties', h.penalties)}
       </div>
@@ -608,6 +609,7 @@ export async function holeView(root, { roundId, hole }) {
       <p class="sheet-label">Lie</p>
       <div class="chips lies">${LIES.map(([v, t]) => `<button data-lie="${v}" class="${raw.lie === v ? (raw.lieAuto ? 'auto' : 'on') : ''}">${t}</button>`).join('')}</div>
       <p class="sheet-note" id="lieNote" ${raw.lieAuto ? '' : 'hidden'}>Marked from the course map. Tap another lie if it's wrong.</p>
+      ${raw.shortGame === 'chip' && !raw.edited ? '<p class="sheet-note">A chip found by the tracker (beta). Delete it if it wasn\'t a shot.</p>' : ''}
       <div class="toggles">
         <label><input type="checkbox" data-t="penalty" ${raw.penalty ? 'checked' : ''}> Penalty on this shot <small>adds 1 stroke</small></label>
         <label><input type="checkbox" data-t="mishit" ${raw.mishit ? 'checked' : ''}> Mishit <small>left out of club distances</small></label>
@@ -744,8 +746,10 @@ export async function holeView(root, { roundId, hole }) {
     else if (a === 'locate') { const f = gps.latest(); if (f && map) map.setView(ll(f), Math.max(map.getZoom(), 18)); else toast('No GPS fix yet'); }
     else if (a === 'putts') {
       const v = Number(b.dataset.v);
-      if (v === 4 && (h.putts ?? 0) >= 4) h.putts += 1;
+      if (h.puttsAuto && (h.putts === v || (v === 4 && h.putts > 4))) { /* tapping the tracker's value confirms it */ }
+      else if (v === 4 && (h.putts ?? 0) >= 4) h.putts += 1;
       else h.putts = h.putts === v ? null : v;
+      delete h.puttsAuto;          // the player's now: sync leaves it alone
       vibrate(); await save();
     } else if (a === 'fp') {
       const v = Number(b.dataset.v);
@@ -755,6 +759,7 @@ export async function holeView(root, { roundId, hole }) {
     else if (a === 'inc' || a === 'dec') {
       const k = b.dataset.k;
       h[k] = Math.max(0, (h[k] ?? 0) + (a === 'inc' ? 1 : -1));
+      if (k === 'chips') delete h.chipsAuto;
       vibrate(); await save();
     }
   });
@@ -830,6 +835,7 @@ export async function holeView(root, { roundId, hole }) {
       if (!t.hasCapture) line = '<i class="dot warn"></i> Tracker connected, but its firmware has no capture log. Update it to 0.3 or later.';
       else if (c && !c.session) btn = '<button class="btn ghost small" data-a="trkstart">Start on tracker</button>';
       else if (c?.full) line += ' · <span class="bad">storage full</span>';
+      if (round.shortGame && s && !canDetectStrokes(s)) line += ' · <span class="warn">update it to firmware 0.7.0 for chips and putts</span>';
     } else if (t.state === 'connecting') {
       line = '<i class="dot"></i> Connecting to the tracker…';
     } else {

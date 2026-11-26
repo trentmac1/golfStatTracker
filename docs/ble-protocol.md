@@ -194,6 +194,23 @@ Every record starts with an 8-byte header and is a whole number of 4-byte words 
 
 Each entry: gyro_peak uint16 (deg/s); gyro_mean uint16 (deg/s × 4); accel_sd uint8 (spread of the acceleration's size, g × 100); jolts uint8 (times it left 1 g by more than 0.25 g: heel strikes); gravity int8 × 3 (mean acceleration, g × 100: which way up the tracker was, so standing, crouching and sitting differ); turn int8 (degrees turned about the vertical, signed as the swing turn); sound_high uint8 and sound_low uint8 (√ of the loudest level in each band).
 
+**Stroke** (kind 9, 44 bytes; firmware 0.7.0), written through every session: a turn of the hips that could be a chip or putt (`firmware/src/stroke.cpp`). From the IMU at a quarter rate: a median of 3, gravity over about 1 s, the gyro along gravity smoothed over 0.1 s; a peak of that which is the highest within 0.4 s, its span over half the peak, and the stillness around it. Written if the peak is at least 12 deg/s, the turn at least 5°, 0.2–1.5 s long, and median |gyro| at most 15 deg/s in the 1.2 s before. The app's rules pick the strokes (`webapp/js/shortgame.js`). About 5 a minute in the 26 Nov practice recording.
+
+| Offset | Field | Type | Notes |
+|---|---|---|---|
+| 0 | context | 20 bytes | time and position at the turn's peak |
+| 20 | peak | uint16 | deg/s × 10, turn about the vertical (positive: a right-hander's turn to the target) |
+| 22 | turn | int16 | degrees × 10 turned while over half the peak |
+| 24 | duration | uint16 | ms over half the peak |
+| 26 | still_before | uint8 | median \|gyro\| in the 1.2 s before, deg/s × 4 |
+| 27 | still_after | uint8 | the same after |
+| 28 | sound_high | uint8 | √ of the loudest high-band level during the turn (±0.1 s) |
+| 29 | sound_low | uint8 | the same, low band |
+| 30 | gravity | int8 × 3 | which way up the tracker was, g × 100 |
+| 33 | other | uint8 | deg/s rms of rotation not about the vertical |
+| 34 | back | uint8 | deg/s, biggest turn the other way within 0.6 s |
+| 35 | flags | uint8 | bit0 written during a practice recording |
+
 ## Sync — Phase 3
 
 1. The app reads Capture. If log_id isn't the one it last synced, it starts from seq 0; otherwise from the seq after the last one it stored.

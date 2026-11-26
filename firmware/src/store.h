@@ -13,6 +13,7 @@ namespace store {
     K_REJECT = 6,                // firmware 0.4.0: a round-mode candidate that wasn't saved, features only
     K_STREAM = 7,                // firmware 0.6.0: a second of IMU and sound (practice recording)
     K_TRACK = 8,                 // firmware 0.6.0: 8 one-second motion summaries (every round)
+    K_STROKE = 9,                // firmware 0.7.0: a chip or putt candidate
     K_PAD = 0xFE,                // filler after a cut-off write; never synced
   };
 

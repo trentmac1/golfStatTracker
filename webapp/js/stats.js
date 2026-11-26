@@ -23,9 +23,35 @@ export const ninesOf = (course) => Array.from({ length: Math.ceil(course.holes.l
   course.holes.slice(i * 9, i * 9 + 9).map((h) => h.n));
 export const nineLabel = (nine) => `${nine[0]}–${nine[nine.length - 1]}`;
 
+// Playing the same nine twice (say the back nine, then the back nine again):
+// the second time round, each hole gets its own number in the round, the
+// course hole plus 100 (10 -> 110), so its score and shots stay apart from
+// the first time. It still shows as hole 10 and uses hole 10's map and par.
+export const REPEAT = 100;
+export const baseHoleN = (n) => (n > REPEAT ? ((n - 1) % REPEAT) + 1 : n);
+export const holeLabel = (n) => String(baseHoleN(n));
+export const isRepeat = (n) => n > REPEAT;
+
+// The course hole for a hole number in a round. For a repeat it's a stand-in
+// that reads (and writes) the course hole but answers to the round's number.
+const repeats = new WeakMap();
+export function holeFor(course, n) {
+  const base = course?.holes?.[baseHoleN(n) - 1];
+  if (!base || !isRepeat(n)) return base;
+  let byN = repeats.get(base);
+  if (!byN) { byN = new Map(); repeats.set(base, byN); }
+  if (!byN.has(n)) {
+    byN.set(n, new Proxy(base, {
+      get: (t, k) => (k === 'n' ? n : k === 'repeatOf' ? t.n : t[k]),
+      has: (t, k) => k === 'repeatOf' || k in t,
+    }));
+  }
+  return byN.get(n);
+}
+
 export function playOrder(course, round) {
   const valid = new Set(course.holes.map((h) => h.n));
-  const list = (round?.holeList ?? []).filter((n) => valid.has(n));
+  const list = (round?.holeList ?? []).filter((n) => valid.has(baseHoleN(n)));
   return list.length ? list : course.holes.map((h) => h.n);
 }
 
@@ -35,9 +61,10 @@ export function layoutLabel(course, round) {
   const nines = ninesOf(course);
   const parts = [];
   for (let i = 0; i < order.length; i += 9) {
-    const nine = nines.find((nn) => nn[0] === order[i]);
-    parts.push(nine ? nineLabel(nine) : `${order[i]}–${order[Math.min(order.length, i + 9) - 1]}`);
+    const nine = nines.find((nn) => nn[0] === baseHoleN(order[i]));
+    parts.push(nine ? nineLabel(nine) : `${holeLabel(order[i])}–${holeLabel(order[Math.min(order.length, i + 9) - 1])}`);
   }
+  if (parts.length === 2 && parts[0] === parts[1]) return `${order.length} holes: ${parts[0]} twice`;
   if (order.length === course.holes.length && order[0] === 1) return `${order.length} holes`;
   if (order.length <= 9 && course.holes.length === 18) return `${order[0] === 1 ? 'Front' : 'Back'} 9 (${parts[0]})`;
   return `${order.length} holes: ${parts.join(', then ')}`;
@@ -175,7 +202,7 @@ export function deriveRound(course, round, shots) {
     if (!byHole.has(s.hole)) byHole.set(s.hole, []);
     byHole.get(s.hole).push(s);
   }
-  const holes = playOrder(course, round).map((n) => course.holes[n - 1])
+  const holes = playOrder(course, round).map((n) => holeFor(course, n))
     .map((h) => deriveHole(h, round.holes?.[h.n], byHole.get(h.n) ?? []));
   const played = holes.filter((h) => h.complete);
   const sum = (arr, f) => arr.reduce((a, h) => a + (f(h) ?? 0), 0);

@@ -1,6 +1,6 @@
 // Stats across rounds: trends, averages, club distances and miss pattern.
 import * as db from '../db.js';
-import { deriveRound, clubDistances, countsForDistance } from '../stats.js';
+import { deriveRound, clubDistances, countsForDistance, holeFor, holeLabel } from '../stats.js';
 import { DEFAULT_BAG } from '../config.js';
 import { roundRating } from './pastround.js';
 import { sgSummary, clubReport, CATEGORIES } from '../sg.js';
@@ -86,7 +86,7 @@ export async function statsView(root) {
     const hcItems = items.filter((x) => !x.round.noHandicap);
     const hcRounds = hcItems.map((x) => ({
       ...roundRating(x.round, x.course),
-      holes: x.r.holes.map((h) => ({ par: h.par, si: x.course.holes[h.hole - 1]?.si ?? null, score: h.complete ? h.score : null })),
+      holes: x.r.holes.map((h) => ({ par: h.par, si: holeFor(x.course, h.hole)?.si ?? null, score: h.complete ? h.score : null })),
     }));
     const hc = estimate(hcRounds);
     const noRating = [...new Set(hcItems.filter((x) => { const t = roundRating(x.round, x.course); return !t.rating || !t.slope; }).map((x) => x.course))];
@@ -209,7 +209,7 @@ export async function statsView(root) {
 
   // Score differential per rated round, using the index the current rounds give.
   function hcMetric(items) {
-    const rated = (x) => ({ ...roundRating(x.round, x.course), holes: x.r.holes.map((h) => ({ par: h.par, si: x.course.holes[h.hole - 1]?.si ?? null, score: h.complete ? h.score : null })) });
+    const rated = (x) => ({ ...roundRating(x.round, x.course), holes: x.r.holes.map((h) => ({ par: h.par, si: holeFor(x.course, h.hole)?.si ?? null, score: h.complete ? h.score : null })) });
     const idx = estimate(items.filter((x) => !x.round.noHandicap).map(rated)).index;
     return { label: 'Score differential', sub: 'what each round counts as towards a handicap', better: 'down', fmt: (v) => (v == null ? '–' : v.toFixed(1)),
       value: (x) => (x.round.noHandicap ? null : differential(rated(x), idx)?.diff ?? null),
@@ -340,7 +340,7 @@ export function clubBody(club, items, range) {
   const rows = [...shots].reverse().map(({ x, shot }) => {
     const fixed = shot.mishit ? 'Mishit' : shot.penalty ? 'Penalty' : null;
     const out = !countsForDistance(shot);
-    return `<li class="${out ? 'left-out' : ''}"><span><i class="d">${m(shot.dist)} m</i><small>${shortDate(x.round.date)} · hole ${shot.hole} · shot ${shot.index + 1}${shot.result ? ` · ${esc(shot.result)}` : ''}</small></span>
+    return `<li class="${out ? 'left-out' : ''}"><span><i class="d">${m(shot.dist)} m</i><small>${shortDate(x.round.date)} · hole ${holeLabel(shot.hole)} · shot ${shot.index + 1}${shot.result ? ` · ${esc(shot.result)}` : ''}</small></span>
       ${fixed ? `<em class="pill fixed" title="${fixed} shots are always left out">${fixed}</em>`
         : `<button class="pill ${out ? 'off' : 'on'}" data-nodist="${esc(shot.id)}" aria-pressed="${out ? 'false' : 'true'}">${out ? 'Left out' : 'Counted'}</button>`}</li>`;
   }).join('');

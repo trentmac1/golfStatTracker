@@ -3,7 +3,7 @@
 // finished round with no shots, so it counts in scoring stats and the
 // handicap estimate.
 import * as db from '../db.js';
-import { emptyHoleStat, ninesOf, nineLabel } from '../stats.js';
+import { emptyHoleStat, ninesOf, nineLabel, holeFor, holeLabel, REPEAT } from '../stats.js';
 import { $, esc, toast } from '../ui.js';
 
 // Tees known for a course: the ones saved with past rounds, plus the
@@ -40,9 +40,9 @@ export async function pastRoundView(root) {
   function order() {
     const c = course();
     const nines = ninesOf(c);
-    if (nines.length === 1 || st.len === 9) return nines[Math.min(st.first, nines.length - 1)];
-    const second = nines.length > 2 ? st.second : (st.first + 1) % 2;
-    return [...nines[st.first], ...nines[second]];
+    if (st.len === 9) return nines[Math.min(st.first, nines.length - 1)];
+    // The same nine twice gets its own hole numbers the second time (10 -> 110).
+    return [...nines[st.first], ...(st.second === st.first ? nines[st.first].map((n) => n + REPEAT) : nines[st.second])];
   }
 
   function pickCourse(id) {
@@ -72,9 +72,9 @@ export async function pastRoundView(root) {
     const nines = ninesOf(c);
     const full = nines.filter((nn) => nn.length === 9);
     const tees = teeOptions(c);
-    const holes = order().map((n) => c.holes[n - 1]);
+    const holes = order().map((n) => holeFor(c, n));
     const par = holes.reduce((a, h) => a + h.par, 0);
-    const seg = (key, chosen, skip) => nines.map((nn, i) => (i === skip ? '' : `<button data-${key}="${i}" class="${i === chosen ? 'on' : ''}">${nineLabel(nn)}</button>`)).join('');
+    const seg = (key, chosen) => nines.map((nn, i) => `<button data-${key}="${i}" class="${i === chosen ? 'on' : ''}">${nineLabel(nn)}${key === 'second' && i === st.first ? ' again' : ''}</button>`).join('');
     const t = st.tee === 'new' ? null : tees[st.tee];
 
     root.innerHTML = `
@@ -87,12 +87,12 @@ export async function pastRoundView(root) {
 
       <label class="field">Date played<input type="date" id="pdate" value="${st.date}" max="${today()}"></label>
 
-      ${full.length >= 2 ? `<p class="sheet-label">Holes</p>
+      ${full.length >= 1 ? `<p class="sheet-label">Holes</p>
       <div class="seg small">${[18, 9].map((v) => `<button data-len="${v}" class="${st.len === v ? 'on' : ''}">${v} holes</button>`).join('')}</div>` : ''}
       ${nines.length > 1 ? `
         <p class="sheet-label">${st.len === 18 ? 'First nine' : 'Which nine'}</p>
-        <div class="seg small">${seg('first', st.first, -1)}</div>
-        ${st.len === 18 && nines.length > 2 ? `<p class="sheet-label">Second nine</p><div class="seg small">${seg('second', st.second, st.first)}</div>` : ''}` : ''}
+        <div class="seg small">${seg('first', st.first)}</div>
+        ${st.len === 18 ? `<p class="sheet-label">Second nine</p><div class="seg small">${seg('second', st.second)}</div>` : ''}` : ''}
 
       <p class="sheet-label">Tees</p>
       <div class="chips tees">
@@ -112,9 +112,9 @@ export async function pastRoundView(root) {
       <table class="par-table past-card">
         <thead><tr><th>Hole</th><th>Par</th><th>Score</th><th>Putts <small>optional</small></th></tr></thead>
         <tbody>${holes.map((h) => `
-          <tr><th>${h.n}</th><td class="pc-par">${h.par}${h.si ? `<small>SI ${h.si}</small>` : ''}</td>
-            <td><input class="si-input pc-score" data-score="${h.n}" inputmode="numeric" value="${st.scores[h.n] ?? ''}" aria-label="Score, hole ${h.n}"></td>
-            <td><input class="si-input" data-putts="${h.n}" inputmode="numeric" value="${st.putts[h.n] ?? ''}" aria-label="Putts, hole ${h.n}"></td></tr>`).join('')}
+          <tr><th>${holeLabel(h.n)}</th><td class="pc-par">${h.par}${h.si ? `<small>SI ${h.si}</small>` : ''}</td>
+            <td><input class="si-input pc-score" data-score="${h.n}" inputmode="numeric" value="${st.scores[h.n] ?? ''}" aria-label="Score, hole ${holeLabel(h.n)}"></td>
+            <td><input class="si-input" data-putts="${h.n}" inputmode="numeric" value="${st.putts[h.n] ?? ''}" aria-label="Putts, hole ${holeLabel(h.n)}"></td></tr>`).join('')}
         </tbody>
         <tfoot><tr><th>Total</th><td>${par}</td><td id="ptotal"></td><td id="pputts"></td></tr></tfoot>
       </table>
@@ -130,7 +130,7 @@ export async function pastRoundView(root) {
     const holes = order();
     const done = holes.filter((n) => st.scores[n] != null);
     const sc = done.reduce((a, n) => a + st.scores[n], 0);
-    const pr = done.reduce((a, n) => a + c.holes[n - 1].par, 0);
+    const pr = done.reduce((a, n) => a + holeFor(c, n).par, 0);
     const pt = holes.filter((n) => st.putts[n] != null);
     $('#ptotal', root).textContent = done.length ? `${sc} (${sc - pr === 0 ? 'E' : sc - pr > 0 ? `+${sc - pr}` : sc - pr})` : '';
     $('#pputts', root).textContent = pt.length ? String(pt.reduce((a, n) => a + st.putts[n], 0)) : '';
@@ -143,7 +143,7 @@ export async function pastRoundView(root) {
     const done = holes.filter((n) => st.scores[n] != null);
     if (!done.length) { toast('Enter a score for at least one hole', 'warn'); return; }
     const badPutts = done.find((n) => st.putts[n] != null && st.putts[n] >= st.scores[n]);
-    if (badPutts) { toast(`Hole ${badPutts}: putts must be fewer than the score`, 'warn'); return; }
+    if (badPutts) { toast(`Hole ${holeLabel(badPutts)}: putts must be fewer than the score`, 'warn'); return; }
     let tee = null;
     if (st.tee === 'new') {
       const name = st.newTee.name.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 30);
@@ -180,7 +180,7 @@ export async function pastRoundView(root) {
     if (b.dataset.a === 'change') { st.courseId = null; draw(); return; }
     if (b.dataset.a === 'save') { save(); return; }
     if (b.dataset.len) st.len = Number(b.dataset.len);
-    else if (b.dataset.first) { st.first = Number(b.dataset.first); if (st.second === st.first) st.second = (st.first + 1) % ninesOf(course()).length; }
+    else if (b.dataset.first) { const same = st.second === st.first; st.first = Number(b.dataset.first); if (same) st.second = st.first; }
     else if (b.dataset.second) st.second = Number(b.dataset.second);
     else if (b.dataset.tee) st.tee = b.dataset.tee === 'new' ? 'new' : Number(b.dataset.tee);
     else return;

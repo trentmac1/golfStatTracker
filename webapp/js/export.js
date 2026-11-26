@@ -1,5 +1,5 @@
 // CSV exports. JSON backup/restore lives in db.js.
-import { deriveRound } from './stats.js';
+import { deriveRound, holeLabel } from './stats.js';
 
 const cell = (v) => {
   if (v == null) return '';
@@ -15,11 +15,11 @@ function roundRows(course, round, shots) {
   const r = deriveRound(course, round, shots);
   const date = round.date.slice(0, 10);
   const holes = r.holes.filter((h) => h.started).map((h) => row([
-    date, course.name, round.id, h.hole, h.par, h.score, h.toPar, h.putts, h.chips, h.bunker, h.penalties,
+    date, course.name, round.id, holeLabel(h.hole), h.par, h.score, h.toPar, h.putts, h.chips, h.bunker, h.penalties,
     h.par >= 4 ? h.fairway : '', h.gir, h.scramble, h.sandSave, h.proximity,
   ]));
   const shotRows = r.holes.flatMap((h) => h.shots.map((s) => row([
-    date, course.name, round.id, h.hole, s.index + 1, s.club, s.lie, s.dist, s.result, s.miss?.long, s.miss?.right,
+    date, course.name, round.id, holeLabel(h.hole), s.index + 1, s.club, s.lie, s.dist, s.result, s.miss?.long, s.miss?.right,
     s.penalty, s.mishit, s.source, s.lat, s.lon, s.accuracy, new Date(s.time).toISOString(),
   ])));
   return { holes, shotRows };

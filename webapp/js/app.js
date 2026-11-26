@@ -1,6 +1,6 @@
 // App shell: router, home, rounds list and settings.
 import * as db from './db.js';
-import { deriveRound, ninesOf, nineLabel, layoutLabel } from './stats.js';
+import { deriveRound, ninesOf, nineLabel, layoutLabel, holeLabel, REPEAT } from './stats.js';
 import { allCsv } from './export.js';
 import { APP_VERSION, BUILT_IN_COURSES, DEFAULT_BAG, newCourse } from './config.js';
 import { holeView } from './views/hole.js';
@@ -72,28 +72,37 @@ function chooseLayout(course, trackerDefault = false) {
     const nines = ninesOf(course);
     const full = nines.filter((nn) => nn.length === 9);
     const last = course.lastLayout ?? {};
-    let len = full.length >= 2 ? (last.len ?? 18) : 9;
+    // 18 holes is possible with two nines, or one nine played twice.
+    let len = full.length ? (last.len ?? (full.length >= 2 ? 18 : 9)) : 9;
     let first = Math.min(last.first ?? 0, nines.length - 1);
-    let second = last.second ?? (first + 1) % nines.length;
-    if (second === first) second = (first + 1) % nines.length;
+    // The second nine can be the same as the first (the back nine twice, say).
+    let second = Math.min(last.second ?? (nines.length > 1 ? (first + 1) % nines.length : first), nines.length - 1);
     let picked = false;
     const par = (nine) => nine.reduce((a, n) => a + course.holes[n - 1].par, 0);
-    const seg = (key, chosen, skip) => nines.map((nn, i) => i === skip ? '' : `<button data-${key}="${i}" class="${i === chosen ? 'on' : ''}">${nineLabel(nn)}<small>Par ${par(nn)}</small></button>`).join('');
+    const seg = (key, chosen) => nines.map((nn, i) => `<button data-${key}="${i}" class="${i === chosen ? 'on' : ''}">${nineLabel(nn)}${key === 'second' && i === first ? ' again' : ''}<small>Par ${par(nn)}</small></button>`).join('');
     const draw = (el) => {
       el.querySelector('#lay').innerHTML = `
-        ${full.length >= 2 ? `<p class="sheet-label">Length</p>
+        ${full.length >= 1 ? `<p class="sheet-label">Length</p>
         <div class="seg lay-len">${[18, 9].map((v) => `<button data-len="${v}" class="${len === v ? 'on' : ''}">${v} holes</button>`).join('')}</div>` : ''}
         ${nines.length > 1 ? `
         <p class="sheet-label">${len === 18 ? 'First nine' : 'Which nine'}</p>
-        <div class="seg lay-nine">${seg('first', first, -1)}</div>
-        ${len === 18 && nines.length > 2 ? `<p class="sheet-label">Second nine</p><div class="seg lay-nine">${seg('second', second, first)}</div>` : ''}` : ''}
+        <div class="seg lay-nine">${seg('first', first)}</div>
+        ${len === 18 ? `<p class="sheet-label">Second nine</p><div class="seg lay-nine">${seg('second', second)}</div>` : ''}` : ''}
         <p class="sheet-note">${esc(summary())}</p>
         <p class="sheet-label">Shots</p>
         <div class="seg lay-trk">${[[false, 'Mark by hand'], [true, 'Shot tracker']].map(([v, t]) => `<button data-trk="${v}" class="${useTracker === v ? 'on' : ''}">${t}</button>`).join('')}</div>
         <p class="sheet-note">${useTracker ? 'Full shots come from the tracker and appear on the map. Enter chips and putts after each hole. Connect it in Bluefy on the first hole.' : 'Tap Mark ball at your ball before each shot.'}</p>`;
     };
-    const order = () => len === 18 ? [...nines[first], ...nines[nines.length > 2 ? second : (first + 1) % 2]] : nines[first];
-    const summary = () => { const o = order(); return `Holes ${o.length === 18 ? `${nineLabel(nines[first])}, then ${nineLabel(nines[nines.length > 2 ? second : (first + 1) % 2])}` : nineLabel(nines[first])} · par ${o.reduce((a, n) => a + course.holes[n - 1].par, 0)}`; };
+    // A nine played a second time gets its own hole numbers in the round
+    // (10 -> 110), so the two scores on each hole stay apart.
+    const order = () => len === 18
+      ? [...nines[first], ...(second === first ? nines[first].map((n) => n + REPEAT) : nines[second])]
+      : nines[first];
+    const summary = () => {
+      const o = order();
+      const label = len === 18 ? `${nineLabel(nines[first])}, then ${nineLabel(nines[second])}${second === first ? ' again' : ''}` : nineLabel(nines[first]);
+      return `Holes ${label} · par ${o.reduce((a, n) => a + course.holes[(n > REPEAT ? n - REPEAT : n) - 1].par, 0)}`;
+    };
     sheet(`
       <h3 class="sheet-title">${esc(course.name)}</h3>
       <div id="lay"></div>
@@ -105,7 +114,12 @@ function chooseLayout(course, trackerDefault = false) {
         if (!b) return;
         if (b.dataset.trk) useTracker = b.dataset.trk === 'true';
         else if (b.dataset.len) len = Number(b.dataset.len);
-        else if (b.dataset.first) { first = Number(b.dataset.first); if (second === first) second = (first + 1) % nines.length; }
+        else if (b.dataset.first) {
+          // Keep "same nine twice" if that was chosen; otherwise move the second nine off the first.
+          const same = second === first;
+          first = Number(b.dataset.first);
+          if (same) second = first;
+        }
         else if (b.dataset.second) second = Number(b.dataset.second);
         else if (b.dataset.l === 'cancel') { close(); return; }
         else if (b.dataset.l === 'go') {
@@ -129,7 +143,7 @@ async function homeView(root) {
   if (active && courseById.get(active.courseId)) {
     const course = courseById.get(active.courseId);
     const r = deriveRound(course, active, await db.shotsForRound(active.id));
-    activeLine = `${esc(course.name)} · hole ${active.currentHole ?? 1}${r.holesPlayed ? ` · ${signed(r.toPar)} thru ${r.holesPlayed}` : ''}`;
+    activeLine = `${esc(course.name)} · hole ${holeLabel(active.currentHole ?? 1)}${r.holesPlayed ? ` · ${signed(r.toPar)} thru ${r.holesPlayed}` : ''}`;
   }
   const unsaved = rounds.filter((r) => !lastBackup || (r.finishedAt ?? r.date) > lastBackup).length;
 

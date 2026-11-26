@@ -6,6 +6,7 @@ import { analyse, describeFall, shapePolygon, buildCourseGreens, CREDITS } from 
 import { previewRing, smoothPathD } from '../holemap.js';
 import { esc, sheet, toast } from '../ui.js';
 import { buildGreenMesh, mountGreen3d, hasWebGL, HEAT_STOPS } from '../green3d.js';
+import { holeFor, holeLabel } from '../stats.js';
 
 const PAD = 4; // metres around the green in the drawing
 const EXAGGERATIONS = [2, 4, 8];
@@ -118,7 +119,7 @@ export function greenSvg(h, { from, ball } = {}) {
   const depth = Math.max(...ys) - Math.min(...ys), width = Math.max(...xs) - Math.min(...xs);
 
   const svg = `<svg class="gp-svg" viewBox="${f(minX)} ${f(minY)} ${f(vbW)} ${f(vbH)}" role="img"
-      aria-label="Green for hole ${h.n}: ${esc(a ? describeFall(a.plane, v) : 'outline only')}">
+      aria-label="Green for hole ${holeLabel(h.n)}: ${esc(a ? describeFall(a.plane, v) : 'outline only')}">
     <defs><clipPath id="gclip${h.n}"><path d="${path(sp)}"/></clipPath></defs>
     ${bunkers.map((b) => `<path d="${path(b)}" class="gp-bunker"/>`).join('')}
     <path d="${path(sp)}" class="gp-base"/>
@@ -132,10 +133,10 @@ export function greenSvg(h, { from, ball } = {}) {
 
 // Bottom sheet with the preview, or a prompt to fetch the data.
 export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated }) {
-  const h = course.holes[hole - 1];
+  const h = holeFor(course, hole);
   if (!h.shape) {
     sheet(`
-      <h3 class="sheet-title">Green ${hole}</h3>
+      <h3 class="sheet-title">Green ${holeLabel(hole)}</h3>
       <p class="sheet-sub">No green shape or slope saved for ${esc(course.name)} yet.</p>
       <p class="sheet-msg">Download outlines from OpenStreetMap and LiDAR heights from the Queensland Government for all 18 greens. Do it once on Wi-Fi; after that it works without signal.</p>
       <div class="sheet-row"><button class="btn ghost" data-g="close">Not now</button><button class="btn primary" data-g="get">Get green data</button></div>
@@ -167,7 +168,7 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
   if (!EXAGGERATIONS.includes(exag)) exag = 4;
   let view3d = null;
   sheet(`
-    <h3 class="sheet-title">Green ${hole}</h3>
+    <h3 class="sheet-title">Green ${holeLabel(hole)}</h3>
     <p class="gp-fall"><b>${esc(g.fall)}</b>${a && a.plane.pct >= 0.6 ? ` · ${a.plane.pct.toFixed(1)}%` : ''}</p>
     <p class="sheet-sub">${Math.round(g.depth)} m deep × ${Math.round(g.width)} m wide${a ? ` · ${a.relief.toFixed(1)} m between the high and low points${a.steepShare > 0.3 ? ' · tiers or steep sections' : ''}` : ''}</p>
     ${can3d ? `<div class="seg small gp-mode">
@@ -176,7 +177,7 @@ export function openGreenSheet({ course, hole, from, fromLabel, ball, onUpdated 
     </div>` : ''}
     <div class="gp-wrap" ${mode === '3d' ? 'hidden' : ''}>${g.svg}</div>
     ${can3d ? `<div class="gp-3d" ${mode === '3d' ? '' : 'hidden'}>
-      <canvas class="gp-canvas" aria-label="3D view of green ${hole}. Drag to turn, pinch to zoom, double-tap to reset."></canvas>
+      <canvas class="gp-canvas" aria-label="3D view of green ${holeLabel(hole)}. Drag to turn, pinch to zoom, double-tap to reset."></canvas>
       <div class="gp-heat">
         <div class="gp-heat-key" ${heatGrid ? '' : 'hidden'}>
           <span class="gp-heat-bar" style="background:${heatCss}"></span>

@@ -7,7 +7,7 @@ import { tracker, OP } from './transport.js';
 import { decodeRecord, sessions, notShots, REJECT } from './capturelog.js';
 import { distance, toLocal } from './geo.js';
 import { applyAutoLie } from './holemap.js';
-import { playOrder } from './stats.js';
+import { playOrder, holeFor as roundHole } from './stats.js';
 import { pointInPolygon } from './greens.js';
 
 export const ROUND_TRIGGER = 250, ROUND_GATE = 1000;   // as the Training data screen's Round mode
@@ -99,7 +99,7 @@ export function holeFor(course, round, p, timeMs, earlier = []) {
   const seen = earlier.filter((w) => w.pos && w.time > since && w.time < timeMs).sort((a, b) => a.time - b.time);
   for (const w of [...seen, { pos: p }]) {
     const next = order[order.indexOf(h) + 1];
-    if (next != null && onTee(course.holes[next - 1], w.pos)) h = next;
+    if (next != null && onTee(roundHole(course, next), w.pos)) h = next;
   }
   return h;
 }
@@ -231,7 +231,7 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
       club: null, source: 'tracker', confidence: null, penalty: false, lie: first ? 'tee' : null, mishit: false, target: null,
       tracker: { logId: w.logId, seq: w.seq, peakGyro: w.peakGyro ?? null, impact: w.impactLevel ?? null },
     };
-    applyAutoLie(shot, course.holes[hole - 1], first);
+    applyAutoLie(shot, roundHole(course, hole), first);
     add.push(shot);
   }
   // Possible shots.
@@ -279,7 +279,7 @@ export async function acceptPossible(round, course, p, shots) {
     club: null, source: 'tracker', confidence: null, penalty: false, lie: first ? 'tee' : null, mishit: false, target: null,
     accepted: true, tracker: { logId: p.logId, seq: p.seq, peakGyro: p.peakGyro, impact: p.impact, was: p.why },
   };
-  applyAutoLie(shot, course.holes[p.hole - 1], first);
+  applyAutoLie(shot, roundHole(course, p.hole), first);
   await db.put('shots', shot);
   round.trackerAccepted = [...new Set([...(round.trackerAccepted ?? []), p.id])];
   await db.put('rounds', round);

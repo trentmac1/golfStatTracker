@@ -2,7 +2,7 @@
 // full map of one hole at a time with the shots you played.
 import * as db from '../db.js';
 import { toLocal } from '../geo.js';
-import { deriveRound } from '../stats.js';
+import { deriveRound, holeFor, holeLabel } from '../stats.js';
 import { previewRing, smoothed, LIE_LABEL } from '../holemap.js';
 import { holeLayers, holePreview } from './holeart.js';
 import { createMap, pin, line, circle, polygon, frame, fit, hasMap, drawHoleMap } from '../map.js';
@@ -71,9 +71,9 @@ export function holeThumb(dh, courseHole) {
 // Grid of every hole in the round, for the round summary.
 export function holeGrid(roundId, r, course) {
   return `<div class="hole-grid">${r.holes.map((dh) => `
-    <a class="ht" href="#/round/${roundId}/review/${dh.hole}" aria-label="Hole ${dh.hole}${dh.complete ? `, ${dh.score} on a par ${dh.par}` : ''}">
-      ${holeThumb(dh, course.holes[dh.hole - 1])}
-      <span class="ht-n">${dh.hole}</span>
+    <a class="ht" href="#/round/${roundId}/review/${dh.hole}" aria-label="Hole ${holeLabel(dh.hole)}${dh.complete ? `, ${dh.score} on a par ${dh.par}` : ''}">
+      ${holeThumb(dh, holeFor(course, dh.hole))}
+      <span class="ht-n">${holeLabel(dh.hole)}</span>
       ${dh.complete ? `<span class="ht-score sc-mark ${scoreClass(dh.toPar)}">${dh.score}</span>` : ''}
       ${dh.putts != null ? `<span class="ht-putts">${dh.putts} putt${dh.putts === 1 ? '' : 's'}</span>` : ''}
     </a>`).join('')}</div>`;
@@ -88,7 +88,7 @@ export async function reviewView(root, { roundId, hole }) {
   const r = deriveRound(course, round, shots);
   const i = Math.max(0, r.holes.findIndex((h) => h.hole === hole));
   const dh = r.holes[i];
-  const ch = course.holes[dh.hole - 1];
+  const ch = holeFor(course, dh.hole);
   const prev = r.holes[i - 1], next = r.holes[i + 1];
   const name = dh.complete ? (dh.toPar === 0 ? 'Par' : dh.toPar === -1 ? 'Birdie' : dh.toPar === -2 ? 'Eagle' : dh.toPar === 1 ? 'Bogey' : dh.toPar === 2 ? 'Double bogey' : signed(dh.toPar)) : 'Not finished';
 
@@ -97,7 +97,7 @@ export async function reviewView(root, { roundId, hole }) {
     <header class="hole-head">
       <a class="nav-btn" href="#/round/${roundId}/review/${prev?.hole ?? dh.hole}" aria-label="Previous hole" ${prev ? '' : 'aria-disabled="true"'}>‹</a>
       <div class="hole-title">
-        <span class="hole-no">${dh.hole}</span>
+        <span class="hole-no">${holeLabel(dh.hole)}</span>
         <span class="hole-meta"><b>Par ${dh.par}${ch?.metres ? ` <small>· ${ch.metres} m</small>` : ''}</b><span>${dh.complete ? `${dh.score} · ${name}` : name}</span></span>
       </div>
       <a class="nav-btn" href="#/round/${roundId}/review/${next?.hole ?? dh.hole}" aria-label="Next hole" ${next ? '' : 'aria-disabled="true"'}>›</a>

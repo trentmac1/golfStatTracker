@@ -1,6 +1,6 @@
 // Round summary: scorecard and totals.
 import * as db from '../db.js';
-import { deriveRound, layoutLabel } from '../stats.js';
+import { deriveRound, layoutLabel, holeLabel } from '../stats.js';
 import { roundCsv } from '../export.js';
 import { sgSummary, CATEGORIES } from '../sg.js';
 import { holeGrid } from './review.js';
@@ -61,7 +61,7 @@ export async function cardView(root, { roundId }) {
     const pt = hs.filter((h) => h.complete).reduce((a, h) => a + (h.putts ?? 0), 0);
     return `
       <table class="card-table">
-        <thead><tr><th>Hole</th>${hs.map((h) => `<th><a href="#/round/${roundId}/hole/${h.hole}">${h.hole}</a></th>`).join('')}<th>${label}</th></tr></thead>
+        <thead><tr><th>Hole</th>${hs.map((h) => `<th><a href="#/round/${roundId}/hole/${h.hole}">${holeLabel(h.hole)}</a></th>`).join('')}<th>${label}</th></tr></thead>
         <tbody>
           <tr class="par"><th>Par</th>${hs.map((h) => `<td>${h.par}</td>`).join('')}<td>${par}</td></tr>
           <tr class="sc"><th>Score</th>${hs.map((h) => `<td><span class="sc-mark ${h.complete ? scoreClass(h.toPar) : ''}">${h.complete ? h.score : h.started ? '·' : ''}</span></td>`).join('')}<td>${sc || ''}</td></tr>
@@ -76,7 +76,7 @@ export async function cardView(root, { roundId }) {
   root.innerHTML = `
     <section class="page">
       <header class="page-head">
-        <a class="back" href="${active ? `#/round/${roundId}/hole/${round.currentHole ?? 1}` : '#/rounds'}">‹ ${active ? `Hole ${round.currentHole ?? 1}` : 'Rounds'}</a>
+        <a class="back" href="${active ? `#/round/${roundId}/hole/${round.currentHole ?? 1}` : '#/rounds'}">‹ ${active ? `Hole ${holeLabel(round.currentHole ?? 1)}` : 'Rounds'}</a>
         <h1>${esc(course.name)}</h1>
         <p class="sub">${fmtDate(round.date)} · ${esc(layoutLabel(course, round))}${round.tee?.name ? ` · ${esc(round.tee.name)} tees` : ''}${active ? ' · in progress' : ''}</p>
         ${round.entered ? `<p class="note">Added from a scorecard${round.tee?.rating && round.tee?.slope ? `, rating ${round.tee.rating} and slope ${round.tee.slope}` : ''}. Tap a hole number to change its score or putts.</p>` : ''}

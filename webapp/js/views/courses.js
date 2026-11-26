@@ -3,7 +3,7 @@ import * as db from '../db.js';
 import { newCourse, DEFAULT_CENTRE } from '../config.js';
 import { distance } from '../geo.js';
 import { createMap, pin, circle, fit, ll, hasMap } from '../map.js';
-import { greenRadius } from '../stats.js';
+import { greenRadius, baseHoleN } from '../stats.js';
 import * as gps from '../gps.js';
 import { $, esc, toast, confirmSheet } from '../ui.js';
 import { downloadGreens } from './green.js';
@@ -252,7 +252,7 @@ export async function courseEditView(root, { courseId }) {
       const have = course.holes.length;
       if (want === have) return;
       if (want < have) {
-        const usedHoles = new Set(rounds.flatMap((r) => [...(r.holeList ?? []), ...Object.keys(r.holes ?? {}).map(Number)]));
+        const usedHoles = new Set(rounds.flatMap((r) => [...(r.holeList ?? []), ...Object.keys(r.holes ?? {}).map(Number)]).map(baseHoleN));
         const lost = course.holes.slice(want).filter((h) => usedHoles.has(h.n)).map((h) => h.n);
         if (lost.length) { toast(`Rounds use holes ${lost[0]}–${lost.at(-1)}, so they can't be removed.`, 'warn'); return; }
         if (!(await confirmSheet(`Remove holes ${want + 1}–${have} and anything set on them?`, 'Remove holes'))) return;

@@ -2,7 +2,7 @@
 import * as db from '../db.js';
 import * as gps from '../gps.js';
 import { distance } from '../geo.js';
-import { deriveHole, deriveRound, emptyHoleStat, playOrder, sortShots } from '../stats.js';
+import { deriveHole, deriveRound, emptyHoleStat, playOrder, sortShots, holeFor, holeLabel, baseHoleN } from '../stats.js';
 import { tracker, canRecord } from '../transport.js';
 import { syncCaptures, prepareTracker, reconcileTrackerShots, dismissTrackerShot, logHole, acceptPossible, dismissPossible } from '../trackerround.js';
 import { createMap, pin, line, circle, polygon, fit, ll, hasMap, frame, northUp, canRotate, drawHoleMap } from '../map.js';
@@ -33,7 +33,7 @@ export async function holeView(root, { roundId, hole }) {
     await db.put('rounds', round);
   }
 
-  const ch = () => course.holes[n - 1];
+  const ch = () => holeFor(course, n);
   const hs = () => (round.holes[n] ??= emptyHoleStat());
   const holeShots = () => shots.filter((s) => s.hole === n);
   const firstShotId = () => sortShots(holeShots())[0]?.id;
@@ -53,7 +53,7 @@ export async function holeView(root, { roundId, hole }) {
     <header class="hole-head">
       <button class="nav-btn" data-a="prev" aria-label="Previous hole" ${pos === 0 ? 'disabled' : ''}>‹</button>
       <div class="hole-title">
-        <span class="hole-no">${n}</span>
+        <span class="hole-no">${holeLabel(n)}</span>
         <span class="hole-meta"><b>Par ${ch().par}${ch().metres ? ` <small>· ${ch().metres} m</small>` : ''}${order.length !== 18 || order[0] !== 1 ? ` <small>· ${pos + 1} of ${order.length}</small>` : ''}</b><span id="roundScore"></span></span>
       </div>
       <button class="nav-btn" data-a="next" aria-label="Next hole">›</button>
@@ -81,7 +81,7 @@ export async function holeView(root, { roundId, hole }) {
     <div class="hole-stats" id="hstats"></div>
     <div class="hole-foot">
       <a class="btn ghost" href="#/round/${roundId}/card">Scorecard</a>
-      <button class="btn primary" data-a="next">${pos === order.length - 1 ? 'Finish' : `Hole ${order[pos + 1]}`}</button>
+      <button class="btn primary" data-a="next">${pos === order.length - 1 ? 'Finish' : `Hole ${holeLabel(order[pos + 1])}`}</button>
     </div>
   </section>`;
 
@@ -192,7 +192,7 @@ export async function holeView(root, { roundId, hole }) {
     const d = derived();
     const pts = [...d.shots.map((s) => s.start), d.greenPos, h.green, h.tee];
     if (!fit(map, pts)) {
-      const prev = course.holes[n - 2]?.green;
+      const prev = course.holes[baseHoleN(n) - 2]?.green;
       if (prev) map.setView(ll(prev), 17);
     } else fittedToFix = true;
   }
@@ -487,7 +487,7 @@ export async function holeView(root, { roundId, hole }) {
     $('#markTools', root).hidden = false;
     northUp(map);
     // Start where the player is, or on what's already set, or the last green.
-    const h = ch(), fix = gps.latest(), prev = course.holes[n - 2];
+    const h = ch(), fix = gps.latest(), prev = course.holes[baseHoleN(n) - 2];
     const at = fix ?? h.tee ?? h.green ?? prev?.green ?? course.centre;
     if (at) setTimeout(() => map.setView(ll(at), Math.max(map.getZoom(), 18)), 0);
     drawMarkTools(); drawMarkChip(); drawMap(); drawMeasure();
@@ -524,7 +524,7 @@ export async function holeView(root, { roundId, hole }) {
     }
     await db.put('courses', course);
     vibrate();
-    toast(`${what === 'green' ? 'Green' : 'Tee'} saved for hole ${n}`);
+    toast(`${what === 'green' ? 'Green' : 'Tee'} saved for hole ${holeLabel(n)}`);
     drawMap(); drawMarkTools(); drawYardage(); drawStats();
   }
 
@@ -676,7 +676,7 @@ export async function holeView(root, { roundId, hole }) {
     const d = derived();
     let v = d.score ?? ch().par;
     sheet(`
-      <h3 class="sheet-title">Score for hole ${n}</h3>
+      <h3 class="sheet-title">Score for hole ${holeLabel(n)}</h3>
       <p class="sheet-sub">Worked out from ${holeShots().length} shots + putts + penalties. Change it only if the count is wrong.</p>
       <div class="big-stepper"><button data-s="-1" aria-label="One less">−</button><b id="sv">${v}</b><button data-s="1" aria-label="One more">+</button></div>
       <div class="sheet-row">

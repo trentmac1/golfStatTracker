@@ -1,5 +1,6 @@
 #include "capture.h"
 #include "motion.h"
+#include "stroke.h"
 #include "sensors.h"
 #include "store.h"
 #include <vector>
@@ -13,6 +14,11 @@ uint32_t millis(){ return (uint32_t)nowMs; } uint32_t micros(){ return (uint32_t
 const double IMU_HZ = 207.3, ENV_HZ = 1007.8;   // deliberately not nominal
 double swingPeakMs = -1, impactMs = -1, widthMs = 60, busyFrom = -1, busyTo = -1, backAmp = 0;
 bool vertical = false;   // the rotation about the vertical (gz, along gravity) instead of across it (gx)
+double baseDps = 20;     // rotation when nothing's happening
+bool tagIndex = true;    // gy carries the sample index (alignment checks)
+// Short-game turns about the vertical (0.7.0 tests): peak deg/s at a time, Gaussian.
+struct Turn { double atMs, peak, sigmaMs; }; std::vector<Turn> turns;
+double turnAt(double t) { double v = 0; for (auto& u : turns) { double d = (t - u.atMs) / u.sigmaMs; v += u.peak * exp(-0.5 * d * d); } return v; }
 static imu::Sink sinkFn; static uint32_t imuN = 0;
 void imu::setSink(Sink s){ sinkFn = s; }
 uint32_t imu::count(){ return imuN; }
@@ -21,7 +27,7 @@ float imu::rateHz(){ return IMU_HZ; }
 uint32_t imu::overruns(){ return 0; }
 float gyroAt(double t) { // dps; a swing: bump to 900 at swingPeakMs, width ~120 ms
   if (t >= busyFrom && t < busyTo) return 160;   // moving about (walking, handling)
-  if (swingPeakMs < 0) return 20;
+  if (swingPeakMs < 0) return baseDps;
   double d = (t - swingPeakMs) / widthMs, e = (t - swingPeakMs + 900) / 120.0;
   return 20 + 880 * exp(-d * d) + backAmp * exp(-e * e);   // optional backswing 0.9 s before
 }
@@ -30,7 +36,8 @@ void pumpImu() { // deliver all samples with time <= now
     double t = imuN * 1000.0 / IMU_HZ;
     int16_t g = (int16_t)(gyroAt(t) / imu::GYRO_DPS_PER_LSB);
     int16_t raw[6] = { vertical ? (int16_t)0 : g, 0, vertical ? g : (int16_t)0, 0, 0, (int16_t)(1.0 / imu::ACC_G_PER_LSB) };
-    raw[1] = (int16_t)(imuN & 0xFF);   // tag sample index in gy to check alignment
+    raw[2] += (int16_t)(turnAt(t) / imu::GYRO_DPS_PER_LSB);
+    if (tagIndex) raw[1] = (int16_t)(imuN & 0xFF);   // tag sample index in gy to check alignment
     uint32_t i = imuN++;
     sinkFn(raw, i);
   }
@@ -57,7 +64,7 @@ std::vector<std::vector<uint8_t>> records(bool motionToo = false) {
   std::vector<std::vector<uint8_t>> out; store::Header h; uint32_t a = 0;
   while (store::header(a, &h)) {
     std::vector<uint8_t> r(h.len); store::read(a, r.data(), h.len);
-    if (motionToo || (h.kind != store::K_TRACK && h.kind != store::K_STREAM)) out.push_back(r);
+    if (motionToo || (h.kind != store::K_TRACK && h.kind != store::K_STREAM && h.kind != store::K_STROKE)) out.push_back(r);
     a += h.len;
   }
   return out;
@@ -310,6 +317,44 @@ int main() {
       for (auto& rec : records(true)) if (rec[0] == store::K_TRACK) fwrite(rec.data(), 1, rec.size(), f);
       fclose(f);
     }
+  }
+  // ---- chip and putt candidates (0.7.0) ----
+  {
+    store::eraseAll(0);
+    swingPeakMs = impactMs = -1; busyFrom = busyTo = -1; vertical = false;
+    baseDps = 2; tagIndex = false;
+    double t0 = nowMs;
+    turns = { { t0 + 6000, 35, 255 },        // a putt: about 0.6 s over half the peak
+              { t0 + 13000, 80, 210 } };     // a chip, with a strike
+    impactMs = t0 + 13000;
+    capture::setSession(true);
+    run(t0 + 20000);
+    capture::setSession(false);
+    std::vector<std::vector<uint8_t>> st;
+    for (auto& r : records(true)) if (r[0] == store::K_STROKE) st.push_back(r);
+    printf("strokes: %zu\n", st.size());
+    CHECK(st.size() == 2);
+    double tPeak[2] = { t0 + 6000, t0 + 13000 };
+    for (int i = 0; i < 2; i++) {
+      auto& r = st[i];
+      CHECK(r.size() == 8 + motion::STROKE_BODY && store::crc16(r.data() + 8, motion::STROKE_BODY) == u16(r.data() + 6));
+      const uint8_t* b = r.data() + 8;
+      uint32_t at = b[4] | b[5] << 8 | b[6] << 16 | (uint32_t)b[7] << 24;   // context: device ms at 4
+      const uint8_t* x = b + 20;
+      double peak = u16(x) / 10.0, area = s16(x + 2) / 10.0;
+      printf("  stroke %d: at %+.0f ms, peak %.1f, area %.1f, %u ms, pre %.1f, post %.1f, sound %u/%u, flags %u\n", i, at - tPeak[i], peak, area,
+             u16(x + 4), x[6] / 4.0, x[7] / 4.0, x[8], x[9], x[15]);
+      CHECK(fabs(at - tPeak[i]) < 60);
+      CHECK(x[6] / 4.0 < 3 && (int8_t)x[12] == 100 && x[15] == 0);
+      if (i == 0) { CHECK(peak > 31 && peak < 36 && area > 15 && area < 20 && u16(x + 4) > 500 && u16(x + 4) < 700 && x[8] == 10); }
+      else { CHECK(peak > 74 && peak < 81 && u16(x + 4) > 400 && u16(x + 4) < 600 && x[8] == 200 && x[9] == 54); }
+    }
+    if (const char* outp = getenv("CAPTURE_FIXTURE_STROKES")) {
+      FILE* f = fopen(outp, "wb");
+      for (auto& rec : records(true)) if (rec[0] != store::K_TRACK) fwrite(rec.data(), 1, rec.size(), f);
+      fclose(f);
+    }
+    turns.clear(); baseDps = 20; tagIndex = true; impactMs = -1;
   }
   printf("capture tests passed\n");
 }

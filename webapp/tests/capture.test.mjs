@@ -303,7 +303,7 @@ test('motion records from firmware 0.6.0: a practice recording and a round track
   const practice = ss.find((s) => s.practice);
   assert.ok(practice && Math.abs(practice.recordedMs - streams.length * 1003.4) < 5);
   const out = exportJson(rows);
-  assert.equal(out.version, 8);
+  assert.equal(out.version, 9);
   const xs = out.logs[0].sessions.find((s) => s.recording);
   assert.deepEqual(xs.labels.map((l) => l.stroke), ['putt', 'chip']);
   assert.equal(xs.recording.imu.raw.length, streams.length * 52);

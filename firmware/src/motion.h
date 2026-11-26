@@ -15,6 +15,8 @@
 //   second, a record every second. About 45 minutes fills the 2 MB log.
 //   Button presses label the strokes: one press after a putt, a double
 //   press after a chip.
+// - Stroke (kind 9, 0.7.0), in every session: a candidate chip or putt from
+//   stroke.cpp, 36 bytes. The app decides which are strokes.
 //
 // Record layouts: docs/ble-protocol.md, "Capture log".
 namespace motion {
@@ -25,6 +27,7 @@ namespace motion {
   bool recording();
   uint16_t blocks();                 // recording records written since start-up
   uint16_t tracks();                 // track records written since start-up
+  uint16_t strokes();                // stroke candidates written since start-up
 
   const uint8_t DECIM = 4;           // IMU samples averaged into one recorded sample
   const uint8_t BLOCK = 52;          // recorded samples per record (208 IMU samples, about 1 s)
@@ -32,5 +35,6 @@ namespace motion {
   const uint8_t TRACK_ENTRIES = 8, ENTRY = 12;
   const uint32_t STREAM_BODY = 20 + 12 + BLOCK * 12 + 2 * BINS;      // 756
   const uint32_t TRACK_BODY = 20 + 8 + TRACK_ENTRIES * ENTRY;         // 124
+  const uint32_t STROKE_BODY = 36;
   const uint32_t TRACK_RESERVE = 65536;  // the track stops here, leaving the last of the log to swings
 }

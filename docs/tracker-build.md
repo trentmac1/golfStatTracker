@@ -110,6 +110,17 @@ A practice session (20–30 minutes on the practice green and chipping area):
 |---|---|
 | three flashes | practice recording running |
 
+## Chips and putts from the tracker (beta; firmware 0.7.0, app 0.9.0)
+
+When starting a round with **Shot tracker**, choose **Chips and putts: From the tracker (beta)**. **Enter them** keeps the round exactly as before.
+
+With the beta on:
+- The tracker notes every turn of the hips that could be a stroke. A chip or putt from the pocket is a stand-still, one smooth turn towards the target, then a stand-still; chips are bigger and have a strike sound.
+- After each sync the app keeps the ones that look like strokes and uses the course map: on the green they're putts, up to 40 m off it they're chips (right at the edge, the sound decides). Chips appear on the map as tracker shots; putts fill in the hole's putt count.
+- Values from the tracker have a dashed outline. Tap the putt count to confirm it, or tap the right number; a wrong chip can be deleted from the map like any tracker shot. Anything you set yourself stays.
+- Left out: turns before the hole's last full shot, the follow-through just after a full swing, and a practice stroke followed by the real one from the same spot within 15 s.
+- Expect misses: it was tuned on one 13-minute indoor session (34 of 38 found, 2 false). Short tap-ins are often missed, and a practice putt without a ball looks like a putt.
+
 ## Sleep between rounds (firmware 0.5.0)
 
 The tracker sleeps by itself after **an hour with no phone connected and no round on**: GPS in standby, Bluetooth, motion sensor and microphone off. It shows three slow purple flashes, then the LED stays dark. Asleep it draws tens of µA (GPS standby about 20 µA), so a charge lasts months instead of a day or two.

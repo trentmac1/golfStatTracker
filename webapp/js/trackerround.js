@@ -1,7 +1,8 @@
 // Rounds played with the shot tracker: keep the tracker in round mode, sync
 // its capture log during the round, and turn the swings it saves into shots
-// on the map. Chips and putts are still entered by hand for now
-// (docs/plan-addition-short-game.md has the automatic version).
+// on the map. Chips and putts are entered by hand, unless the round has the
+// beta turned on (round.shortGame, shortgame.js): then chips become tracker
+// shots and putts fill in each hole's count, both correctable.
 import * as db from './db.js';
 import { tracker, OP } from './transport.js';
 import { decodeRecord, sessions, notShots, REJECT } from './capturelog.js';
@@ -9,6 +10,7 @@ import { distance, toLocal } from './geo.js';
 import { applyAutoLie } from './holemap.js';
 import { playOrder, holeFor as roundHole } from './stats.js';
 import { pointInPolygon } from './greens.js';
+import { planShortGame } from './shortgame.js';
 
 export const ROUND_TRIGGER = 250, ROUND_GATE = 1000;   // as the Training data screen's Round mode
 export const shotId = (logId, seq) => `trk-${(logId >>> 0).toString(16)}-${seq}`;
@@ -141,7 +143,7 @@ export function roundTrackerData(round, rows, now = Date.now()) {
     if (!byLog.has(r.logId)) byLog.set(r.logId, []);
     byLog.get(r.logId).push(r);
   }
-  const swings = [], presses = [], hidden = [], rejects = [];
+  const swings = [], presses = [], hidden = [], rejects = [], strokes = [];
   const inRound = (r) => r.time && r.time * 1000 >= from && r.time * 1000 <= to;
   for (const [logId, list] of byLog) {
     if (!list.some(inRound)) continue;
@@ -154,10 +156,11 @@ export function roundTrackerData(round, rows, now = Date.now()) {
       }
       for (const l of s.labels) if (inRound(l) && l.swingSeq == null) presses.push({ ...l, logId });
       for (const j of s.rejects ?? []) if (inRound(j)) rejects.push({ ...j, logId });
+      for (const c of s.strokes ?? []) if (inRound(c)) strokes.push({ ...c, logId });
     }
   }
   const byTime = (a, b) => a.time - b.time || a.seq - b.seq;
-  return { swings: swings.sort(byTime), presses: presses.sort(byTime), hidden: hidden.sort(byTime), rejects: rejects.sort(byTime) };
+  return { swings: swings.sort(byTime), presses: presses.sort(byTime), hidden: hidden.sort(byTime), rejects: rejects.sort(byTime), strokes: strokes.sort(byTime) };
 }
 
 // A reject worth showing as a possible shot: a real-sized swing that failed
@@ -203,7 +206,11 @@ const touched = (s) => s.edited || s.accepted || s.club || s.lieByHand || s.targ
 // shots: swings the checks hid and near-miss rejects, not deleted, not next
 // to a shot already there, one per spot (the loudest). Returns { add: [shot], remove: [id], presses: {hole: n},
 // possible: [{ id, hole, lat, lon, time, why, ... }] }.
-export function planTrackerShots({ round, course, shots, swings, presses, hidden = [], rejects = [] }) {
+//
+// With round.shortGame (beta), stroke candidates become chips (tracker shots
+// with shortGame: 'chip', ids from strokeId) and putts per hole:
+// { chips: {hole: n}, putts: {hole: n} } in `shortGame`.
+export function planTrackerShots({ round, course, shots, swings, presses, hidden = [], rejects = [], strokes = [] }) {
   const dismissed = new Set(round.trackerDismissed ?? []);
   const want = new Map();
   for (const w of swings) {
@@ -215,7 +222,8 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
   }
   // Where play has got to, for holeFor(): every swing that counts.
   const played = [...want.values()].map((w) => ({ pos: w.pos, time: w.time * 1000 }));
-  const remove = shots.filter((s) => s.source === 'tracker' && !want.has(s.id) && !touched(s)).map((s) => s.id);
+  const isChip = (s) => s.shortGame === 'chip';
+  const remove = shots.filter((s) => s.source === 'tracker' && !isChip(s) && !want.has(s.id) && !touched(s)).map((s) => s.id);
   const kept = shots.filter((s) => !remove.includes(s.id));
   const have = new Set(shots.map((s) => s.id));
   let seq = shots.reduce((a, s) => Math.max(a, s.seq ?? 0), 0);
@@ -234,6 +242,31 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
     applyAutoLie(shot, roundHole(course, hole), first);
     add.push(shot);
   }
+  // Chips and putts (beta).
+  let shortGame = null;
+  if (round.shortGame) {
+    const fullNow = [...kept, ...add].filter((s) => !isChip(s));
+    const sg = planShortGame({ round, course, strokes, shots: fullNow, holeAt: (p, t) => holeFor(course, round, p, t, played) });
+    const wantChip = new Set(sg.chips.map((c) => c.id));
+    for (const s of shots) if (isChip(s) && !wantChip.has(s.id) && !touched(s)) remove.push(s.id);
+    for (const c of sg.chips) {
+      if (have.has(c.id)) continue;
+      const shot = {
+        id: c.id, roundId: round.id, hole: c.hole, seq: ++seq, lat: c.lat, lon: c.lon,
+        accuracy: c.hdop != null ? Math.max(2.5, c.hdop * 2.5) : 5, time: c.time,
+        club: null, source: 'tracker', shortGame: 'chip', confidence: null, penalty: false, lie: null, mishit: false, target: null,
+        tracker: { logId: c.c.logId, seq: c.c.seq, peak: c.c.peak, turn: c.c.area, sound: c.c.high },
+      };
+      applyAutoLie(shot, roundHole(course, c.hole), false);
+      add.push(shot);
+    }
+    const chipCount = {}, puttCount = {};
+    for (const s of [...shots, ...add]) if (isChip(s) && !remove.includes(s.id)) chipCount[s.hole] = (chipCount[s.hole] ?? 0) + 1;
+    for (const [h, list] of Object.entries(sg.putts)) puttCount[h] = list.length;
+    shortGame = { chips: chipCount, putts: puttCount, puttSpots: sg.putts };
+  }
+  for (let i = kept.length - 1; i >= 0; i--) if (remove.includes(kept[i].id)) kept.splice(i, 1);
+
   // Possible shots.
   const final = [...kept, ...add];
   const near = (a, b, m, ms) => distance(a, b) <= m && Math.abs(a.time - b.time) <= ms;
@@ -256,7 +289,35 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
     const h = holeFor(course, round, p.pos, p.time * 1000, played);
     pressHoles[h] = (pressHoles[h] ?? 0) + 1;
   }
-  return { add, remove, presses: pressHoles, possible };
+  return { add, remove, presses: pressHoles, possible, shortGame };
+}
+
+// The beta's counts into the round's hole stats. A count the player set
+// (no puttsAuto / chipsAuto flag) is theirs and stays. Holes are only filled
+// once play has reached them. Returns true if anything changed.
+export function applyShortGame(round, shortGame, holes) {
+  if (!shortGame) return false;
+  let changed = false;
+  for (const h of holes) {
+    const hs = (round.holes[h] ??= { putts: null, chips: 0, bunker: 0, penalties: 0, fairway: null, score: null, greenPos: null });
+    const putts = shortGame.putts[h] ?? 0, chips = shortGame.chips[h] ?? 0;
+    if (hs.putts == null || hs.puttsAuto) {
+      const v = putts > 0 ? putts : null;
+      if (hs.putts !== v || !!hs.puttsAuto !== (v != null)) {
+        hs.putts = v;
+        if (v != null) hs.puttsAuto = true; else delete hs.puttsAuto;
+        changed = true;
+      }
+    }
+    if (!hs.chips || hs.chipsAuto) {
+      if ((hs.chips ?? 0) !== chips || !!hs.chipsAuto !== chips > 0) {
+        hs.chips = chips;
+        if (chips > 0) hs.chipsAuto = true; else delete hs.chipsAuto;
+        changed = true;
+      }
+    }
+  }
+  return changed;
 }
 
 export async function reconcileTrackerShots(round, course) {
@@ -265,7 +326,17 @@ export async function reconcileTrackerShots(round, course) {
   const plan = planTrackerShots({ round, course, shots, ...data });
   for (const id of plan.remove) await db.del('shots', id);
   for (const s of plan.add) await db.put('shots', s);
-  return { added: plan.add.length, removed: plan.remove.length, presses: plan.presses, possible: plan.possible };
+  let holesChanged = false;
+  if (plan.shortGame) {
+    // Holes play has reached: the one on screen and every one before it in the round.
+    const order = playOrder(course, round);
+    const now = (round.holeLog ?? []).at(-1)?.hole ?? order[0];
+    const reached = order.slice(0, order.indexOf(now) + 1);
+    holesChanged = applyShortGame(round, plan.shortGame, reached);
+    if (holesChanged) await db.put('rounds', round);
+  }
+  return { added: plan.add.length, removed: plan.remove.length, presses: plan.presses, possible: plan.possible,
+    shortGame: plan.shortGame, holesChanged };
 }
 
 // A possible shot the player confirms: a tracker shot that sync keeps.

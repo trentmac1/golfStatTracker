@@ -136,8 +136,13 @@ void imu::poll() {
       words--; pattern = (pattern + 1) % 6;
     }
   }
+  // Leave the newest whole sample in the FIFO (0.7.0). Reading it as it was
+  // being written gave samples whose last words were copies of the word
+  // before (about 1 in 27 since October: 27 Nov analysis); it's read next
+  // poll instead, about 5 ms later.
   uint16_t n = words / 6;
-  if (!n) return;
+  if (n <= 1) return;
+  n--;
   if (n > 120) n = 120;                               // the rest next time
   // The newest unread sample was taken about now; earlier ones a period apart.
   uint16_t left = words / 6 - n;                      // samples still in the FIFO after this read

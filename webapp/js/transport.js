@@ -28,6 +28,12 @@ export function canRecord(status) {
   const [a = 0, b = 0] = String(status?.firmware ?? '').split('.').map(Number);
   return a > 0 || b >= 6;
 }
+// Firmware 0.7.0 and later write chip and putt candidates (kind 9) for the
+// beta. Earlier firmware sends none.
+export function canDetectStrokes(status) {
+  const [a = 0, b = 0] = String(status?.firmware ?? '').split('.').map(Number);
+  return a > 0 || b >= 7;
+}
 // A practice recording writes about 764 bytes a second.
 export const RECORDING_KB_PER_MIN = (764 * 60) / 1024;
 

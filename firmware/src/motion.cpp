@@ -2,6 +2,7 @@
 #include "capture.h"
 #include "sensors.h"
 #include "store.h"
+#include "stroke.h"
 
 namespace {
   const uint16_t SPAN = motion::DECIM * motion::BLOCK;   // IMU samples per second-long block (208)
@@ -31,6 +32,19 @@ namespace {
   bool joltHigh = false;
   uint16_t dropped = 0;
 
+  // Chip and putt candidates (0.7.0): the IMU at a quarter rate, queued
+  // until the microphone has caught up, then fed to stroke.cpp with the
+  // loudest sound during each sample.
+  struct Quarter { int16_t s[6]; uint32_t lastIdx; };
+  const uint8_t QN = 64;
+  Quarter qbuf[QN];
+  uint8_t qHead = 0, qLen = 0;
+  int32_t qsum[6];
+  uint8_t qFill = 0;
+  uint16_t qDropped = 0;
+  uint16_t nStrokes = 0;
+  uint8_t strokeBody[motion::STROKE_BODY] __attribute__((aligned(4)));
+
   // Track record being built.
   uint8_t trackBody[motion::TRACK_BODY] __attribute__((aligned(4)));
   uint8_t trackN = 0;
@@ -55,6 +69,39 @@ namespace {
     cur->jolts = 0;
     filled = 0;
     for (uint8_t k = 0; k < 6; k++) dsum[k] = 0;
+  }
+
+  uint8_t loudest(float t0, float t1, bool lowBand) {
+    float rate = mic::envRateHz();
+    uint32_t envN = mic::envCount(), envMs = mic::envLastMs(), lowN = mic::lowCount();
+    if (!mic::ok() || !envN) return 0;
+    auto at = [&](float t) { return (int32_t)envN - 1 - (int32_t)lroundf(((float)envMs - t) * rate / 1000.0f); };
+    int32_t a = at(t0), b = at(t1);
+    if (b < a) b = a;
+    uint16_t m = 0;
+    if (!lowBand) {
+      for (int32_t i = a; i <= b; i++)
+        if (i >= 0 && (uint32_t)i < envN && envN - (uint32_t)i <= mic::ENV_RING) m = max(m, mic::envAt(i));
+    } else {
+      for (int32_t k2 = a / 4; k2 <= b / 4; k2++)
+        if (k2 >= 0 && (uint32_t)k2 < lowN && lowN - (uint32_t)k2 <= mic::LOW_RING) m = max(m, mic::lowAt(k2));
+    }
+    return sq8(m);
+  }
+
+  void writeStroke(const stroke::Candidate& c) {
+    if (!store::hasRoom(16384)) return;
+    capture::writeContext(strokeBody, (uint32_t)c.tMs);
+    uint8_t* x = strokeBody + 20;
+    put16(x, clampU16(c.peak * 10));
+    put16(x + 2, (uint16_t)(int16_t)lroundf(fmaxf(-32767, fminf(32767, c.area * 10))));
+    put16(x + 4, clampU16(c.durMs));
+    x[6] = clampU8(c.pre * 4); x[7] = clampU8(c.post * 4);
+    x[8] = c.high; x[9] = c.low;
+    x[10] = (uint8_t)c.grav[0]; x[11] = (uint8_t)c.grav[1]; x[12] = (uint8_t)c.grav[2];
+    x[13] = clampU8(c.other); x[14] = clampU8(c.neg);
+    x[15] = isRecording ? 1 : 0;
+    if (store::append(store::K_STROKE, strokeBody, motion::STROKE_BODY) && nStrokes < 65535) nStrokes++;
   }
 
   void flushTrack() {
@@ -161,6 +208,14 @@ void motion::onSample(const int16_t raw[6], uint32_t idx) {
   if (high && !joltHigh && s.jolts < 255) s.jolts++;
   joltHigh = high;
 
+  for (uint8_t k = 0; k < 6; k++) qsum[k] += raw[k];
+  if (++qFill == DECIM) {
+    if (qLen == QN) { qHead = (qHead + 1) % QN; qLen--; if (qDropped < 65535) qDropped++; }
+    Quarter& qq = qbuf[(qHead + qLen) % QN];
+    for (uint8_t k = 0; k < 6; k++) { qq.s[k] = (int16_t)(qsum[k] / DECIM); qsum[k] = 0; }
+    qq.lastIdx = idx; qLen++; qFill = 0;
+  }
+
   for (uint8_t k = 0; k < 6; k++) dsum[k] += raw[k];
   filled++;
   if (filled % DECIM == 0) {
@@ -177,6 +232,15 @@ void motion::onSample(const int16_t raw[6], uint32_t idx) {
 }
 
 void motion::poll() {
+  // Quarter-rate samples whose sound is in: on to the stroke detector.
+  while (qLen) {
+    Quarter& qq = qbuf[qHead];
+    float t1 = imu::sampleMs(qq.lastIdx), t0 = imu::sampleMs(qq.lastIdx - (DECIM - 1));
+    bool ready = !mic::ok() || (float)mic::envLastMs() >= t1 || (float)millis() - t1 > 300;
+    if (!ready) break;
+    stroke::feed(qq.s, loudest(t0, t1, false), loudest(t0, t1, true), (t0 + t1) / 2);
+    qHead = (qHead + 1) % QN; qLen--;
+  }
   if (!pend) return;
   float endMs = imu::sampleMs(pend->firstIdx + SPAN);
   bool ready = !mic::ok() || (float)mic::envLastMs() >= endMs || millis() - pendAt > 400;
@@ -195,9 +259,13 @@ void motion::sessionChanged(bool on) {
   } else {
     isRecording = wantRecording;
     trackN = 0;
+    stroke::reset(imu::rateHz() / DECIM);
+    stroke::setOutput(writeStroke);
   }
   active = on;
   filled = 0;
+  qLen = 0; qFill = 0;
+  for (uint8_t k = 0; k < 6; k++) qsum[k] = 0;
 }
 
 void motion::setRecording(bool on) {
@@ -210,3 +278,4 @@ void motion::setRecording(bool on) {
 bool motion::recording() { return isRecording; }
 uint16_t motion::blocks() { return nBlocks; }
 uint16_t motion::tracks() { return nTracks; }
+uint16_t motion::strokes() { return nStrokes; }

@@ -10,7 +10,7 @@ import { distance, toLocal } from './geo.js';
 import { applyAutoLie } from './holemap.js';
 import { playOrder, holeFor as roundHole } from './stats.js';
 import { pointInPolygon } from './greens.js';
-import { planShortGame } from './shortgame.js';
+import { planShortGame, countChips } from './shortgame.js';
 
 export const ROUND_TRIGGER = 250, ROUND_GATE = 1000;   // as the Training data screen's Round mode
 export const shotId = (logId, seq) => `trk-${(logId >>> 0).toString(16)}-${seq}`;
@@ -309,7 +309,8 @@ export function planTrackerShots({ round, course, shots, swings, presses, hidden
       add.push(shot);
     }
     const chipCount = {}, puttCount = {};
-    for (const s of [...shots, ...add]) if (isChip(s) && !remove.includes(s.id)) chipCount[s.hole] = (chipCount[s.hole] ?? 0) + 1;
+    const now = [...shots, ...add].filter((s) => !remove.includes(s.id));
+    for (const h of new Set(now.map((s) => s.hole))) { const n = countChips(course, h, now); if (n) chipCount[h] = n; }
     for (const [h, list] of Object.entries(sg.putts)) puttCount[h] = list.length;
     shortGame = { chips: chipCount, putts: puttCount, puttSpots: sg.putts };
   }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { planTrackerShots, applyShortGame, roundTrackerData } from '../js/trackerround.js';
-import { isStroke, strokeType, greenPlace, strokeId, STROKE } from '../js/shortgame.js';
+import { isStroke, isTapIn, strokeType, greenPlace, strokeId, planShortGame, countChips, STROKE } from '../js/shortgame.js';
 import { decodeRecord, KIND, sessions } from '../js/capturelog.js';
 import { fromLocal } from '../js/geo.js';
 
@@ -75,6 +75,39 @@ test('beta round: chips become tracker shots, putts fill the count, practice str
   const again = planTrackerShots({ round: mkRound({ trackerDismissed: [strokeId(7, 13)] }), course, shots, swings, presses: [], strokes });
   assert.ok(again.remove.includes(strokeId(7, 13)));
   assert.equal(again.add.length, 0);
+});
+
+test('27 Nov round: tap-ins, the bend after a putt, a late ? shot, a putt just after a marked chip', () => {
+  const tap = { peak: 15, area: 5, durMs: 200, other: 6, neg: 5 };
+  assert.equal(isTapIn(putt(1, 0, at(0, 0), tap)), true);
+  assert.equal(isTapIn(putt(1, 0, at(0, 0), { ...tap, other: 30 })), false);   // bending down
+  assert.equal(isStroke(putt(1, 0, at(0, 0), { other: 30 })), false);
+  const sec = (ms) => t0 + ms;
+  const shot = (hole, p, ms) => ({ hole, lat: p.lat, lon: p.lon, time: sec(ms) });
+  const holeAt = (p, t) => (t < sec(650000) ? 1 : 2);
+  const shots = [shot(1, at(0, 0), 60000), shot(1, at(5, 200), 300000),
+    shot(1, at(0, 340), 600000),                  // a ? accepted late, near the green: not the approach
+    shot(2, at(40, 360), 700000), shot(2, at(50, 200), 800000),
+    shot(2, at(60, 40), 900000)];                 // a chip the player marked, 8 m off the circle
+  const strokes = [
+    putt(20, 500000, at(0, 345)),                                        // first putt
+    putt(21, 501500, at(0, 345.5), { peak: 90, other: 40, neg: 120 }),   // bending for the ball: not this one
+    putt(22, 505000, at(0, 300), tap),                                   // tap-size, 38 m off: no
+    putt(23, 520000, at(0, 352), tap),                                   // the tap-in
+    chip(24, 540000, at(0, 333)),                                        // 5 m off after a putt: a putt
+    chip(30, 900000, at(60, 40)),                                        // the marked chip: already there
+    putt(31, 930000, at(60, 49)),                                        // putt 9 m from it: still a putt
+  ];
+  const sg = planShortGame({ round: { trackerDismissed: [] }, course, strokes, shots, holeAt });
+  assert.equal(sg.chips.length, 0);
+  assert.deepEqual(sg.putts[1].map((p) => p.c.seq), [20, 23, 24]);
+  assert.deepEqual(sg.putts[2].map((p) => p.c.seq), [31]);
+  // A circle is only a guess at the green: 5 m outside it, a putt by its sound.
+  const one = (x) => planShortGame({ round: {}, course, strokes: [putt(40, 950000, at(60, 77), x)], shots: shots.slice(3, 5), holeAt });
+  assert.equal(one({}).putts[2].length, 1);
+  assert.equal(one({ high: 14 }).chips.length, 1);
+  // Chips: shots after the first that finish near the green, off it.
+  assert.equal(countChips(course, 2, [...shots, shot(2, at(60, 58), 930000)]), 1);
 });
 
 test('without the beta, strokes change nothing', () => {

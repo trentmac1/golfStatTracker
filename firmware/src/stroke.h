@@ -29,8 +29,11 @@ namespace stroke {
   typedef void (*Output)(const Candidate&);
 
   // Written only if peak ≥ MIN_PEAK, area ≥ MIN_AREA, pre ≤ MAX_PRE and the
-  // duration is in range; the app's own thresholds are tighter.
-  const float MIN_PEAK = 12, MIN_AREA = 5, MAX_PRE = 15, MIN_DUR_MS = 200, MAX_DUR_MS = 1500;
+  // duration is in range; the app's own thresholds are tighter. Lowered in
+  // 0.7.1 (from 12 deg/s, 5 deg, 15 deg/s, 200 ms) so quick tap-ins and
+  // strokes made soon after walking up are recorded: on 27 Nov most second
+  // putts left no candidate at all.
+  const float MIN_PEAK = 8, MIN_AREA = 3, MAX_PRE = 25, MIN_DUR_MS = 150, MAX_DUR_MS = 1500;
 
   void reset(float hz);   // start again (a new session); hz: the rate of the samples fed in
   void setOutput(Output o);

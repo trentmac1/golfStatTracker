@@ -19,8 +19,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FW = os.path.join(HERE, '..', '..', 'firmware')
 
 # The app's rules (keep in step with webapp/js/shortgame.js).
-STROKE = dict(peak=18, area=10, pre=8, dur_lo=250, dur_hi=1200, peak_max=150, gap_ms=3000,
+STROKE = dict(peak=18, area=10, pre=8, dur_lo=250, dur_hi=1200, peak_max=150, max_other=20,
+              tap_peak=12, tap_area=4, tap_dur_lo=150, tap_other=12, tap_back=30, gap_ms=3000,
               chip_sound=11, chip_peak=50)
+
+def is_stroke(c, R=STROKE):
+    return (c['peak'] >= R['peak'] and c['area'] >= R['area'] and c['pre'] <= R['pre']
+            and R['dur_lo'] <= c['dur_ms'] <= R['dur_hi'] and c['peak'] <= R['peak_max'] and c['other'] <= R['max_other'])
+
+def is_tap(c, R=STROKE):
+    return (not is_stroke(c, R) and c['peak'] >= R['tap_peak'] and c['area'] >= R['tap_area'] and c['pre'] <= R['pre']
+            and R['tap_dur_lo'] <= c['dur_ms'] <= R['dur_hi'] and c['other'] <= R['tap_other'] and c['neg'] <= R['tap_back'])
 
 def build():
     exe = os.path.join(tempfile.gettempdir(), 'replay_strokes')
@@ -56,13 +65,14 @@ def candidates(exe, rec):
     return [{k: float(v) for k, v in r.items()} for r in csv.DictReader(res.splitlines())]
 
 def strokes(cands, R=STROKE):
-    ok = [c for c in cands if c['peak'] >= R['peak'] and c['area'] >= R['area'] and c['pre'] <= R['pre']
-          and R['dur_lo'] <= c['dur_ms'] <= R['dur_hi'] and c['peak'] <= R['peak_max']]
-    ok.sort(key=lambda c: -c['peak']); kept = []
+    # One per 3 s: full-size before a tap-in, then least twist back, then biggest.
+    ok = [dict(c, tap=not is_stroke(c, R)) for c in cands if is_stroke(c, R) or is_tap(c, R)]
+    ok.sort(key=lambda c: (c['tap'], c['neg'], -c['peak'])); kept = []
     for c in ok:
         if all(abs(c['t_ms'] - k['t_ms']) > R['gap_ms'] for k in kept): kept.append(c)
     for c in kept:
-        c['kind'] = 'chip' if (c['high'] >= R['chip_sound'] if c['high'] > 0 else c['peak'] >= R['chip_peak']) else 'putt'
+        # A tap-in only counts on the green, so it's a putt.
+        c['kind'] = 'putt' if c['tap'] else 'chip' if (c['high'] >= R['chip_sound'] if c['high'] > 0 else c['peak'] >= R['chip_peak']) else 'putt'
     return sorted(kept, key=lambda c: c['t_ms'])
 
 def score(found, labels):

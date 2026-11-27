@@ -276,7 +276,7 @@ function clubRow(c) {
       <span class="cr-bar"><span class="cr-line"></span><span class="cr-iqr" style="left:${at(c.q1)}%;width:${Math.max(2, at(c.q3) - at(c.q1))}%"></span><span class="cr-mean" style="left:${at(c.mean)}%"></span></span>
       <span class="cr-end" title="Highest">${m(c.max)}</span>
     </span>
-    <span class="cr-labels"><small>lowest</small><small>middle half ${m(c.q1)}–${m(c.q3)} m</small><small>highest</small></span>
+    <span class="cr-labels"><small>lowest</small><small>${m(c.q1)}–${m(c.q3)} m</small><small>highest</small></span>
   </button></li>`;
 }
 

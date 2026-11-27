@@ -277,6 +277,7 @@ export function clubDistances(derivedHoles) {
     (by[s.club] ??= []).push(s.dist);
   }
   return Object.entries(by).map(([club, d]) => ({
-    club, count: d.length, median: median(d), q1: quantile(d, 0.25), q3: quantile(d, 0.75), max: Math.max(...d),
+    club, count: d.length, mean: d.reduce((a, b) => a + b, 0) / d.length, median: median(d),
+    q1: quantile(d, 0.25), q3: quantile(d, 0.75), min: Math.min(...d), max: Math.max(...d),
   }));
 }

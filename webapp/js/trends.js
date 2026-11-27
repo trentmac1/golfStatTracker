@@ -3,7 +3,6 @@
 // to show (no fairway chances, no putts entered…). Values are per 18 holes
 // where a count would otherwise favour longer rounds.
 import { sgSummary, CATEGORIES } from './sg.js';
-import { median } from './geo.js';
 import { countsForDistance } from './stats.js';
 
 const pct = (a, b) => (b ? (100 * a) / b : null);
@@ -119,14 +118,14 @@ export function clubShots(items, club) {
     .map((shot) => ({ i, x, shot }))));
 }
 
-// Median distance per round, from the shots that count; every counted shot as a dot.
+// Average distance per round, from the shots that count; every counted shot as a dot.
 export function clubMetric(club) {
   return {
-    label: club, sub: 'Median distance per round. Dots are single shots.', better: null, upWord: 'Longer', downWord: 'Shorter',
+    label: club, sub: 'Average distance per round. Dots are single shots.', better: null, upWord: 'Longer', downWord: 'Shorter',
     fmt: mFmt, unit: ' m',
     value: (x) => {
       const d = x.r.holes.flatMap((h) => h.shots.filter((s) => s.club === club && countsForDistance(s)).map((s) => s.dist));
-      return d.length ? median(d) : null;
+      return d.length ? d.reduce((a, b) => a + b, 0) / d.length : null;
     },
     scatter: (items) => clubShots(items, club).filter((c) => countsForDistance(c.shot)).map((c) => ({ i: c.i, v: c.shot.dist })),
     empty: `No ${club} shots with a measured distance in these rounds.`,

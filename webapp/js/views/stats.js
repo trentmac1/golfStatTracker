@@ -5,8 +5,8 @@ import { DEFAULT_BAG } from '../config.js';
 import { roundRating } from './pastround.js';
 import { sgSummary, clubReport, CATEGORIES } from '../sg.js';
 import { estimate, differential } from '../handicap.js';
+import { quantile } from '../geo.js';
 import { esc, m, one, signed, fmtDate, sheet } from '../ui.js';
-import { median } from '../geo.js';
 import { METRICS, APPROACH, seriesFor, trendNote, approachSplit, clubMetric, clubShots } from '../trends.js';
 
 // Approach result grid, laid out as if looking down the shot at the green.
@@ -133,7 +133,6 @@ export async function statsView(root) {
       c.topMiss ? `misses ${c.topMiss}` : '',
     ].filter(Boolean).join(' · ');
 
-    const maxClub = Math.max(50, ...clubs.map((c) => c.max)) * 1.08;
 
     root.innerHTML = `
     <section class="page">
@@ -196,11 +195,8 @@ export async function statsView(root) {
         : '<p class="empty">No approaches recorded yet. Tap <b>On green</b> on each green so the app knows where approaches finished.</p>'}
 
       <h2>Club distances</h2>
-      ${clubs.length ? `<table class="clubs-table">
-        <thead><tr><th>Club</th><th>Median</th><th class="bar-col">Middle half of shots</th><th>n</th></tr></thead>
-        <tbody>${clubs.map((c) => `<tr data-club="${esc(c.club)}"><th>${esc(c.club)}</th><td>${m(c.median)} m</td>
-          <td class="bar-col"><span class="iqr" style="left:${(c.q1 / maxClub) * 100}%;width:${Math.max(1.5, ((c.q3 - c.q1) / maxClub) * 100)}%"></span><span class="med" style="left:${(c.median / maxClub) * 100}%"></span></td>
-          <td>${c.count}<i class="chev" aria-hidden="true">›</i></td></tr>`).join('')}</tbody></table>
+      ${clubs.length ? `<p class="club-key"><span><i class="ck-box"></i>middle half of shots</span><span><i class="ck-avg"></i>average</span><span>lowest and highest shots at each end</span></p>
+        <ul class="club-list">${clubs.map(clubRow).join('')}</ul>
         <p class="note">Tap a club for its distances over time and to leave shots out (a layup or punch-out, say). Mishits and penalty shots are always left out. Set a shot's club by tapping it on the hole screen.</p>`
         : '<p class="empty">Tap a shot on the hole screen and pick its club to build these.</p>'}
 
@@ -268,6 +264,22 @@ export async function statsView(root) {
   return {};
 }
 
+// One club in Club distances: average up top, then its spread from the lowest to
+// the highest shot, with the middle half shaded and the average marked.
+function clubRow(c) {
+  const span = c.max - c.min;
+  const at = (v) => (span ? ((v - c.min) / span) * 100 : 50);
+  return `<li><button class="club-row" data-club="${esc(c.club)}">
+    <span class="cr-top"><b class="cr-club">${esc(c.club)}</b><span class="cr-avg"><b>${m(c.mean)} m</b><small>average · ${c.count} ${c.count === 1 ? 'shot' : 'shots'}</small></span><i class="chev" aria-hidden="true">›</i></span>
+    <span class="cr-range">
+      <span class="cr-end" title="Lowest">${m(c.min)}</span>
+      <span class="cr-bar"><span class="cr-line"></span><span class="cr-iqr" style="left:${at(c.q1)}%;width:${Math.max(2, at(c.q3) - at(c.q1))}%"></span><span class="cr-mean" style="left:${at(c.mean)}%"></span></span>
+      <span class="cr-end" title="Highest">${m(c.max)}</span>
+    </span>
+    <span class="cr-labels"><small>lowest</small><small>middle half ${m(c.q1)}–${m(c.q3)} m</small><small>highest</small></span>
+  </button></li>`;
+}
+
 const rangeSeg = (range) => `<div class="seg small" role="group" aria-label="Rounds included">
   ${[[5, 'Last 5'], [10, 'Last 10'], [0, 'All']].map(([v, t]) => `<button data-range="${v}" class="${range === v ? 'on' : ''}">${t}</button>`).join('')}</div>`;
 
@@ -324,7 +336,7 @@ export function approachBody(items, range) {
     <p class="sheet-note">Short and long include the corners (short-left and so on), as do left and right, so a short-left miss counts in both.</p>`;
 }
 
-// One club: median distance per round, every shot as a dot, and each shot listed
+// One club: average distance per round, every shot as a dot, and each shot listed
 // with a switch to leave it out of club distances.
 export function clubBody(club, items, range) {
   const metric = clubMetric(club);
@@ -332,9 +344,9 @@ export function clubBody(club, items, range) {
   const shots = clubShots(items, club);
   if (!shots.length) return `${head}<p class="empty">${esc(metric.empty)}</p>`;
   const counted = shots.filter((c) => countsForDistance(c.shot)).map((c) => c.shot.dist).sort((a, b) => a - b);
-  const q = (p) => counted[Math.min(counted.length - 1, Math.floor(p * counted.length))];
+  const q = (p) => quantile(counted, p); // same as the Club distances list
   const summary = counted.length
-    ? `<p class="club-sum"><b>${m(median(counted))} m</b> median · middle half ${m(q(0.25))}–${m(q(0.75))} m · ${counted.length} of ${shots.length} shots counted</p>`
+    ? `<p class="club-sum"><b>${m(counted.reduce((a, b) => a + b, 0) / counted.length)} m</b> average · middle half ${m(q(0.25))}–${m(q(0.75))} m · lowest ${m(counted[0])}, highest ${m(counted.at(-1))} m · ${counted.length} of ${shots.length} shots counted</p>`
     : `<p class="club-sum">All ${shots.length} shots are left out.</p>`;
   const chart = chartBlock(metric, items) ?? '';
   const rows = [...shots].reverse().map(({ x, shot }) => {

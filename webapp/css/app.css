@@ -717,3 +717,30 @@ body:has(.hole.map-edit) .toast { bottom: calc(244px + var(--safe-b)); } /* keep
 .round-notes:focus { outline: none; border-color: var(--turf); }
 .notes-state { min-height: 1.2em; margin: 4px 0 12px; }
 .hc-out { margin: 0 0 8px; }
+
+/* ---------- club distances list ---------- */
+.club-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0 0 8px; font-size: 14px; color: var(--muted); }
+.club-key > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ck-box { display: inline-block; width: 22px; height: 10px; border-radius: 5px; background: #a9d3b3; }
+.ck-avg { display: inline-block; width: 3px; height: 16px; background: var(--turf-deep); }
+.club-list { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.club-list li + li { border-top: 1px solid #e6ebe2; }
+.club-row { display: block; width: 100%; padding: 10px 12px 8px; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.club-row:active { background: #eef2ea; }
+.cr-top { display: flex; align-items: center; gap: 10px; }
+.cr-club { flex: 1; font: 700 24px/1 var(--num); }
+.cr-avg { text-align: right; }
+.cr-avg b { display: block; font: 700 28px/1 var(--num); }
+.cr-avg small { color: var(--muted); font-size: 13px; }
+.club-row .chev { font-style: normal; font-size: 22px; color: var(--muted); opacity: .6; }
+.cr-range { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.cr-end { min-width: 34px; font: 700 18px/1 var(--num); color: var(--ink); }
+.cr-end:last-child { text-align: right; }
+.cr-bar { position: relative; flex: 1; height: 22px; }
+.cr-line { position: absolute; left: 0; right: 0; top: 10px; height: 2px; background: #c9d2c3; border-radius: 1px; }
+.cr-line::before, .cr-line::after { content: ''; position: absolute; top: -5px; width: 2px; height: 12px; background: #c9d2c3; }
+.cr-line::before { left: 0; } .cr-line::after { right: 0; }
+.cr-iqr { position: absolute; top: 5px; height: 12px; border-radius: 6px; background: #a9d3b3; }
+.cr-mean { position: absolute; top: 0; width: 3px; height: 22px; margin-left: -1.5px; background: var(--turf-deep); border-radius: 1px; }
+.cr-labels { display: flex; justify-content: space-between; margin-top: 2px; color: var(--muted); }
+.cr-labels small { font-size: 12px; }
